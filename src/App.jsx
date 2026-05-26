@@ -5,6 +5,79 @@ import './App.css'
 const CALENDLY_CONSULTATION = 'https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins'
 const CALENDLY_FIRST_LESSON = 'https://calendly.com/dogukan-cy/30min'
 
+// ─── Questionnaire questions ──────────────────────────────────
+const Q_QUESTIONS = [
+  {
+    field: 'level',
+    label: 'How would you describe your current level of English?',
+    options: [
+      { value: 'beginner',          label: 'Complete beginner — I know almost nothing' },
+      { value: 'elementary',        label: 'I know some basics (greetings, simple phrases)' },
+      { value: 'intermediate',      label: 'I can get by but I make a lot of mistakes' },
+      { value: 'upper-intermediate',label: 'Fairly confident — I want to polish and improve' },
+      { value: 'advanced',          label: 'Advanced — working on fluency and nuance' },
+      { value: 'unsure',            label: "I'm not sure — help me find out" },
+    ],
+  },
+  {
+    field: 'goal',
+    label: 'Why do you want to improve your English?',
+    options: [
+      { value: 'work',       label: 'Work or career advancement' },
+      { value: 'abroad',     label: 'Moving to or living in an English-speaking country' },
+      { value: 'travel',     label: 'Travel and getting around' },
+      { value: 'exams',      label: 'A specific exam (IELTS, TOEFL, Cambridge, etc.)' },
+      { value: 'confidence', label: 'General confidence in everyday situations' },
+      { value: 'other',      label: 'Something else' },
+    ],
+  },
+  {
+    field: 'challenge',
+    label: "What's your biggest challenge with English right now?",
+    options: [
+      { value: 'speaking',   label: 'Speaking — I freeze or lose confidence' },
+      { value: 'grammar',    label: "Grammar — I make mistakes I can't explain" },
+      { value: 'vocabulary', label: "Vocabulary — I don't know enough words" },
+      { value: 'listening',  label: 'Listening — native speakers are too fast' },
+      { value: 'writing',    label: 'Writing — emails, messages, formal texts' },
+      { value: 'all',        label: 'All of the above / not sure yet' },
+    ],
+  },
+  {
+    field: 'background',
+    label: 'Have you studied English formally before?',
+    options: [
+      { value: 'certified',  label: 'Yes — I have a certificate (IELTS, TOEFL, Cambridge…)' },
+      { value: 'studied',    label: 'Yes — I studied formally but have no certificate' },
+      { value: 'self-taught',label: 'Self-taught — apps, YouTube, online resources' },
+      { value: 'first-time', label: 'This will be my first time studying seriously' },
+    ],
+  },
+  {
+    field: 'time',
+    label: 'How much time per week can you realistically commit?',
+    options: [
+      { value: '1-2h',     label: '1–2 hours' },
+      { value: '3-4h',     label: '3–4 hours' },
+      { value: '5h+',      label: '5 hours or more' },
+      { value: 'flexible', label: "I'm flexible — not sure yet" },
+    ],
+  },
+  {
+    field: 'content',
+    label: 'What kind of English content interests you most?',
+    options: [
+      { value: 'business',     label: 'Business, meetings and professional communication' },
+      { value: 'conversation', label: 'Everyday conversation and social situations' },
+      { value: 'culture',      label: 'Culture, news and current events' },
+      { value: 'travel',       label: 'Travel and getting around' },
+      { value: 'academic',     label: 'Academic writing or exam preparation' },
+      { value: 'mixed',        label: 'A mix of everything' },
+    ],
+  },
+]
+
+// ─── Placement test questions ─────────────────────────────────
 const READING_PASSAGE = `Remote work has transformed the modern workplace in ways few anticipated. While many employees celebrate the flexibility and elimination of commutes, managers face new challenges in maintaining team cohesion and monitoring productivity. Studies suggest that remote workers often put in longer hours than their office-based counterparts, blurring the boundary between professional and personal life. However, companies that have embraced remote work report lower overhead costs and access to a broader talent pool, unconstrained by geography.`
 
 const TEST_QUESTIONS = [
@@ -110,14 +183,11 @@ const TEST_QUESTIONS = [
 // ─── App ─────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage] = useState('landing')
-  const [formData, setFormData] = useState({})
+  const [completedPath, setCompletedPath] = useState(null) // 'questionnaire' | 'consultation'
   const [testAnswers, setTestAnswers] = useState({})
   const [results, setResults] = useState(null)
 
-  const goTo = (p) => {
-    setPage(p)
-    window.scrollTo(0, 0)
-  }
+  const goTo = (p) => { setPage(p); window.scrollTo(0, 0) }
 
   if (page !== 'landing') {
     return (
@@ -128,30 +198,27 @@ export default function App() {
           </button>
         </div>
         <div className="flow-content">
-          {page === 'booking' && (
-            <BookingForm
-              onSubmit={(data) => { setFormData(data); goTo('path') }}
-            />
-          )}
-          {page === 'path' && (
-            <PathChoice
+          {page === 'start' && (
+            <Start
               onQuestionnaire={() => goTo('questionnaire')}
               onConsultation={() => goTo('consultation')}
-              onSkip={() => goTo('pretest')}
             />
           )}
           {page === 'questionnaire' && (
             <Questionnaire
-              onSubmit={() => goTo('pretest')}
-              onBack={() => goTo('path')}
+              onSubmit={() => { setCompletedPath('questionnaire'); goTo('pretest') }}
+              onBack={() => goTo('start')}
             />
           )}
           {page === 'consultation' && (
-            <ConsultationScreen onContinue={() => goTo('pretest')} />
+            <ConsultationScreen
+              onContinue={() => { setCompletedPath('consultation'); goTo('pretest') }}
+              onBack={() => goTo('start')}
+            />
           )}
           {page === 'pretest' && (
             <PreTest
-              formData={formData}
+              completedPath={completedPath}
               onTakeTest={() => goTo('test')}
               onSkip={() => goTo('landing')}
             />
@@ -169,7 +236,11 @@ export default function App() {
             />
           )}
           {page === 'results' && (
-            <Results results={results} onDone={() => goTo('landing')} />
+            <Results
+              results={results}
+              completedPath={completedPath}
+              onDone={() => goTo('landing')}
+            />
           )}
         </div>
       </div>
@@ -178,14 +249,34 @@ export default function App() {
 
   return (
     <div className="site">
-      <Navbar onBook={() => goTo('booking')} />
-      <Hero onBook={() => goTo('booking')} />
+      <Navbar onBook={() => goTo('start')} />
+      <Hero onBook={() => goTo('start')} />
       <HowItWorks />
       <Courses />
       <Testimonials />
-      <Pricing onBook={() => goTo('booking')} />
-      <BookingCTA onBook={() => goTo('booking')} />
+      <Pricing onBook={() => goTo('start')} />
+      <BookingCTA onBook={() => goTo('start')} />
       <Footer />
+    </div>
+  )
+}
+
+// ─── Shared: flow step indicator ──────────────────────────────
+function FlowSteps({ current }) {
+  const steps = ['About you', 'Placement test', 'Book your lesson']
+  return (
+    <div className="flow-steps">
+      {steps.map((s, i) => {
+        const n = i + 1
+        const state = n < current ? 'done' : n === current ? 'active' : 'idle'
+        return (
+          <div key={s} className={`flow-step flow-step--${state}`}>
+            <span className="flow-step-num">{state === 'done' ? '✓' : n}</span>
+            <span className="flow-step-label">{s}</span>
+            {i < steps.length - 1 && <span className="flow-step-sep">›</span>}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -222,11 +313,11 @@ function Hero({ onBook }) {
           </h1>
           <p className="hero-sub">
             Personalised lessons. Real conversations. No wasted time on things you already know.
-            Start with a free 30-minute lesson — no commitment.
+            Start with a free first lesson — no commitment.
           </p>
           <div className="hero-actions">
             <button className="btn-gold btn-lg" onClick={onBook}>
-              Book your free lesson
+              Get started — it's free
             </button>
             <a href="#how-it-works" className="btn-ghost btn-lg">
               See how it works
@@ -240,28 +331,28 @@ function Hero({ onBook }) {
               <div className="journey-step">
                 <div className="step-num">1</div>
                 <div>
-                  <strong>Share your goals</strong>
-                  <p>Tell Doğukan what you need English for</p>
+                  <strong>Tell us about yourself</strong>
+                  <p>Quick questionnaire or a free 15-min consultation call</p>
                 </div>
               </div>
               <div className="journey-step">
                 <div className="step-num">2</div>
                 <div>
-                  <strong>Quick placement</strong>
-                  <p>Optional 12-question test to find your level</p>
+                  <strong>Optional placement test</strong>
+                  <p>12 questions to pinpoint your exact level</p>
                 </div>
               </div>
               <div className="journey-step">
                 <div className="step-num">3</div>
                 <div>
-                  <strong>Free first lesson</strong>
-                  <p>No payment, no pressure — just good English</p>
+                  <strong>Your free first lesson</strong>
+                  <p>Designed specifically for you — no commitment</p>
                 </div>
               </div>
               <div className="journey-step">
                 <div className="step-num">4</div>
                 <div>
-                  <strong>Your custom course</strong>
+                  <strong>Start your course</strong>
                   <p>Lessons shaped around how you learn best</p>
                 </div>
               </div>
@@ -277,20 +368,20 @@ function Hero({ onBook }) {
 function HowItWorks() {
   const steps = [
     {
-      num: '01', title: 'Book your free lesson',
-      desc: "Fill in a short form — name, email, and when you're free. No credit card needed.",
+      num: '01', title: 'Tell us about yourself',
+      desc: "Answer 6 quick questions or book a free 15-minute consultation. Doğukan uses this to design your first lesson — no wasted time.",
     },
     {
       num: '02', title: 'Optional placement test',
-      desc: 'Take a 12-question test to help Doğukan understand your level and customise your lessons.',
+      desc: '12 questions, about 10 minutes. Helps Doğukan pinpoint your exact level. Completely optional.',
     },
     {
-      num: '03', title: 'Meet Doğukan',
-      desc: 'Your first 30-minute lesson is free. Get a feel for the teaching style and ask anything.',
+      num: '03', title: 'Your free first lesson',
+      desc: 'A 30-minute lesson built specifically around what you told us. No payment, no commitment — just good teaching.',
     },
     {
       num: '04', title: 'Start your course',
-      desc: 'Choose a lesson package and start making real, measurable progress in English.',
+      desc: 'If you enjoyed it, choose a lesson package and start making real, measurable progress.',
     },
   ]
 
@@ -406,16 +497,16 @@ function Testimonials() {
 function Pricing({ onBook }) {
   const plans = [
     {
-      name: 'Free trial', price: '£0', per: 'first lesson',
-      desc: 'Try before you commit. One 30-minute lesson, no payment required.',
-      features: ['30-minute lesson', 'Level assessment', 'No credit card needed'],
-      cta: 'Book now',
+      name: 'Free first lesson', price: '£0', per: 'no commitment',
+      desc: 'Try before you commit. A 30-minute lesson designed around you — no payment required.',
+      features: ['30-minute lesson', 'Built around your goals', 'No credit card needed'],
+      cta: 'Get started',
     },
     {
       name: 'Pay as you go', price: '£40', per: 'per lesson', featured: true,
       desc: 'Full flexibility. Pay per lesson, cancel or pause anytime.',
       features: ['60-minute lessons', 'Lesson notes & resources', 'WhatsApp support between lessons', 'Flexible scheduling'],
-      cta: 'Get started',
+      cta: 'Book now',
     },
     {
       name: 'Lesson bundle', price: '£420', per: '12 lessons',
@@ -442,9 +533,7 @@ function Pricing({ onBook }) {
               <p className="pricing-desc">{p.desc}</p>
               <ul className="pricing-features">
                 {p.features.map((f) => (
-                  <li key={f}>
-                    <span className="check gold">✓</span> {f}
-                  </li>
+                  <li key={f}><span className="check gold">✓</span> {f}</li>
                 ))}
               </ul>
               <button
@@ -469,10 +558,10 @@ function BookingCTA({ onBook }) {
       <div className="container">
         <h2>Ready to start speaking with confidence?</h2>
         <p className="cta-sub">
-          Your first lesson is free. No commitment, no pressure — just great English teaching.
+          Tell Doğukan about yourself and book your free first lesson. No commitment, no pressure.
         </p>
         <button className="btn-gold btn-lg" onClick={onBook}>
-          Book your free lesson →
+          Get started — it's free →
         </button>
       </div>
     </section>
@@ -493,102 +582,30 @@ function Footer() {
   )
 }
 
-// ─── BookingForm ──────────────────────────────────────────────
-function BookingForm({ onSubmit }) {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', availability: '' })
-  const [errors, setErrors] = useState({})
-
-  const validate = () => {
-    const e = {}
-    if (!form.name.trim()) e.name = 'Please enter your name'
-    if (!form.email.trim() || !form.email.includes('@')) e.email = 'Please enter a valid email'
-    return e
-  }
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    const errs = validate()
-    if (Object.keys(errs).length) { setErrors(errs); return }
-    onSubmit(form)
-  }
-
-  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
-
+// ─── Start ────────────────────────────────────────────────────
+function Start({ onQuestionnaire, onConsultation }) {
   return (
     <div className="flow-card">
-      <h2>Book your free lesson</h2>
+      <FlowSteps current={1} />
+      <h2>Let's understand what you need</h2>
       <p className="flow-sub">
-        Fill in your details and Doğukan will be in touch to confirm a time.
-      </p>
-      <form onSubmit={handleSubmit} className="booking-form">
-        <div className="form-field">
-          <label>Your name *</label>
-          <input
-            type="text" placeholder="e.g. Maria"
-            value={form.name} onChange={set('name')}
-            className={errors.name ? 'input-error' : ''}
-          />
-          {errors.name && <span className="field-error">{errors.name}</span>}
-        </div>
-        <div className="form-field">
-          <label>Email address *</label>
-          <input
-            type="email" placeholder="e.g. maria@email.com"
-            value={form.email} onChange={set('email')}
-            className={errors.email ? 'input-error' : ''}
-          />
-          {errors.email && <span className="field-error">{errors.email}</span>}
-        </div>
-        <div className="form-field">
-          <label>Phone number <span className="optional">(optional)</span></label>
-          <input
-            type="tel" placeholder="e.g. +44 7700 900000"
-            value={form.phone} onChange={set('phone')}
-          />
-        </div>
-        <div className="form-field">
-          <label>When are you usually free? <span className="optional">(optional)</span></label>
-          <input
-            type="text" placeholder="e.g. Weekday evenings, Saturday mornings"
-            value={form.availability} onChange={set('availability')}
-          />
-        </div>
-        <button type="submit" className="btn-gold btn-full btn-lg">Continue →</button>
-      </form>
-    </div>
-  )
-}
-
-// ─── PathChoice ───────────────────────────────────────────────
-function PathChoice({ onQuestionnaire, onConsultation, onSkip }) {
-  return (
-    <div className="flow-card">
-      <h2>One more step</h2>
-      <p className="flow-sub">
-        Help Doğukan prepare for your first lesson. This is completely optional — choose what works for you.
+        Before Doğukan designs your first lesson, he needs to know a little about you.
+        Choose how you'd like to share that — both take under 5 minutes.
       </p>
       <div className="path-options">
         <button className="path-card" onClick={onQuestionnaire}>
           <span className="path-icon">📋</span>
           <div>
-            <strong>Fill in a short questionnaire</strong>
-            <p>~2 minutes. Tell Doğukan about your goals, interests, and learning style.</p>
+            <strong>Answer 6 quick questions</strong>
+            <p>~3 minutes. Doğukan reviews your answers and designs the lesson around them.</p>
           </div>
           <span className="path-arrow">→</span>
         </button>
         <button className="path-card" onClick={onConsultation}>
           <span className="path-icon">📞</span>
           <div>
-            <strong>Request a consultation call</strong>
-            <p>Book a 15-minute call to talk through your goals before the lesson.</p>
-          </div>
-          <span className="path-arrow">→</span>
-        </button>
-        <button className="path-card path-skip" onClick={onSkip}>
-          <span className="path-icon">⏭️</span>
-          <div>
-            <strong>Skip for now</strong>
-            <p>No questionnaire, no call — go straight to your booking confirmation.</p>
+            <strong>Book a free consultation call</strong>
+            <p>Prefer to talk? Book a short call and Doğukan will ask you these questions himself.</p>
           </div>
           <span className="path-arrow">→</span>
         </button>
@@ -599,117 +616,167 @@ function PathChoice({ onQuestionnaire, onConsultation, onSkip }) {
 
 // ─── Questionnaire ────────────────────────────────────────────
 function Questionnaire({ onSubmit, onBack }) {
-  const [form, setForm] = useState({ goals: '', topics: '', level: '', style: '', frequency: '' })
-  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
+  const [form, setForm] = useState({
+    name: '', email: '',
+    level: '', goal: '', challenge: '', background: '', time: '', content: '',
+  })
+  const [errors, setErrors] = useState({})
+
+  const set = (field) => (val) => setForm((f) => ({ ...f, [field]: val }))
+
+  const validate = () => {
+    const e = {}
+    if (!form.name.trim()) e.name = 'Please enter your name'
+    if (!form.email.trim() || !form.email.includes('@')) e.email = 'Please enter a valid email'
+    Q_QUESTIONS.forEach((q) => {
+      if (!form[q.field]) e[q.field] = 'Please select an option'
+    })
+    return e
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const errs = validate()
+    if (Object.keys(errs).length) {
+      setErrors(errs)
+      const firstErr = document.querySelector('.field-error')
+      if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    onSubmit(form)
+  }
 
   return (
     <div className="flow-card">
+      <FlowSteps current={1} />
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>About you</h2>
       <p className="flow-sub">
-        Help Doğukan tailor your lessons from day one. (~2 minutes)
+        6 quick questions so Doğukan can design your first lesson around your exact needs.
       </p>
-      <form onSubmit={(e) => { e.preventDefault(); onSubmit(form) }} className="booking-form">
+      <form onSubmit={handleSubmit} className="booking-form">
         <div className="form-field">
-          <label>Why do you want to improve your English?</label>
-          <textarea
-            placeholder="e.g. Work, travel, moving abroad, exams, confidence..."
-            value={form.goals} onChange={set('goals')} rows={3}
-          />
-        </div>
-        <div className="form-field">
-          <label>What topics interest you most?</label>
+          <label>Your name *</label>
           <input
-            type="text"
-            placeholder="e.g. Business, culture, news, sport, technology..."
-            value={form.topics} onChange={set('topics')}
+            type="text" placeholder="e.g. Maria"
+            value={form.name}
+            onChange={(e) => set('name')(e.target.value)}
+            className={errors.name ? 'input-error' : ''}
           />
+          {errors.name && <span className="field-error">{errors.name}</span>}
         </div>
         <div className="form-field">
-          <label>How would you describe your current level?</label>
-          <select value={form.level} onChange={set('level')}>
-            <option value="">Select a level</option>
-            <option value="complete-beginner">Complete beginner</option>
-            <option value="beginner">Beginner (A1–A2)</option>
-            <option value="intermediate">Intermediate (B1–B2)</option>
-            <option value="advanced">Advanced (C1)</option>
-            <option value="not-sure">Not sure</option>
-          </select>
-        </div>
-        <div className="form-field">
-          <label>How do you prefer to learn?</label>
-          <textarea
-            placeholder="e.g. Conversation practice, grammar drills, reading, watching videos..."
-            value={form.style} onChange={set('style')} rows={2}
+          <label>Email address *</label>
+          <input
+            type="email" placeholder="e.g. maria@email.com"
+            value={form.email}
+            onChange={(e) => set('email')(e.target.value)}
+            className={errors.email ? 'input-error' : ''}
           />
+          {errors.email && <span className="field-error">{errors.email}</span>}
         </div>
-        <div className="form-field">
-          <label>How often would you like lessons?</label>
-          <select value={form.frequency} onChange={set('frequency')}>
-            <option value="">Select frequency</option>
-            <option value="once">Once a week</option>
-            <option value="twice">Twice a week</option>
-            <option value="intensive">More than twice (intensive)</option>
-            <option value="flexible">Flexible</option>
-          </select>
-        </div>
-        <button type="submit" className="btn-gold btn-full btn-lg">Submit →</button>
+
+        {Q_QUESTIONS.map((q) => (
+          <div key={q.field} className="form-field">
+            <label>{q.label}</label>
+            <div className="radio-group">
+              {q.options.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`radio-option ${form[q.field] === opt.value ? 'selected' : ''}`}
+                  onClick={() => set(q.field)(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {errors[q.field] && <span className="field-error">{errors[q.field]}</span>}
+          </div>
+        ))}
+
+        <button type="submit" className="btn-gold btn-full btn-lg">
+          Continue →
+        </button>
       </form>
     </div>
   )
 }
 
 // ─── ConsultationScreen ───────────────────────────────────────
-function ConsultationScreen({ onContinue }) {
+function ConsultationScreen({ onContinue, onBack }) {
+  const [opened, setOpened] = useState(false)
+
+  const handleOpen = () => {
+    window.open(CALENDLY_CONSULTATION, '_blank')
+    setOpened(true)
+  }
+
   return (
-    <div className="flow-card consultation-card">
-      <span className="confirmation-icon">📞</span>
-      <h2>Book a consultation call</h2>
+    <div className="flow-card">
+      <FlowSteps current={1} />
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <h2>Book your free consultation</h2>
       <p className="flow-sub">
-        Click below to open Doğukan's scheduling page and book a free 15-minute
-        consultation at a time that suits you.
+        Pick a time that works for you. Doğukan will ask you a few questions about your goals
+        and design your first lesson from there.
       </p>
-      <button
-        className="btn-gold btn-lg"
-        onClick={() => window.open(CALENDLY_CONSULTATION, '_blank')}
-      >
-        Open scheduling page →
-      </button>
-      <div className="divider" />
-      <p className="flow-note" style={{ marginBottom: '1rem' }}>
-        Already booked your call, or prefer to skip?
-      </p>
-      <button className="btn-ghost" onClick={onContinue}>
-        Continue to booking confirmation →
-      </button>
+
+      {!opened ? (
+        <button className="btn-gold btn-full btn-lg" onClick={handleOpen}>
+          Open scheduling page →
+        </button>
+      ) : (
+        <div className="consultation-booked">
+          <div className="booked-check">✓</div>
+          <h3>Scheduling page opened!</h3>
+          <p>Once you've picked a time, come back here and continue.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.5rem' }}>
+            <button className="btn-gold btn-full btn-lg" onClick={onContinue}>
+              I've booked my call — continue →
+            </button>
+            <button className="btn-ghost btn-full" onClick={handleOpen}>
+              Open scheduling page again
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── PreTest ──────────────────────────────────────────────────
-function PreTest({ formData, onTakeTest, onSkip }) {
-  const bookLesson = () => window.open(CALENDLY_FIRST_LESSON, '_blank')
+function PreTest({ completedPath, onTakeTest, onSkip }) {
+  const isQuestionnaire = completedPath === 'questionnaire'
+
+  const handleSkip = () => {
+    if (isQuestionnaire) window.open(CALENDLY_FIRST_LESSON, '_blank')
+    onSkip()
+  }
 
   return (
     <div className="flow-card text-center">
+      <FlowSteps current={2} />
       <span className="confirmation-icon">✅</span>
-      <h2>You're all set{formData.name ? `, ${formData.name}` : ''}!</h2>
+      <h2>{isQuestionnaire ? 'All done — one optional step left' : 'Your consultation is booked!'}</h2>
       <p className="flow-sub">
-        Doğukan will be in touch at <strong>{formData.email}</strong> to confirm your lesson time.
+        {isQuestionnaire
+          ? 'Doğukan has everything he needs. You can also take a quick placement test — it helps him plan your first lesson even better.'
+          : 'Doğukan will chat with you at your consultation and design your first lesson from there. In the meantime, you can take an optional placement test.'}
       </p>
 
       <div className="pretest-box">
-        <h3>Want to take a quick placement test?</h3>
+        <h3>Want to take a placement test?</h3>
         <p>
-          It takes about 10 minutes and gives Doğukan a clear picture of your current level
-          before your first lesson. Completely optional — no pressure either way.
+          12 questions, about 10 minutes. Covers grammar, vocabulary, reading and writing.
+          Completely optional — no pressure either way.
         </p>
         <div className="pretest-actions">
           <button className="btn-gold btn-lg" onClick={onTakeTest}>
-            Take the placement test
+            Yes, take the test
           </button>
-          <button className="btn-outline btn-lg" onClick={() => { bookLesson(); onSkip() }}>
-            Skip — book my lesson now →
+          <button className="btn-outline btn-lg" onClick={handleSkip}>
+            {isQuestionnaire ? 'Skip — book my lesson now →' : 'Skip, I\'m all done'}
           </button>
         </div>
       </div>
@@ -741,6 +808,7 @@ function PlacementTest({ onSubmit, onBack }) {
 
   return (
     <div className="flow-card test-card">
+      <FlowSteps current={2} />
       <div className="test-header">
         <div className="test-progress-label">
           <span>{q.category}</span>
@@ -776,17 +844,14 @@ function PlacementTest({ onSubmit, onBack }) {
           ))}
         </div>
       )}
-
       {q.type === 'fill-blank' && (
         <input
-          type="text"
-          className="fill-input"
+          type="text" className="fill-input"
           placeholder={q.placeholder}
           value={answers[q.id] || ''}
           onChange={(e) => handleAnswer(e.target.value)}
         />
       )}
-
       {q.type === 'writing' && (
         <textarea
           className="writing-input"
@@ -910,7 +975,7 @@ ${formatted}`
 }
 
 // ─── Results ──────────────────────────────────────────────────
-function Results({ results, onDone }) {
+function Results({ results, completedPath, onDone }) {
   if (!results) return null
 
   const levelColors = {
@@ -934,6 +999,7 @@ function Results({ results, onDone }) {
 
   return (
     <div className="flow-card">
+      <FlowSteps current={3} />
       <div className="results-header text-center">
         <div className="result-level-badge" style={{ borderColor: color, color }}>
           {results.level}
@@ -979,16 +1045,29 @@ function Results({ results, onDone }) {
         Recommended course: <strong>{results.recommended_course}</strong>
       </div>
 
-      <button
-        className="btn-gold btn-full btn-lg"
-        onClick={() => window.open(CALENDLY_FIRST_LESSON, '_blank')}
-        style={{ marginBottom: '0.75rem' }}
-      >
-        Book your first lesson →
-      </button>
-      <button className="btn-ghost btn-full" onClick={onDone}>
-        Back to home
-      </button>
+      {completedPath === 'questionnaire' ? (
+        <>
+          <button
+            className="btn-gold btn-full btn-lg"
+            style={{ marginBottom: '0.75rem' }}
+            onClick={() => window.open(CALENDLY_FIRST_LESSON, '_blank')}
+          >
+            Book your free first lesson →
+          </button>
+          <button className="btn-ghost btn-full" onClick={onDone}>
+            Back to home
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="consultation-note">
+            Your results will be shared with Doğukan before your consultation call.
+          </div>
+          <button className="btn-ghost btn-full" onClick={onDone}>
+            Back to home
+          </button>
+        </>
+      )}
     </div>
   )
 }
