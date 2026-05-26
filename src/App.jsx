@@ -46,11 +46,11 @@ const Q_QUESTIONS = [
   },
   {
     field: 'background',
-    label: 'Have you studied English formally before?',
+    label: 'Have you taken an English course before?',
     options: [
-      { value: 'certified',  label: 'Yes — I have a certificate (IELTS, TOEFL, Cambridge…)' },
-      { value: 'studied',    label: 'Yes — I studied formally but have no certificate' },
-      { value: 'self-taught',label: 'Self-taught — apps, YouTube, online resources' },
+      { value: 'certified',  label: 'Yes — I completed a course' },
+      { value: 'studied',    label: "Yes — I took a course but didn't complete it" },
+      { value: 'self-taught',label: 'I never took an English course before' },
       { value: 'first-time', label: 'This will be my first time studying seriously' },
     ],
   },
@@ -407,7 +407,7 @@ function Navbar({ onBook, user, onAccount }) {
           {user ? (
             <button className="btn-outline" onClick={onAccount}>My account</button>
           ) : (
-            <button className="btn-gold" onClick={onBook}>Book free lesson</button>
+            <button className="btn-gold" onClick={onBook}>Book a free lesson</button>
           )}
         </div>
       </div>
@@ -424,7 +424,7 @@ function Hero({ onBook }) {
           <div className="hero-badge">CELTA-Certified English Tutor</div>
           <h1>
             Speak English with confidence.<br />
-            <span className="gold">One-to-one lessons</span> built around you.
+            <span className="gold">One-to-one lessons</span> <span className="gold">built around you.</span>
           </h1>
           <p className="hero-sub">
             Personalised lessons. Real conversations. No wasted time on things you already know.
@@ -446,21 +446,21 @@ function Hero({ onBook }) {
               <div className="journey-step">
                 <div className="step-num">1</div>
                 <div>
-                  <strong>Tell us about yourself</strong>
+                  <strong>Tell me about your learning needs</strong>
                   <p>Quick questionnaire or a free 15-min consultation call</p>
                 </div>
               </div>
               <div className="journey-step">
                 <div className="step-num">2</div>
                 <div>
-                  <strong>Optional placement test</strong>
-                  <p>12 questions to pinpoint your exact level</p>
+                  <strong>Free Level Test</strong>
+                  <p>Take a test so that we determine your level</p>
                 </div>
               </div>
               <div className="journey-step">
                 <div className="step-num">3</div>
                 <div>
-                  <strong>Your free first lesson</strong>
+                  <strong>First lesson free</strong>
                   <p>Designed specifically for you — no commitment</p>
                 </div>
               </div>
@@ -468,7 +468,7 @@ function Hero({ onBook }) {
                 <div className="step-num">4</div>
                 <div>
                   <strong>Start your course</strong>
-                  <p>Lessons shaped around how you learn best</p>
+                  <p>Lessons focus on improving your practical communication skills. I prepare custom lessons to address your needs and fill in the gaps in your knowledge.</p>
                 </div>
               </div>
             </div>
@@ -483,16 +483,16 @@ function Hero({ onBook }) {
 function HowItWorks() {
   const steps = [
     {
-      num: '01', title: 'Tell us about yourself',
-      desc: "Answer 6 quick questions or book a free 15-minute consultation call. Dogukan uses this to design your first lesson around your exact needs.",
+      num: '01', title: 'Tell me about your learning needs',
+      desc: "Please answer a few quick questions or book a free 15-minute consultation call. I will use your answers to understand your exact needs and design your trial lesson, should you request one.",
     },
     {
-      num: '02', title: 'Optional placement test',
-      desc: '12 questions, about 10 minutes. Helps Dogukan pinpoint your exact level. Completely optional.',
+      num: '02', title: 'Free Level Test',
+      desc: '12 questions, about 10 minutes. Helps pinpoint your exact level. Completely optional.',
     },
     {
-      num: '03', title: 'Your free first lesson',
-      desc: 'A 60-minute lesson built specifically around what you told us. No payment, no commitment — just good teaching.',
+      num: '03', title: 'First lesson free',
+      desc: 'A 60-minute lesson built specifically around what you told me. No payment, no commitment — just good teaching.',
     },
     {
       num: '04', title: 'Start your course',
@@ -520,24 +520,54 @@ function HowItWorks() {
 }
 
 // ─── Courses ──────────────────────────────────────────────────
+const COURSES_DATA = [
+  {
+    name: 'Elementary English', tag: 'A1 → A2', color: '#3b82f6',
+    desc: 'Build a solid foundation in English. Covers essential grammar, vocabulary, and communication skills for everyday situations.',
+    schedule: '6 weeks · 2 lessons/week · 90 min/lesson',
+    modules: [
+      { title: 'Module 1 — Getting Started (Lessons 1–2)', lessons: ['Lesson 1: Greetings, introductions, alphabet, numbers 1–20', 'Lesson 2: Countries & nationalities, verb to be (I am / You are / He is)'] },
+      { title: 'Module 2 — People & Descriptions (Lessons 3–4)', lessons: ['Lesson 3: Family members, possessive adjectives (my, your, his, her)', 'Lesson 4: Physical descriptions, adjectives, verb to have (She has brown hair)'] },
+      { title: 'Module 3 — Daily Life (Lessons 5–6)', lessons: ['Lesson 5: Jobs & workplaces, present simple (I work / She works)', 'Lesson 6: Daily routines, time expressions (at 7am, every day, usually)'] },
+      { title: 'Module 4 — Places & Movement (Lessons 7–8)', lessons: ['Lesson 7: Places in a city, there is / there are, prepositions of place', 'Lesson 8: Directions & transport, can for ability/requests'] },
+      { title: 'Module 5 — Food & Shopping (Lessons 9–10)', lessons: ['Lesson 9: Food & drink, countable/uncountable nouns, some / any', 'Lesson 10: Shopping, prices, would like, polite requests'] },
+      { title: 'Module 6 — Past & Future (Lessons 11–12)', lessons: ['Lesson 11: Past simple (was/were + regular verbs), talking about yesterday/last week', 'Lesson 12: Future plans (going to), review + end-of-course activity'] },
+    ],
+  },
+  {
+    name: 'Intermediate English', tag: 'B1 → B2', color: '#d4a853',
+    desc: 'Expand your grammar, fluency, and confidence. From telling stories to discussing opinions — structured progress at an intermediate level.',
+    schedule: '6 weeks · 2 lessons/week · 90 min/lesson',
+    modules: [
+      { title: 'Module 1 — Identity & Experience (Lessons 1–2)', lessons: ['Lesson 1: Talking about yourself, present simple vs. continuous review, frequency adverbs', 'Lesson 2: Life experiences, present perfect (have you ever…?), past simple contrast'] },
+      { title: 'Module 2 — Storytelling & the Past (Lessons 3–4)', lessons: ['Lesson 3: Narrative tenses — past simple, past continuous (was doing when…)', 'Lesson 4: Past perfect (had already left), sequencing a story, time linkers'] },
+      { title: 'Module 3 — People & Relationships (Lessons 5–6)', lessons: ['Lesson 5: Describing personality, comparative & superlative adjectives, intensifiers', 'Lesson 6: Relationships & social language, verb patterns (want someone to / enjoy -ing)'] },
+      { title: 'Module 4 — Work & Ambition (Lessons 7–8)', lessons: ["Lesson 7: Jobs & career, present perfect continuous (I've been working here for…)", 'Lesson 8: Future forms — will, going to, present continuous for arrangements, predictions'] },
+      { title: 'Module 5 — World & Society (Lessons 9–10)', lessons: ['Lesson 9: Passives (present & past), news topics, formal vs. informal register', 'Lesson 10: Conditionals — zero, first, and second (If I had more time, I would…)'] },
+      { title: 'Module 6 — Opinions & Reflection (Lessons 11–12)', lessons: ['Lesson 11: Modal verbs for obligation, advice & speculation (must, should, might, can\'t)', 'Lesson 12: Reported speech basics, review + debate or discussion task'] },
+    ],
+  },
+  {
+    name: 'Business English', tag: 'Elementary or Intermediate level', color: '#10b981',
+    desc: 'Professional English for the workplace. Emails, meetings, presentations, negotiations — lessons built around what you actually need at work.',
+    schedule: '6 weeks · 2 lessons/week · 90 min/lesson',
+    modules: [
+      { title: 'Module 1 — Professional Identity (Lessons 1–2)', lessons: ['Lesson 1: Introductions & small talk, professional register, company descriptions (We specialize in / Our core business is)', 'Lesson 2: Talking about your role & responsibilities, present simple & continuous in professional contexts, workplace vocabulary'] },
+      { title: 'Module 2 — Communication at Work (Lessons 3–4)', lessons: ['Lesson 3: Business emails — structure, tone, formality levels; functional phrases for requests, follow-ups, and apologies', 'Lesson 4: Telephoning & video calls — opening/closing calls, clarifying & confirming, dealing with problems on a call'] },
+      { title: 'Module 3 — Meetings & Negotiations (Lessons 5–6)', lessons: ['Lesson 5: Meeting language — agreeing/disagreeing diplomatically, interrupting politely, making & responding to suggestions', 'Lesson 6: Negotiation basics — conditionals in negotiation (If you could lower the price, we would…), compromise language, win-win framing'] },
+      { title: 'Module 4 — Data & Presentations (Lessons 7–8)', lessons: ['Lesson 7: Describing trends & data — graphs, charts, numbers; language of change (rose sharply, fell slightly, remained stable)', 'Lesson 8: Presentations — structuring a talk, signposting language (Moving on to… / To summarize…), handling Q&A'] },
+      { title: 'Module 5 — Business Topics (Lessons 9–10)', lessons: ['Lesson 9: Marketing & branding — target audience, USPs, passive voice in professional writing (The product was launched / is sold in…)', 'Lesson 10: HR & recruitment — job ads, interview language, modal verbs for requirements & expectations (must, should, be expected to)'] },
+      { title: 'Module 6 — Strategy & Review (Lessons 11–12)', lessons: ['Lesson 11: Business plans & future strategies — future forms (will, going to, planning to), problem-solution structures, SWOT discussion', 'Lesson 12: Case study or role-play — full simulation (pitch, negotiation, or meeting), error correction, course review'] },
+    ],
+  },
+]
+
 function Courses() {
-  const courses = [
-    {
-      name: 'Conversational English', tag: 'Beginner → Advanced', color: '#3b82f6',
-      desc: 'Build real confidence speaking English. Whether you\'re starting from scratch or already getting by, these lessons focus on natural speech, listening, and everyday fluency.',
-      topics: ['Speaking with confidence', 'Everyday vocabulary & phrases', 'Listening & comprehension', 'Social situations & small talk', 'Travel & getting around', 'Natural, fluent expression'],
-    },
-    {
-      name: 'Business English', tag: 'For professionals', color: '#d4a853', featured: true,
-      desc: 'Take your career further with professional English. From emails and meetings to presentations and negotiations — lessons built around what you actually need at work.',
-      topics: ['Professional emails & communication', 'Meetings, presentations & negotiations', 'Business vocabulary & idioms', 'Report & proposal writing', 'Interview & career conversations'],
-    },
-    {
-      name: 'Exam Preparation', tag: 'IELTS · TOEFL · Cambridge', color: '#a855f7',
-      desc: 'Targeted preparation for English exams. Structured lessons covering every part of the test — with proven strategies, practice papers, and expert feedback on all four skills.',
-      topics: ['IELTS Academic & General Training', 'TOEFL iBT preparation', 'Cambridge B2 First & C1 Advanced', 'Exam strategies & time management', 'Practice tests with detailed feedback'],
-    },
-  ]
+  const [openModules, setOpenModules] = useState({})
+  const toggle = (ci, mi) => {
+    const key = `${ci}-${mi}`
+    setOpenModules(prev => ({ ...prev, [key]: !prev[key] }))
+  }
 
   return (
     <section className="section section-alt" id="courses">
@@ -545,19 +575,38 @@ function Courses() {
         <div className="section-label">What you'll learn</div>
         <h2 className="section-title">Courses</h2>
         <div className="courses-grid">
-          {courses.map((c) => (
-            <div key={c.name} className={`course-card ${c.featured ? 'course-featured' : ''}`}>
-              {c.featured && <div className="course-badge">Most popular</div>}
+          {COURSES_DATA.map((c, ci) => (
+            <div key={c.name} className="course-card">
               <div className="course-tag" style={{ color: c.color }}>{c.tag}</div>
               <h3 className="course-name">{c.name}</h3>
               <p className="course-desc">{c.desc}</p>
-              <ul className="course-topics">
-                {c.topics.map((t) => (
-                  <li key={t}>
-                    <span className="check" style={{ color: c.color }}>✓</span> {t}
-                  </li>
-                ))}
-              </ul>
+              <div className="course-schedule">
+                <span className="check" style={{ color: c.color }}>✓</span> {c.schedule}
+              </div>
+              <div className="course-modules">
+                {c.modules.map((mod, mi) => {
+                  const isOpen = openModules[`${ci}-${mi}`]
+                  return (
+                    <div key={mi} className="course-module">
+                      <button
+                        className="module-toggle"
+                        onClick={() => toggle(ci, mi)}
+                        aria-expanded={isOpen}
+                      >
+                        <span>{mod.title}</span>
+                        <span className="module-chevron">{isOpen ? '▲' : '▼'}</span>
+                      </button>
+                      {isOpen && (
+                        <ul className="module-lessons">
+                          {mod.lessons.map((l, li) => (
+                            <li key={li}>{l}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           ))}
         </div>
@@ -704,15 +753,15 @@ function Start({ onQuestionnaire, onConsultation }) {
       <FlowSteps current={1} />
       <h2>Let's understand what you need</h2>
       <p className="flow-sub">
-        Before Dogukan designs your first lesson, he needs to know a little about you.
-        Choose how you'd like to share that — both take under 5 minutes.
+        Before I design your trial lesson, I need to know a little about you. You can either answer
+        a few questions (shouldn't take more than 3 minutes) or book a free consultation call with me.
       </p>
       <div className="path-options">
         <button className="path-card" onClick={onQuestionnaire}>
           <span className="path-icon">📋</span>
           <div>
-            <strong>Answer 6 quick questions</strong>
-            <p>~3 minutes. Dogukan reviews your answers and designs the lesson around them.</p>
+            <strong>Answer a few questions</strong>
+            <p>3 minutes. I'll review your answers and design your trial lesson around them.</p>
           </div>
           <span className="path-arrow">→</span>
         </button>
@@ -732,7 +781,7 @@ function Start({ onQuestionnaire, onConsultation }) {
 // ─── Questionnaire ────────────────────────────────────────────
 function Questionnaire({ onSubmit, onBack }) {
   const [form, setForm] = useState({
-    name: '', email: '',
+    name: '', email: '', nativeLanguage: '',
     level: '', goal: '', challenge: '', background: '', time: '', content: '',
   })
   const [errors, setErrors] = useState({})
@@ -767,7 +816,7 @@ function Questionnaire({ onSubmit, onBack }) {
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>About you</h2>
       <p className="flow-sub">
-        6 quick questions so Dogukan can design your first lesson around your exact needs.
+        A few quick questions so I can design your trial lesson around your exact needs.
       </p>
       <form onSubmit={handleSubmit} className="booking-form">
         <div className="form-field">
@@ -789,6 +838,14 @@ function Questionnaire({ onSubmit, onBack }) {
             className={errors.email ? 'input-error' : ''}
           />
           {errors.email && <span className="field-error">{errors.email}</span>}
+        </div>
+        <div className="form-field">
+          <label>What is your native language?</label>
+          <input
+            type="text" placeholder="e.g. Spanish"
+            value={form.nativeLanguage}
+            onChange={(e) => set('nativeLanguage')(e.target.value)}
+          />
         </div>
 
         {Q_QUESTIONS.map((q) => (

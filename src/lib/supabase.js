@@ -26,6 +26,7 @@ export async function saveQuestionnaire(data, studentId = null) {
       student_id:         studentId,
       guest_name:         data.name,
       guest_email:        data.email,
+      native_language:    data.nativeLanguage || null,
       level:              data.level,
       goal:               data.goal,
       challenge:          data.challenge,
