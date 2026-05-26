@@ -16,9 +16,13 @@ export const supabase = (url && key)
 /** Save a questionnaire submission (guest or logged-in). Returns the new row id. */
 export async function saveQuestionnaire(data, studentId = null) {
   if (!supabase) return null
-  const { data: row, error } = await supabase
+  // Generate UUID client-side so we never need to SELECT back the row
+  // (avoids RLS SELECT-after-INSERT issues for anonymous users)
+  const id = crypto.randomUUID()
+  const { error } = await supabase
     .from('questionnaire_submissions')
     .insert({
+      id,
       student_id:         studentId,
       guest_name:         data.name,
       guest_email:        data.email,
@@ -30,18 +34,18 @@ export async function saveQuestionnaire(data, studentId = null) {
       content_preference: data.content,
       path:               'questionnaire',
     })
-    .select('id')
-    .single()
-  if (error) console.error('[supabase] saveQuestionnaire:', error)
-  return row?.id ?? null
+  if (error) { console.error('[supabase] saveQuestionnaire:', error); return null }
+  return id
 }
 
 /** Save placement test results (guest or logged-in). */
 export async function savePlacementResult(results, submissionId = null, studentId = null) {
   if (!supabase) return null
-  const { data: row, error } = await supabase
+  const id = crypto.randomUUID()
+  const { error } = await supabase
     .from('placement_results')
     .insert({
+      id,
       submission_id:      submissionId,
       student_id:         studentId,
       grammar_score:      results.grammar_score,
@@ -56,10 +60,8 @@ export async function savePlacementResult(results, submissionId = null, studentI
       teacher_notes:      results.teacher_notes,
       recommended_course: results.recommended_course,
     })
-    .select('id')
-    .single()
-  if (error) console.error('[supabase] savePlacementResult:', error)
-  return row?.id ?? null
+  if (error) { console.error('[supabase] savePlacementResult:', error); return null }
+  return id
 }
 
 /** After a guest signs up, link their previous submissions to their new account. */
