@@ -18,6 +18,12 @@
  *  ─────────────────────────────────────────────────────────────────────────────
  */
 
+// ─── WhatsApp ──────────────────────────────────────────────────────────────────
+// Set your WhatsApp number here (include country code, no spaces or dashes).
+// Example: '+447911123456'  or  '+905551234567'
+// Leave as '' to hide the WhatsApp button.
+export const WHATSAPP_NUMBER = ''
+
 // ─── About Me ─────────────────────────────────────────────────────────────────
 export const ABOUT = {
   paragraphs: [
