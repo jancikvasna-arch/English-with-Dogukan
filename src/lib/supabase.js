@@ -345,6 +345,123 @@ export async function createLessonPlan(title, description, createdBy, exerciseId
   return planId
 }
 
+// ─── Access Levels & Profiles ─────────────────────────────────
+
+/** Fetch the logged-in student's own profile. */
+export async function fetchMyProfile(userId) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, email, role, access_level, access_granted_at, created_at')
+    .eq('id', userId)
+    .single()
+  if (error) { console.error('[supabase] fetchMyProfile:', error); return null }
+  return data
+}
+
+/** Update the user's display name. */
+export async function updateMyName(userId, name) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('profiles')
+    .update({ name })
+    .eq('id', userId)
+  if (error) { console.error('[supabase] updateMyName:', error); return false }
+  return true
+}
+
+/** Admin: change a student's access level. */
+export async function updateStudentAccessLevel(studentId, accessLevel) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('profiles')
+    .update({ access_level: accessLevel, access_granted_at: new Date().toISOString() })
+    .eq('id', studentId)
+  if (error) { console.error('[supabase] updateStudentAccessLevel:', error); return false }
+  return true
+}
+
+/** Admin: fetch all non-admin student profiles with latest submission + result. */
+export async function fetchStudentsAdmin() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('profiles')
+    .select(`
+      id, name, email, access_level, access_granted_at, created_at,
+      questionnaire_submissions ( id, level, goal, submitted_at,
+        placement_results ( id, cefr_level, overall_score, writing_reviewed ) )
+    `)
+    .eq('role', 'student')
+    .order('created_at', { ascending: false })
+  if (error) { console.error('[supabase] fetchStudentsAdmin:', error); return [] }
+  return data ?? []
+}
+
+// ─── Lessons ──────────────────────────────────────────────────
+
+/** Admin: fetch all lessons for a given student. */
+export async function fetchStudentLessons(studentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('lessons')
+    .select('*')
+    .eq('student_id', studentId)
+    .order('lesson_no', { ascending: true })
+  if (error) { console.error('[supabase] fetchStudentLessons:', error); return [] }
+  return data ?? []
+}
+
+/** Admin: create a new lesson record for a student. */
+export async function createLesson({ studentId, lessonNo, title, scheduledAt, createdBy }) {
+  if (!supabase) return null
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('lessons').insert({
+    id,
+    student_id:   studentId,
+    lesson_no:    lessonNo   || null,
+    title:        title      || null,
+    scheduled_at: scheduledAt || null,
+    created_by:   createdBy,
+    status:       'scheduled',
+  })
+  if (error) { console.error('[supabase] createLesson:', error); return null }
+  return id
+}
+
+/** Admin: update lesson fields (notes, visibility, status, completion date). */
+export async function updateLesson(lessonId, updates) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('lessons')
+    .update(updates)
+    .eq('id', lessonId)
+  if (error) { console.error('[supabase] updateLesson:', error); return false }
+  return true
+}
+
+/** Student: fetch own lessons (all statuses; app filters visibility on notes). */
+export async function fetchMyLessons(userId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('lessons')
+    .select('*')
+    .eq('student_id', userId)
+    .order('lesson_no', { ascending: true })
+  if (error) { console.error('[supabase] fetchMyLessons:', error); return [] }
+  return data ?? []
+}
+
+/** Student: submit feedback on a lesson. */
+export async function submitLessonFeedback(lessonId, feedback) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('lessons')
+    .update({ student_feedback: feedback })
+    .eq('id', lessonId)
+  if (error) { console.error('[supabase] submitLessonFeedback:', error); return false }
+  return true
+}
+
 /** Assign all exercises in a lesson plan to a student at once. */
 export async function assignLessonPlan({ planId, studentId, assignedBy, mode, note }) {
   if (!supabase) return false

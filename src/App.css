@@ -1342,3 +1342,183 @@ a { text-decoration: none; }
   .builder-type-grid   { grid-template-columns: 1fr; }
   .plan-builder-grid   { grid-template-columns: 1fr; }
 }
+
+/* ─── Access Badge ───────────────────────────────────────────── */
+.access-badge {
+  display: inline-flex; align-items: center;
+  background: color-mix(in srgb, var(--badge-color) 12%, transparent);
+  color: var(--badge-color);
+  border: 1px solid color-mix(in srgb, var(--badge-color) 35%, transparent);
+  border-radius: 20px; padding: 0.28rem 0.75rem;
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ─── Access Card (student dashboard) ───────────────────────── */
+.access-card {
+  display: flex; align-items: center; justify-content: space-between;
+  background: color-mix(in srgb, var(--badge-color, #94a3b8) 6%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--badge-color, #94a3b8) 25%, var(--border));
+  border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+}
+.access-card-left { display: flex; flex-direction: column; gap: 0.35rem; }
+.access-card-desc { font-size: 0.85rem; color: var(--text-muted); margin: 0; }
+
+.access-bundle-progress {
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(212,168,83,0.08); border: 1px solid rgba(212,168,83,0.2);
+  border-radius: 10px; padding: 0.5rem 1rem; min-width: 80px;
+}
+.access-bundle-count {
+  font-family: 'DM Serif Display', serif; font-size: 1.6rem; color: var(--gold);
+  line-height: 1;
+}
+.access-bundle-count span { font-size: 0.9rem; color: var(--text-muted); }
+
+/* ─── Pending message ────────────────────────────────────────── */
+.dashboard-pending-msg {
+  background: rgba(148,163,184,0.07); border: 1px solid rgba(148,163,184,0.2);
+  border-radius: 12px; padding: 1rem 1.25rem; margin: 1rem 0;
+}
+.dashboard-pending-msg p { margin: 0; font-size: 0.9rem; color: var(--text-muted); }
+
+/* ─── Lesson List (student) ──────────────────────────────────── */
+.lesson-list { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; }
+
+.lesson-row {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+}
+.lesson-row-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.lesson-row-left { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+
+.lesson-status-chip {
+  display: inline-flex; align-items: center;
+  border-radius: 20px; padding: 0.2rem 0.65rem;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap;
+}
+.lesson-status-chip--scheduled  { background: rgba(96,165,250,0.12);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.3);  }
+.lesson-status-chip--completed  { background: rgba(74,222,128,0.1);   color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
+.lesson-status-chip--cancelled  { background: rgba(248,113,113,0.1);  color: #f87171; border: 1px solid rgba(248,113,113,0.25);}
+
+.lesson-title { font-size: 0.9rem; font-weight: 500; color: var(--text); }
+.lesson-date  { font-size: 0.8rem; color: var(--text-muted); }
+
+.lesson-teacher-note {
+  margin-top: 0.6rem; padding: 0.65rem 0.9rem;
+  background: rgba(212,168,83,0.06); border-left: 3px solid var(--gold);
+  border-radius: 0 8px 8px 0;
+}
+.lesson-note-label { font-size: 0.75rem; font-weight: 600; color: var(--gold); display: block; margin-bottom: 0.25rem; }
+.lesson-teacher-note p { margin: 0; font-size: 0.87rem; color: var(--text-muted); }
+
+.lesson-my-feedback {
+  margin-top: 0.5rem; font-size: 0.84rem; color: var(--text-muted);
+  font-style: italic; padding: 0.4rem 0;
+}
+
+.lesson-feedback-btn {
+  display: inline-block; margin-top: 0.5rem; background: none; border: none;
+  color: var(--gold); font-size: 0.84rem; font-family: 'DM Sans', sans-serif;
+  cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px;
+}
+.lesson-feedback-btn:hover { color: var(--gold-light); }
+
+.lesson-feedback-form { margin-top: 0.6rem; }
+
+/* ─── Account Settings ───────────────────────────────────────── */
+.settings-section {
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--border);
+}
+.settings-section:first-of-type { border-top: none; padding-top: 1rem; }
+.settings-section h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+
+/* ─── Admin — Access Management ─────────────────────────────── */
+.admin-access-row {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+}
+.admin-access-select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
+  padding: 0.55rem 0.85rem; cursor: pointer; flex: 1; min-width: 180px;
+  appearance: auto;
+}
+.admin-access-select:focus { outline: none; border-color: var(--gold); }
+
+/* ─── Admin — Tab Badge ──────────────────────────────────────── */
+.admin-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; background: var(--gold); color: #0a0f1e;
+  border-radius: 9px; font-size: 0.7rem; font-weight: 700; padding: 0 0.35rem;
+  margin-left: 0.35rem; line-height: 1;
+}
+
+/* ─── Admin — Section Label ──────────────────────────────────── */
+.admin-section-label {
+  font-size: 0.75rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 0 0 0.5rem; padding: 0;
+}
+
+/* ─── Admin — Student Row (pending variant) ──────────────────── */
+.admin-student-row--pending {
+  border-left: 3px solid rgba(148,163,184,0.4) !important;
+}
+
+/* ─── Admin — Detail Header ──────────────────────────────────── */
+.admin-detail-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+}
+
+/* ─── Admin — Lessons ────────────────────────────────────────── */
+.admin-lessons-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.admin-lessons-header h3 { margin: 0; }
+
+.admin-add-lesson-form {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1rem 1.1rem; margin-bottom: 0.75rem;
+}
+
+.admin-lesson-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+
+.admin-lesson-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+.admin-lesson-row--editing {
+  background: var(--bg-card); border-color: rgba(212,168,83,0.3);
+  padding: 1rem 1.1rem; flex-direction: column; align-items: stretch;
+}
+
+.admin-lesson-row-left {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; flex: 1;
+}
+
+.admin-lesson-edit-grid {
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.75rem; align-items: end;
+}
+
+.admin-lesson-notes-indicator {
+  font-size: 0.76rem; color: var(--text-muted); background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 0.15rem 0.5rem; white-space: nowrap;
+}
+
+.admin-lesson-visible-toggle {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.85rem; color: var(--text-muted); cursor: pointer;
+  margin-top: 0.4rem;
+}
+.admin-lesson-visible-toggle input[type="checkbox"] { accent-color: var(--gold); }
+
+@media (max-width: 640px) {
+  .admin-lesson-edit-grid { grid-template-columns: 1fr 1fr; }
+  .admin-detail-header    { flex-direction: column; }
+  .access-card            { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+}

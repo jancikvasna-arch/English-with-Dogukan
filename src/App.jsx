@@ -5,6 +5,8 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
   fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
   createExerciseWithQuestions, fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
+  fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
+  fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER } from './content'
 
@@ -194,6 +196,7 @@ export default function App() {
     const path = window.location.pathname
     if (path.startsWith('/admin'))     return 'admin'
     if (path.startsWith('/dashboard')) return 'dashboard'
+    if (path.startsWith('/settings'))  return 'settings'
     if (path.startsWith('/signin'))    return 'signin'
     return 'landing'
   }
@@ -221,8 +224,9 @@ export default function App() {
   const goTo = (p) => {
     setPage(p)
     window.scrollTo(0, 0)
-    if (p === 'admin')         window.history.pushState({}, '', '/admin')
+    if (p === 'admin')          window.history.pushState({}, '', '/admin')
     else if (p === 'dashboard') window.history.pushState({}, '', '/dashboard')
+    else if (p === 'settings')  window.history.pushState({}, '', '/settings')
     else if (p === 'signin')    window.history.pushState({}, '', '/signin')
     else if (p === 'landing')   window.history.pushState({}, '', '/')
   }
@@ -342,7 +346,12 @@ export default function App() {
             />
           )}
           {page === 'dashboard' && (
-            <StudentDashboard user={user} onSignOut={handleSignOut} onBook={() => window.open(CALENDLY_FIRST_LESSON, '_blank')} />
+            <StudentDashboard user={user} onSignOut={handleSignOut}
+              onBook={() => window.open(CALENDLY_FIRST_LESSON, '_blank')}
+              onSettings={() => goTo('settings')} />
+          )}
+          {page === 'settings' && (
+            <AccountSettings user={user} onBack={() => goTo('dashboard')} onSignOut={handleSignOut} />
           )}
           {page === 'admin' && (
             <AdminPanel user={user} onSignOut={handleSignOut} />
@@ -1425,26 +1434,43 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
   )
 }
 
+// ─── Access level helpers ─────────────────────────────────────
+const ACCESS_META = {
+  pending:        { label: 'Awaiting approval',   color: '#94a3b8', desc: 'Dogukan will approve your account shortly.' },
+  trial:          { label: 'Trial access',         color: '#60a5fa', desc: 'You have full access during your trial.' },
+  pay_per_lesson: { label: 'Pay per lesson',       color: '#4ade80', desc: 'Active — book your next lesson anytime.' },
+  bundle_12:      { label: 'Bundle — 12 lessons',  color: '#d4a853', desc: 'Track your progress across all 12 lessons below.' },
+}
+
+function AccessBadge({ level, style = {} }) {
+  const m = ACCESS_META[level] || ACCESS_META.pending
+  return (
+    <span className="access-badge" style={{ '--badge-color': m.color, ...style }}>{m.label}</span>
+  )
+}
+
 // ─── StudentDashboard ─────────────────────────────────────────
-function StudentDashboard({ user, onSignOut, onBook }) {
-  const [submission, setSubmission] = useState(null)
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(true)
+function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
+  const [profile,     setProfile]     = useState(null)
+  const [result,      setResult]      = useState(null)
+  const [loading,     setLoading]     = useState(true)
   const [assignments, setAssignments] = useState([])
-  const [activeAssignment, setActiveAssignment] = useState(null) // { assignment, questions }
+  const [lessons,     setLessons]     = useState([])
+  const [activeAssignment, setActiveAssignment] = useState(null)
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
     Promise.all([
-      supabase.from('questionnaire_submissions').select('*')
-        .eq('student_id', user.id).order('submitted_at', { ascending: false }).limit(1).single(),
+      fetchMyProfile(user.id),
       supabase.from('placement_results').select('*')
         .eq('student_id', user.id).order('completed_at', { ascending: false }).limit(1).single(),
       fetchMyExercises(user.id),
-    ]).then(([{ data: sub }, { data: res }, exs]) => {
-      setSubmission(sub)
+      fetchMyLessons(user.id),
+    ]).then(([prof, { data: res }, exs, lsns]) => {
+      setProfile(prof)
       setResult(res)
       setAssignments(exs)
+      setLessons(lsns)
       setLoading(false)
     })
   }, [user])
@@ -1479,89 +1505,286 @@ function StudentDashboard({ user, onSignOut, onBook }) {
     )
   }
 
-  const name = user.user_metadata?.name || user.email?.split('@')[0]
+  const name = profile?.name || user.user_metadata?.name || user.email?.split('@')[0]
   const levelColors = { A1: '#94a3b8', A2: '#60a5fa', B1: '#3b82f6', B2: '#6366f1', C1: '#d4a853', C2: '#f59e0b' }
   const color = result ? (levelColors[result.cefr_level] || '#d4a853') : '#d4a853'
+  const accessLevel = profile?.access_level || 'pending'
+  const completedCount = lessons.filter(l => l.status === 'completed').length
+  const isPending = accessLevel === 'pending'
 
   return (
     <div className="flow-card dashboard-card">
       <div className="dashboard-header">
         <div>
           <h2>Welcome back, {name}!</h2>
-          <p className="flow-sub">Your English learning journey</p>
+          <p className="flow-sub" style={{ marginBottom: 0 }}>Your English learning journey</p>
         </div>
-        <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+          <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.5rem 0.9rem' }} onClick={onSettings}>⚙️ Settings</button>
+          <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
+        </div>
       </div>
 
       {loading ? (
         <div className="dashboard-loading">Loading your data…</div>
       ) : (
         <>
-          {result ? (
-            <div className="dashboard-result-card">
-              <div className="dashboard-level" style={{ borderColor: color, color }}>
-                {result.cefr_level}
+          {/* ── Access level card ── */}
+          <div className="access-card" style={{ '--badge-color': ACCESS_META[accessLevel]?.color || '#94a3b8' }}>
+            <div className="access-card-left">
+              <AccessBadge level={accessLevel} />
+              <p className="access-card-desc">{ACCESS_META[accessLevel]?.desc}</p>
+            </div>
+            {accessLevel === 'bundle_12' && (
+              <div className="access-bundle-progress">
+                <span className="access-bundle-count">{completedCount}<span>/12</span></span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>lessons done</span>
               </div>
-              <div className="dashboard-result-info">
-                <h3>{result.level_name}</h3>
-                <p>Overall score: <strong>{result.overall_score}%</strong></p>
-                <p>Recommended course: <strong>{result.recommended_course}</strong></p>
-                {!result.writing_reviewed && (
-                  <p className="dashboard-pending">✍️ Writing answer pending Dogukan's review</p>
+            )}
+          </div>
+
+          {isPending ? (
+            <div className="dashboard-pending-msg">
+              <p>✉️ Your account is awaiting approval. Dogukan will activate it shortly — usually within 24 hours.</p>
+            </div>
+          ) : (
+            <>
+              {/* ── Placement result ── */}
+              {result ? (
+                <div className="dashboard-result-card">
+                  <div className="dashboard-level" style={{ borderColor: color, color }}>
+                    {result.cefr_level}
+                  </div>
+                  <div className="dashboard-result-info">
+                    <h3>{result.level_name}</h3>
+                    <p>Overall score: <strong>{result.overall_score}%</strong></p>
+                    <p>Recommended course: <strong>{result.recommended_course}</strong></p>
+                    {!result.writing_reviewed && (
+                      <p className="dashboard-pending">✍️ Writing answer pending Dogukan's review</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="dashboard-actions">
+                <button className="btn-gold btn-full btn-lg" onClick={onBook}>
+                  Book your next lesson →
+                </button>
+              </div>
+
+              {/* ── Lesson history ── */}
+              <StudentLessonList lessons={lessons} onFeedbackSaved={(id, fb) =>
+                setLessons(prev => prev.map(l => l.id === id ? { ...l, student_feedback: fb } : l))} />
+
+              {/* ── Exercises ── */}
+              <div className="dashboard-exercises">
+                <h3 className="dashboard-section-title">📝 My Exercises</h3>
+                {assignments.length === 0 ? (
+                  <p className="dashboard-empty-small">No exercises assigned yet.</p>
+                ) : (
+                  <div className="exercise-list">
+                    {assignments.map((a) => {
+                      const ex = a.exercises
+                      const submitted = a.status === 'submitted'
+                      return (
+                        <div key={a.id} className={`exercise-row ${submitted ? 'exercise-row--done' : ''}`}>
+                          <div className="exercise-row-left">
+                            <span className="exercise-mode-chip">
+                              {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                            </span>
+                            <strong className="exercise-title">{ex?.title}</strong>
+                            {a.note && <p className="exercise-note">💬 {a.note}</p>}
+                            <span className="exercise-date">
+                              {submitted
+                                ? `Submitted ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                                : `Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+                            </span>
+                          </div>
+                          <div className="exercise-row-right">
+                            {submitted ? (
+                              <span className="exercise-submitted-badge">✓ Submitted</span>
+                            ) : (
+                              <button className="btn-gold" onClick={() => openExercise(a)}>Start →</button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── StudentLessonList ────────────────────────────────────────
+function StudentLessonList({ lessons, onFeedbackSaved }) {
+  const [feedbackId,   setFeedbackId]   = useState(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [saving,       setSaving]       = useState(false)
+
+  if (lessons.length === 0) return null
+
+  const handleFeedbackSave = async (lessonId) => {
+    setSaving(true)
+    const ok = await submitLessonFeedback(lessonId, feedbackText)
+    setSaving(false)
+    if (ok) { onFeedbackSaved(lessonId, feedbackText); setFeedbackId(null); setFeedbackText('') }
+  }
+
+  return (
+    <div className="dashboard-exercises">
+      <h3 className="dashboard-section-title">📅 My Lessons</h3>
+      <div className="lesson-list">
+        {lessons.map((l) => (
+          <div key={l.id} className="lesson-row">
+            <div className="lesson-row-top">
+              <div className="lesson-row-left">
+                <span className={`lesson-status-chip lesson-status-chip--${l.status}`}>
+                  {l.status === 'completed' ? '✓ Completed' : l.status === 'cancelled' ? '✕ Cancelled' : '◷ Upcoming'}
+                </span>
+                <span className="lesson-title">
+                  {l.lesson_no ? `Lesson ${l.lesson_no}` : 'Lesson'}
+                  {l.title ? ` — ${l.title}` : ''}
+                </span>
+                {l.scheduled_at && (
+                  <span className="lesson-date">
+                    {new Date(l.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
                 )}
               </div>
             </div>
-          ) : (
-            <div className="dashboard-empty">
-              <p>No placement test results yet.</p>
-              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Complete a placement test to see your level here.</p>
-            </div>
-          )}
-
-          <div className="dashboard-actions">
-            <button className="btn-gold btn-full btn-lg" onClick={onBook}>
-              Book your free first lesson →
-            </button>
-          </div>
-
-          {/* ── Exercises section ── */}
-          <div className="dashboard-exercises">
-            <h3 className="dashboard-section-title">📝 My Exercises</h3>
-            {assignments.length === 0 ? (
-              <p className="dashboard-empty-small">No exercises assigned yet — your teacher will add them here.</p>
-            ) : (
-              <div className="exercise-list">
-                {assignments.map((a) => {
-                  const ex = a.exercises
-                  const submitted = a.status === 'submitted'
-                  return (
-                    <div key={a.id} className={`exercise-row ${submitted ? 'exercise-row--done' : ''}`}>
-                      <div className="exercise-row-left">
-                        <span className="exercise-mode-chip exercise-mode-chip--${a.mode}">
-                          {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
-                        </span>
-                        <strong className="exercise-title">{ex?.title}</strong>
-                        {a.note && <p className="exercise-note">💬 {a.note}</p>}
-                        <span className="exercise-date">
-                          {submitted
-                            ? `Submitted ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                            : `Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
-                        </span>
-                      </div>
-                      <div className="exercise-row-right">
-                        {submitted ? (
-                          <span className="exercise-submitted-badge">✓ Submitted</span>
-                        ) : (
-                          <button className="btn-gold" onClick={() => openExercise(a)}>
-                            Start →
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+            {l.notes_visible && l.teacher_notes && (
+              <div className="lesson-teacher-note">
+                <span className="lesson-note-label">Dogukan's note:</span>
+                <p>{l.teacher_notes}</p>
               </div>
             )}
+            {l.student_feedback ? (
+              <p className="lesson-my-feedback">Your feedback: {l.student_feedback}</p>
+            ) : l.status === 'completed' && feedbackId !== l.id ? (
+              <button className="lesson-feedback-btn" onClick={() => { setFeedbackId(l.id); setFeedbackText('') }}>
+                + Leave feedback
+              </button>
+            ) : feedbackId === l.id ? (
+              <div className="lesson-feedback-form">
+                <textarea className="writing-input" rows={2} style={{ marginBottom: 0 }}
+                  placeholder="How did the lesson go? What did you find helpful?"
+                  value={feedbackText} onChange={e => setFeedbackText(e.target.value)} />
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
+                    onClick={() => handleFeedbackSave(l.id)} disabled={saving || !feedbackText.trim()}>
+                    {saving ? 'Saving…' : 'Save feedback'}
+                  </button>
+                  <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
+                    onClick={() => setFeedbackId(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── AccountSettings ──────────────────────────────────────────
+function AccountSettings({ user, onBack, onSignOut }) {
+  const [name,        setName]        = useState('')
+  const [loading,     setLoading]     = useState(true)
+  const [nameSaving,  setNameSaving]  = useState(false)
+  const [nameSaved,   setNameSaved]   = useState(false)
+  const [nameError,   setNameError]   = useState(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPw,   setConfirmPw]   = useState('')
+  const [pwSaving,    setPwSaving]    = useState(false)
+  const [pwSaved,     setPwSaved]     = useState(false)
+  const [pwError,     setPwError]     = useState(null)
+
+  useEffect(() => {
+    if (!user) return
+    fetchMyProfile(user.id).then(p => {
+      setName(p?.name || user.user_metadata?.name || '')
+      setLoading(false)
+    })
+  }, [user])
+
+  const handleSaveName = async (e) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    setNameSaving(true); setNameError(null)
+    const ok = await updateMyName(user.id, name.trim())
+    setNameSaving(false)
+    if (ok) { setNameSaved(true); setTimeout(() => setNameSaved(false), 2500) }
+    else setNameError('Could not save. Please try again.')
+  }
+
+  const handleSavePassword = async (e) => {
+    e.preventDefault()
+    if (newPassword.length < 6) { setPwError('Password must be at least 6 characters.'); return }
+    if (newPassword !== confirmPw) { setPwError('Passwords do not match.'); return }
+    setPwSaving(true); setPwError(null)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPwSaving(false)
+    if (error) setPwError(error.message)
+    else { setPwSaved(true); setNewPassword(''); setConfirmPw(''); setTimeout(() => setPwSaved(false), 2500) }
+  }
+
+  return (
+    <div className="flow-card" style={{ maxWidth: 520 }}>
+      <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+      <h2>Account settings</h2>
+      <p className="flow-sub">{user?.email}</p>
+
+      {loading ? <div className="dashboard-loading">Loading…</div> : (
+        <>
+          {/* ── Display name ── */}
+          <div className="settings-section">
+            <h3>Display name</h3>
+            <form onSubmit={handleSaveName} className="booking-form" style={{ gap: '0.75rem' }}>
+              <div className="form-field">
+                <input type="text" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} required />
+              </div>
+              {nameError && <div className="auth-error">{nameError}</div>}
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <button type="submit" className="btn-gold" disabled={nameSaving}>
+                  {nameSaving ? 'Saving…' : 'Save name'}
+                </button>
+                {nameSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
+              </div>
+            </form>
+          </div>
+
+          {/* ── Password ── */}
+          <div className="settings-section">
+            <h3>Change password</h3>
+            <form onSubmit={handleSavePassword} className="booking-form" style={{ gap: '0.75rem' }}>
+              <div className="form-field">
+                <label>New password</label>
+                <input type="password" placeholder="At least 6 characters"
+                  value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6} />
+              </div>
+              <div className="form-field">
+                <label>Confirm new password</label>
+                <input type="password" placeholder="Repeat new password"
+                  value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required />
+              </div>
+              {pwError && <div className="auth-error">{pwError}</div>}
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <button type="submit" className="btn-gold" disabled={pwSaving}>
+                  {pwSaving ? 'Saving…' : 'Change password'}
+                </button>
+                {pwSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Password updated</span>}
+              </div>
+            </form>
+          </div>
+
+          <div className="settings-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+            <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
           </div>
         </>
       )}
@@ -2567,35 +2790,229 @@ function AdminExerciseReview({ details, onBack }) {
   )
 }
 
+// ─── AdminLessonRow ───────────────────────────────────────────
+function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
+  const [editing, setEditing] = useState(false)
+  const [lesson,  setLesson]  = useState(initialLesson)
+  const [saving,  setSaving]  = useState(false)
+
+  useEffect(() => setLesson(initialLesson), [initialLesson])
+
+  const handleSave = async () => {
+    setSaving(true)
+    const updates = {
+      title:         lesson.title         || null,
+      lesson_no:     lesson.lesson_no     || null,
+      scheduled_at:  lesson.scheduled_at  || null,
+      status:        lesson.status,
+      teacher_notes: lesson.teacher_notes || null,
+      notes_visible: lesson.notes_visible,
+      completed_at:  lesson.status === 'completed' && !lesson.completed_at
+                       ? new Date().toISOString()
+                       : lesson.completed_at,
+    }
+    const ok = await onUpdate(lesson.id, updates)
+    setSaving(false)
+    if (ok) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="admin-lesson-row admin-lesson-row--editing">
+        <div className="admin-lesson-edit-grid">
+          <div className="form-field">
+            <label>Lesson #</label>
+            <input type="number" min="1" style={{ width: 80 }}
+              value={lesson.lesson_no || ''}
+              onChange={e => setLesson(p => ({ ...p, lesson_no: e.target.value ? parseInt(e.target.value) : null }))} />
+          </div>
+          <div className="form-field">
+            <label>Title</label>
+            <input type="text" placeholder="e.g. Present Simple"
+              value={lesson.title || ''}
+              onChange={e => setLesson(p => ({ ...p, title: e.target.value || null }))} />
+          </div>
+          <div className="form-field">
+            <label>Date</label>
+            <input type="date"
+              value={lesson.scheduled_at ? lesson.scheduled_at.slice(0, 10) : ''}
+              onChange={e => setLesson(p => ({ ...p, scheduled_at: e.target.value || null }))} />
+          </div>
+          <div className="form-field">
+            <label>Status</label>
+            <select value={lesson.status} onChange={e => setLesson(p => ({ ...p, status: e.target.value }))}>
+              <option value="scheduled">Scheduled</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div className="form-field" style={{ marginTop: '0.5rem' }}>
+          <label>Teacher notes</label>
+          <textarea className="writing-input" rows={3}
+            placeholder="Notes for records or to share with student"
+            value={lesson.teacher_notes || ''}
+            onChange={e => setLesson(p => ({ ...p, teacher_notes: e.target.value || null }))} />
+        </div>
+        <label className="admin-lesson-visible-toggle">
+          <input type="checkbox" checked={lesson.notes_visible}
+            onChange={e => setLesson(p => ({ ...p, notes_visible: e.target.checked }))} />
+          Show notes to student
+        </label>
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+          <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
+            onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
+            onClick={() => { setLesson(initialLesson); setEditing(false) }}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="admin-lesson-row">
+      <div className="admin-lesson-row-left">
+        <span className={`lesson-status-chip lesson-status-chip--${lesson.status}`}>
+          {lesson.status === 'completed' ? '✓ Completed' : lesson.status === 'cancelled' ? '✕ Cancelled' : '◷ Upcoming'}
+        </span>
+        <span className="lesson-title">
+          {lesson.lesson_no ? `Lesson ${lesson.lesson_no}` : 'Lesson'}
+          {lesson.title ? ` — ${lesson.title}` : ''}
+        </span>
+        {lesson.scheduled_at && (
+          <span className="lesson-date">
+            {new Date(lesson.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </span>
+        )}
+        {lesson.teacher_notes && (
+          <span className="admin-lesson-notes-indicator">
+            📝 {lesson.notes_visible ? 'Note visible' : 'Note (hidden)'}
+          </span>
+        )}
+      </div>
+      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+        onClick={() => setEditing(true)}>Edit</button>
+    </div>
+  )
+}
+
+// ─── AdminStudentLessons ──────────────────────────────────────
+function AdminStudentLessons({ student, adminUserId }) {
+  const [lessons,     setLessons]     = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [adding,      setAdding]      = useState(false)
+  const [newLessonNo, setNewLessonNo] = useState('')
+  const [newTitle,    setNewTitle]    = useState('')
+  const [newDate,     setNewDate]     = useState('')
+  const [saving,      setSaving]      = useState(false)
+
+  useEffect(() => {
+    fetchStudentLessons(student.id).then(data => {
+      setLessons(data)
+      setLoading(false)
+    })
+  }, [student.id])
+
+  const handleAdd = async () => {
+    setSaving(true)
+    const id = await createLesson({
+      studentId:   student.id,
+      lessonNo:    newLessonNo ? parseInt(newLessonNo) : null,
+      title:       newTitle   || null,
+      scheduledAt: newDate    || null,
+      createdBy:   adminUserId,
+    })
+    setSaving(false)
+    if (id) {
+      const newL = {
+        id, student_id: student.id,
+        lesson_no: newLessonNo ? parseInt(newLessonNo) : null,
+        title: newTitle || null, scheduled_at: newDate || null,
+        status: 'scheduled', teacher_notes: null,
+        notes_visible: false, student_feedback: null,
+        completed_at: null, created_at: new Date().toISOString(),
+      }
+      setLessons(prev => [...prev, newL].sort((a, b) => (a.lesson_no ?? 999) - (b.lesson_no ?? 999)))
+      setAdding(false); setNewLessonNo(''); setNewTitle(''); setNewDate('')
+    }
+  }
+
+  const handleUpdate = async (lessonId, updates) => {
+    const ok = await updateLesson(lessonId, updates)
+    if (ok) setLessons(prev => prev.map(l => l.id === lessonId ? { ...l, ...updates } : l))
+    return ok
+  }
+
+  return (
+    <div className="admin-section">
+      <div className="admin-lessons-header">
+        <h3>Lessons ({lessons.length})</h3>
+        <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
+          onClick={() => setAdding(a => !a)}>{adding ? 'Cancel' : '+ Add lesson'}</button>
+      </div>
+
+      {adding && (
+        <div className="admin-add-lesson-form">
+          <div className="admin-lesson-edit-grid">
+            <div className="form-field">
+              <label>Lesson #</label>
+              <input type="number" min="1" style={{ width: 80 }}
+                placeholder="1" value={newLessonNo} onChange={e => setNewLessonNo(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label>Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input type="text" placeholder="e.g. Present Simple"
+                value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label>Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
+            </div>
+          </div>
+          <button className="btn-gold" style={{ marginTop: '0.5rem', fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+            onClick={handleAdd} disabled={saving}>{saving ? 'Adding…' : 'Add lesson'}</button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="dashboard-loading" style={{ padding: '0.5rem 0' }}>Loading lessons…</div>
+      ) : lessons.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No lessons yet — click "+ Add lesson" to create the first one.</p>
+      ) : (
+        <div className="admin-lesson-list">
+          {lessons.map(l => (
+            <AdminLessonRow key={l.id} lesson={l} onUpdate={handleUpdate} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────
 function AdminPanel({ user, onSignOut }) {
-  const [adminEmail, setAdminEmail] = useState('')
+  const [adminEmail,    setAdminEmail]    = useState('')
   const [adminPassword, setAdminPassword] = useState('')
-  const [loginError, setLoginError] = useState(null)
-  const [loginLoading, setLoginLoading] = useState(false)
-  const [students, setStudents] = useState([])
-  const [dataLoading, setDataLoading] = useState(false)
-  const [selected, setSelected] = useState(null)
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [adminTab, setAdminTab] = useState('students') // 'students' | 'exercises'
+  const [loginError,    setLoginError]    = useState(null)
+  const [loginLoading,  setLoginLoading]  = useState(false)
+  const [students,      setStudents]      = useState([])
+  const [dataLoading,   setDataLoading]   = useState(false)
+  const [selected,      setSelected]      = useState(null)
+  const [adminTab,      setAdminTab]      = useState('students')
+  const [accessLevel,   setAccessLevel]   = useState('pending')
+  const [accessSaving,  setAccessSaving]  = useState(false)
+  const [accessSaved,   setAccessSaved]   = useState(false)
 
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const isAdmin      = user?.email === ADMIN_EMAIL
+  const pendingCount = students.filter(s => s.access_level === 'pending').length
 
   useEffect(() => {
     if (!isAdmin || !supabase) return
     setDataLoading(true)
-    supabase
-      .from('questionnaire_submissions')
-      .select(`id, guest_name, guest_email, level, goal, challenge, background,
-               time_commitment, content_preference, submitted_at,
-               placement_results ( id, cefr_level, overall_score, writing_answer, writing_reviewed, teacher_notes, completed_at )`)
-      .order('submitted_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (error) console.error(error)
-        setStudents(data ?? [])
-        setDataLoading(false)
-      })
+    fetchStudentsAdmin().then(data => {
+      setStudents(data)
+      setDataLoading(false)
+    })
   }, [isAdmin])
 
   const handleAdminLogin = async (e) => {
@@ -2611,21 +3028,25 @@ function AdminPanel({ user, onSignOut }) {
     }
   }
 
-  const handleReview = async (resultId) => {
-    setSaving(true)
-    const { error } = await supabase.from('placement_results')
-      .update({ teacher_notes: notes, writing_reviewed: true })
-      .eq('id', resultId)
-    if (!error) {
-      setStudents((prev) => prev.map((s) => ({
-        ...s,
-        placement_results: s.placement_results?.map((r) =>
-          r.id === resultId ? { ...r, teacher_notes: notes, writing_reviewed: true } : r
-        ),
-      })))
-      setSelected(null)
+  const openStudent = (s) => {
+    setSelected(s)
+    setAccessLevel(s.access_level || 'pending')
+    setAccessSaved(false)
+  }
+
+  const handleAccessSave = async (levelOverride) => {
+    const lvl = levelOverride ?? accessLevel
+    setAccessSaving(true)
+    const ok = await updateStudentAccessLevel(selected.id, lvl)
+    setAccessSaving(false)
+    if (ok) {
+      const updated = { ...selected, access_level: lvl }
+      setSelected(updated)
+      setAccessLevel(lvl)
+      setStudents(prev => prev.map(s => s.id === selected.id ? { ...s, access_level: lvl } : s))
+      setAccessSaved(true)
+      setTimeout(() => setAccessSaved(false), 2500)
     }
-    setSaving(false)
   }
 
   if (!supabase) {
@@ -2638,7 +3059,7 @@ function AdminPanel({ user, onSignOut }) {
     )
   }
 
-  // Not logged in as admin → show login form
+  // Not logged in as admin → login form
   if (!isAdmin) {
     return (
       <div className="flow-card">
@@ -2664,71 +3085,81 @@ function AdminPanel({ user, onSignOut }) {
 
   // Student detail view
   if (selected) {
-    const result = selected.placement_results?.[0]
+    const sub    = selected.questionnaire_submissions?.[0]
+    const result = sub?.placement_results?.[0]
     return (
       <div className="flow-card admin-detail">
-        <button className="back-btn" onClick={() => { setSelected(null); setNotes('') }}>← Back to students</button>
-        <h2>{selected.guest_name || 'Student'}</h2>
-        <p className="admin-email">{selected.guest_email}</p>
-        <p className="admin-date">Submitted: {new Date(selected.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+        <button className="back-btn" onClick={() => setSelected(null)}>← Back to students</button>
 
-        <div className="admin-section">
-          <h3>Questionnaire answers</h3>
-          <div className="admin-answers">
-            {[
-              ['Level',       selected.level],
-              ['Goal',        selected.goal],
-              ['Challenge',   selected.challenge],
-              ['Background',  selected.background],
-              ['Time/week',   selected.time_commitment],
-              ['Content',     selected.content_preference],
-            ].map(([label, val]) => val && (
-              <div key={label} className="admin-answer-row">
-                <span className="admin-answer-label">{label}</span>
-                <span className="admin-answer-val">{val}</span>
-              </div>
-            ))}
+        <div className="admin-detail-header">
+          <div>
+            <h2 style={{ marginBottom: '0.2rem' }}>{selected.name || 'Student'}</h2>
+            <p className="admin-email">{selected.email}</p>
+            <p className="admin-date">Joined {new Date(selected.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
           </div>
+          <AccessBadge level={selected.access_level} />
         </div>
 
+        {/* ── Access level management ── */}
+        <div className="admin-section">
+          <h3>Access level</h3>
+          <div className="admin-access-row">
+            <select className="admin-access-select" value={accessLevel}
+              onChange={e => setAccessLevel(e.target.value)}>
+              <option value="pending">Pending approval</option>
+              <option value="trial">Trial access</option>
+              <option value="pay_per_lesson">Pay per lesson</option>
+              <option value="bundle_12">Bundle — 12 lessons</option>
+            </select>
+            <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+              onClick={() => handleAccessSave()}
+              disabled={accessSaving || accessLevel === selected.access_level}>
+              {accessSaving ? 'Saving…' : 'Save'}
+            </button>
+            {accessSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
+          </div>
+          {selected.access_level === 'pending' && (
+            <button className="btn-gold" style={{ marginTop: '0.6rem', fontSize: '0.85rem' }}
+              onClick={() => handleAccessSave('trial')} disabled={accessSaving}>
+              ✓ Approve — grant trial access
+            </button>
+          )}
+        </div>
+
+        {/* ── Placement result ── */}
         {result ? (
           <div className="admin-section">
-            <h3>Placement test results</h3>
+            <h3>Placement test</h3>
             <div className="admin-scores">
               <span className="admin-level-badge">{result.cefr_level}</span>
               <span>Overall: <strong>{result.overall_score}%</strong></span>
+              {result.writing_reviewed
+                ? <span className="reviewed-badge">✓ Writing reviewed</span>
+                : <span className="pending-badge">Writing pending</span>}
             </div>
-
-            <div className="admin-writing">
-              <h4>Writing answer {result.writing_reviewed ? <span className="reviewed-badge">✓ Reviewed</span> : <span className="pending-badge">Pending review</span>}</h4>
-              <blockquote className="writing-quote">{result.writing_answer || '(no answer provided)'}</blockquote>
-            </div>
-
-            <div className="admin-section">
-              <h4>Teacher notes</h4>
-              <textarea
-                className="writing-input"
-                rows={4}
-                placeholder="Add your notes about this student's writing and overall profile…"
-                value={notes || result.teacher_notes || ''}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-              <button className="btn-gold" style={{ marginTop: '0.75rem' }}
-                onClick={() => handleReview(result.id)} disabled={saving}>
-                {saving ? 'Saving…' : result.writing_reviewed ? 'Update notes' : 'Mark as reviewed & save notes'}
-              </button>
-            </div>
+          </div>
+        ) : sub ? (
+          <div className="admin-section">
+            <p className="flow-sub" style={{ fontSize: '0.88rem' }}>
+              Questionnaire answered — no placement test taken yet.
+            </p>
           </div>
         ) : (
           <div className="admin-section">
-            <p className="flow-sub">No placement test completed yet.</p>
+            <p className="flow-sub" style={{ fontSize: '0.88rem' }}>No questionnaire completed yet.</p>
           </div>
         )}
+
+        {/* ── Lesson log ── */}
+        <AdminStudentLessons student={selected} adminUserId={user.id} />
       </div>
     )
   }
 
   // Student list view
+  const pendingStudents = students.filter(s => s.access_level === 'pending')
+  const activeStudents  = students.filter(s => s.access_level !== 'pending')
+
   return (
     <div className="flow-card admin-panel">
       <div className="admin-header">
@@ -2741,18 +3172,19 @@ function AdminPanel({ user, onSignOut }) {
 
       {/* Tab bar */}
       <div className="admin-tabs">
-        <button className={`admin-tab ${adminTab === 'students' ? 'active' : ''}`} onClick={() => setAdminTab('students')}>
+        <button className={`admin-tab ${adminTab === 'students' ? 'active' : ''}`}
+          onClick={() => setAdminTab('students')}>
           👥 Students
+          {pendingCount > 0 && <span className="admin-tab-badge">{pendingCount}</span>}
         </button>
-        <button className={`admin-tab ${adminTab === 'exercises' ? 'active' : ''}`} onClick={() => setAdminTab('exercises')}>
+        <button className={`admin-tab ${adminTab === 'exercises' ? 'active' : ''}`}
+          onClick={() => setAdminTab('exercises')}>
           📝 Exercises
         </button>
       </div>
 
       {/* Exercises tab */}
-      {adminTab === 'exercises' && (
-        <AdminExercises adminUserId={user?.id} />
-      )}
+      {adminTab === 'exercises' && <AdminExercises adminUserId={user?.id} />}
 
       {/* Students tab */}
       {adminTab === 'students' && (
@@ -2760,29 +3192,58 @@ function AdminPanel({ user, onSignOut }) {
           <div className="dashboard-loading">Loading students…</div>
         ) : students.length === 0 ? (
           <div className="dashboard-empty">
-            <p>No student submissions yet.</p>
-            <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who complete the questionnaire will appear here.</p>
+            <p>No students yet.</p>
+            <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who sign up will appear here.</p>
           </div>
         ) : (
           <div className="admin-list">
-            {students.map((s) => {
-              const result = s.placement_results?.[0]
-              const needsReview = result && !result.writing_reviewed
-              return (
-                <button key={s.id} className="admin-student-row" onClick={() => { setSelected(s); setNotes(result?.teacher_notes || '') }}>
-                  <div className="admin-student-info">
-                    <strong>{s.guest_name || 'Unknown'}</strong>
-                    <span className="admin-student-email">{s.guest_email}</span>
-                  </div>
-                  <div className="admin-student-meta">
-                    {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
-                    {needsReview && <span className="admin-review-chip">Writing to review</span>}
-                    <span className="admin-date-chip">{new Date(s.submitted_at).toLocaleDateString('en-GB')}</span>
-                  </div>
-                  <span className="admin-arrow">›</span>
-                </button>
-              )
-            })}
+            {/* Pending section */}
+            {pendingStudents.length > 0 && (
+              <>
+                <p className="admin-section-label">⏳ Awaiting approval ({pendingStudents.length})</p>
+                {pendingStudents.map(s => (
+                  <button key={s.id} className="admin-student-row admin-student-row--pending"
+                    onClick={() => openStudent(s)}>
+                    <div className="admin-student-info">
+                      <strong>{s.name || 'Unknown'}</strong>
+                      <span className="admin-student-email">{s.email}</span>
+                    </div>
+                    <div className="admin-student-meta">
+                      <AccessBadge level="pending" />
+                      <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                    </div>
+                    <span className="admin-arrow">›</span>
+                  </button>
+                ))}
+              </>
+            )}
+
+            {/* Active students */}
+            {activeStudents.length > 0 && (
+              <>
+                {pendingStudents.length > 0 && (
+                  <p className="admin-section-label" style={{ marginTop: '1.25rem' }}>Active students ({activeStudents.length})</p>
+                )}
+                {activeStudents.map(s => {
+                  const result = s.questionnaire_submissions?.[0]?.placement_results?.[0]
+                  return (
+                    <button key={s.id} className="admin-student-row" onClick={() => openStudent(s)}>
+                      <div className="admin-student-info">
+                        <strong>{s.name || 'Unknown'}</strong>
+                        <span className="admin-student-email">{s.email}</span>
+                      </div>
+                      <div className="admin-student-meta">
+                        <AccessBadge level={s.access_level} />
+                        {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
+                        {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
+                        <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                      </div>
+                      <span className="admin-arrow">›</span>
+                    </button>
+                  )
+                })}
+              </>
+            )}
           </div>
         )
       )}
