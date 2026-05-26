@@ -4,7 +4,8 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, submitExerciseAnswers,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
   fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
-  createExerciseWithQuestions, fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
+  createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions,
+  fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
   fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
 } from './lib/supabase'
@@ -411,6 +412,24 @@ function fileToBase64(file) {
     reader.onload  = () => resolve(reader.result.split(',')[1])
     reader.onerror = reject
     reader.readAsDataURL(file)
+  })
+}
+
+/** Compress an image file to a JPEG data-URI (max 1200px wide, 78% quality). */
+function compressImage(file, maxWidth = 1200) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const ratio  = Math.min(1, maxWidth / img.width)
+      const canvas = document.createElement('canvas')
+      canvas.width  = Math.round(img.width  * ratio)
+      canvas.height = Math.round(img.height * ratio)
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.78))
+    }
+    img.src = url
   })
 }
 
@@ -1847,6 +1866,16 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
         )}
       </div>
 
+      {/* ── Context images (reading / vocab photos from book) ── */}
+      {ex?.context_images?.length > 0 && (
+        <div className="exercise-context-images">
+          <p className="exercise-context-label">📖 Reference material</p>
+          {ex.context_images.map((src, i) => (
+            <img key={i} src={src} alt={`Reference ${i + 1}`} className="exercise-context-img" />
+          ))}
+        </div>
+      )}
+
       <div className="exercise-questions">
         {questions.map((q, idx) => (
           <div key={q.id} className="exercise-question">
@@ -2007,9 +2036,10 @@ function AdminExercises({ adminUserId }) {
   const [assignments, setAssignments] = useState([])
   const [plans,       setPlans]       = useState([])
   const [loading,     setLoading]     = useState(true)
-  const [exTab,       setExTab]       = useState('assignments') // 'assignments' | 'library' | 'plans'
-  const [view,        setView]        = useState('list') // 'list' | 'review' | 'create-exercise' | 'create-plan'
-  const [reviewing,   setReviewing]   = useState(null)
+  const [exTab,          setExTab]          = useState('assignments')
+  const [view,           setView]           = useState('list') // 'list'|'review'|'create-exercise'|'edit-exercise'|'create-plan'
+  const [reviewing,      setReviewing]      = useState(null)
+  const [editingExercise,setEditingExercise]= useState(null)
 
   // assign form
   const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise' | 'plan'
@@ -2066,10 +2096,21 @@ function AdminExercises({ adminUserId }) {
     return <AdminExerciseReview details={reviewing}
       onBack={() => { setView('list'); setReviewing(null); fetchAllAssignmentsAdmin().then(setAssignments) }} />
   }
+  const openEdit = async (ex) => {
+    const full = await fetchExerciseWithQuestions(ex.id)
+    if (full) { setEditingExercise(full); setView('edit-exercise') }
+  }
+
   if (view === 'create-exercise') {
     return <ExerciseBuilder
       onCancel={() => setView('list')}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library') }} />
+  }
+  if (view === 'edit-exercise' && editingExercise) {
+    return <ExerciseBuilder
+      initialExercise={editingExercise}
+      onCancel={() => { setView('list'); setEditingExercise(null) }}
+      onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }} />
   }
   if (view === 'create-plan') {
     return <LessonPlanBuilder exercises={exercises} adminUserId={adminUserId}
@@ -2233,9 +2274,21 @@ function AdminExercises({ adminUserId }) {
             <div className="library-list">
               {exercises.map(ex => (
                 <div key={ex.id} className="library-row">
-                  <div>
-                    <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
-                    {ex.course && <span className="admin-level-chip" style={{ marginLeft: '0.5rem' }}>{ex.course}</span>}
+                  <div className="library-row-main">
+                    <div className="library-row-info">
+                      <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                        {ex.course && <span className="admin-level-chip">{ex.course}</span>}
+                        {ex.context_images?.length > 0 && (
+                          <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>
+                            📖 {ex.context_images.length} context photo{ex.context_images.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button className="btn-ghost"
+                      style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', flexShrink: 0 }}
+                      onClick={() => openEdit(ex)}>Edit</button>
                   </div>
                 </div>
               ))}
@@ -2281,10 +2334,10 @@ function AdminExercises({ adminUserId }) {
 
 // ─── ExerciseBuilder ─────────────────────────────────────────
 const BUILDER_TYPES = [
-  { value: 'multiple_choice', label: 'Multiple Choice', icon: '☑️', desc: 'One correct answer from options' },
-  { value: 'fill_blank',      label: 'Fill in the Blank', icon: '✏️', desc: 'Student types missing words' },
-  { value: 'true_false',      label: 'True / False', icon: '✓✗', desc: 'Is the statement true or false?' },
-  { value: 'matching',        label: 'Matching', icon: '↔️', desc: 'Connect words to their pairs' },
+  { value: 'multiple_choice', label: 'Multiple Choice', icon: '☑️' },
+  { value: 'fill_blank',      label: 'Fill in the Blank', icon: '✏️' },
+  { value: 'true_false',      label: 'True / False', icon: '✓✗' },
+  { value: 'matching',        label: 'Matching', icon: '↔️' },
 ]
 
 function newQ(type) {
@@ -2301,115 +2354,173 @@ function newQ(type) {
   }
 }
 
-function ExerciseBuilder({ onSaved, onCancel }) {
-  const [step,         setStep]        = useState('type') // 'type' | 'form'
-  const [selType,      setSelType]     = useState(null)
-  const [title,        setTitle]       = useState('')
-  const [description,  setDescription] = useState('')
-  const [questions,    setQuestions]   = useState([])
-  const [saving,       setSaving]      = useState(false)
-  const [saveError,    setSaveError]   = useState(null)
-  const [photoLoading, setPhotoLoading]= useState(false)
-  const [photoError,   setPhotoError]  = useState(null)
-  const fileRef = useRef(null)
+function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
+  const isEdit = !!initialExercise
 
-  const pickType = (type) => { setSelType(type); setQuestions([newQ(type)]); setStep('form') }
+  // Pre-fill from existing exercise when editing
+  const [title,          setTitle]          = useState(initialExercise?.title        ?? '')
+  const [description,    setDescription]    = useState(initialExercise?.description  ?? '')
+  const [selType,        setSelType]        = useState(initialExercise?.questions?.[0]?.type ?? null)
+  const [contextImages,  setContextImages]  = useState(initialExercise?.context_images ?? [])
+  const [questions,      setQuestions]      = useState(
+    (initialExercise?.questions ?? []).map(q => ({ ...q, tempId: crypto.randomUUID() }))
+  )
+  const [saving,         setSaving]         = useState(false)
+  const [saveError,      setSaveError]      = useState(null)
+  const [photoLoading,   setPhotoLoading]   = useState(false)
+  const [photoError,     setPhotoError]     = useState(null)
+  const contextFileRef  = useRef(null)
+  const exerciseFileRef = useRef(null)
 
-  const handlePhoto = async (e) => {
+  // ── Context images ──────────────────────────────────────────
+  const handleContextImages = async (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 3 - contextImages.length)
+    if (!files.length) return
+    const compressed = await Promise.all(files.map(f => compressImage(f)))
+    setContextImages(prev => [...prev, ...compressed].slice(0, 3))
+    e.target.value = ''
+  }
+
+  // ── Exercise type ───────────────────────────────────────────
+  const selectType = (type) => {
+    setSelType(type)
+    if (!questions.length) setQuestions([newQ(type)])
+  }
+
+  // ── AI extract from exercise photo ─────────────────────────
+  const handleExercisePhoto = async (e) => {
     const file = e.target.files?.[0]; if (!file) return
     setPhotoLoading(true); setPhotoError(null)
     try {
       const b64    = await fileToBase64(file)
       const result = await analyzeExercisePhoto(b64, file.type)
-      if (!result?.questions?.length) throw new Error('Could not extract questions. Try a clearer photo.')
-      setTitle(result.title || '')
-      setSelType(result.questions[0]?.type || 'fill_blank')
+      if (!result?.questions?.length) throw new Error('Could not extract questions. Try a clearer photo or add them manually below.')
+      if (result.title && !title) setTitle(result.title)
+      const type = result.questions[0]?.type || 'fill_blank'
+      setSelType(type)
       setQuestions(result.questions.map(q => ({ ...newQ(q.type), ...q, tempId: crypto.randomUUID() })))
-      setStep('form')
     } catch (err) { setPhotoError(err.message) }
     finally { setPhotoLoading(false); e.target.value = '' }
   }
 
-  const addQ     = ()              => setQuestions(p => [...p, newQ(selType)])
-  const removeQ  = (id)            => setQuestions(p => p.filter(q => q.tempId !== id))
-  const updateQ  = (id, fld, val)  => setQuestions(p => p.map(q => q.tempId === id ? { ...q, [fld]: val } : q))
+  // ── Questions ───────────────────────────────────────────────
+  const addQ    = ()             => setQuestions(p => [...p, newQ(selType)])
+  const removeQ = (id)           => setQuestions(p => p.filter(q => q.tempId !== id))
+  const updateQ = (id, fld, val) => setQuestions(p => p.map(q => q.tempId === id ? { ...q, [fld]: val } : q))
 
+  // ── Save ────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim() || !questions.length) return
     setSaving(true); setSaveError(null)
-    const id = await createExerciseWithQuestions({ title, description }, questions)
+    const meta = { title, description, contextImages }
+    const id = isEdit
+      ? await updateExerciseWithQuestions(initialExercise.id, meta, questions)
+      : await createExerciseWithQuestions(meta, questions)
     setSaving(false)
     if (id) onSaved(id)
-    else setSaveError('Something went wrong. Please try again.')
-  }
-
-  if (step === 'type') {
-    return (
-      <div>
-        <div className="admin-exercises-toolbar">
-          <h3 style={{ margin: 0 }}>Create Exercise — Choose Type</h3>
-          <button className="btn-ghost" onClick={onCancel}>Cancel</button>
-        </div>
-        <div className="builder-type-grid">
-          {BUILDER_TYPES.map(t => (
-            <button key={t.value} className="builder-type-card" onClick={() => pickType(t.value)}>
-              <span className="builder-type-icon">{t.icon}</span>
-              <strong>{t.label}</strong>
-              <span className="builder-type-desc">{t.desc}</span>
-            </button>
-          ))}
-        </div>
-        <div className="builder-photo-section">
-          <p className="builder-photo-or">— or —</p>
-          <button className="builder-photo-btn" onClick={() => fileRef.current?.click()} disabled={photoLoading}>
-            {photoLoading ? <><span className="builder-photo-spin"/>Analysing photo…</> : '📸 Upload textbook photo — AI creates the exercise'}
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
-          {photoError && <div className="auth-error" style={{ marginTop: '0.75rem' }}>{photoError}</div>}
-          <p className="builder-photo-hint">Works best with fill-in-blank and MC exercises from printed books.</p>
-        </div>
-      </div>
-    )
+    else setSaveError('Something went wrong saving. Check your connection and try again.')
   }
 
   return (
     <div>
       <div className="admin-exercises-toolbar">
-        <h3 style={{ margin: 0 }}>
-          {BUILDER_TYPES.find(t => t.value === selType)?.label} Exercise
-        </h3>
-        <button className="btn-ghost" onClick={() => setStep('type')}>← Change type</button>
+        <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Exercise' : 'Create Exercise'}</h3>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
 
-      <div className="admin-assign-form" style={{ marginBottom: '1.5rem' }}>
+      {/* ── Title + instruction ── */}
+      <div className="admin-assign-form" style={{ marginBottom: '1.25rem' }}>
         <div className="form-field">
           <label>Title *</label>
-          <input type="text" placeholder="e.g. Lesson 2 — Present Simple"
+          <input type="text" placeholder="e.g. Jason's Family — Verbs: have / go / live / like"
             value={title} onChange={e => setTitle(e.target.value)} />
         </div>
         <div className="form-field">
-          <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(shown to student)</span></label>
-          <input type="text" placeholder="e.g. Fill in the correct form of the verb."
+          <label>Instruction <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(shown to student)</span></label>
+          <input type="text" placeholder="e.g. Complete the sentences about Jason."
             value={description} onChange={e => setDescription(e.target.value)} />
         </div>
       </div>
 
-      <div className="builder-questions">
-        {questions.map((q, idx) => (
-          <BuilderQuestion key={q.tempId} idx={idx} question={q}
-            onChange={(fld, val) => updateQ(q.tempId, fld, val)}
-            onRemove={() => removeQ(q.tempId)}
-            canRemove={questions.length > 1} />
-        ))}
+      {/* ── Context material ── */}
+      <div className="builder-section">
+        <div className="builder-section-header">
+          <div>
+            <h4 className="builder-section-title">📖 Context material</h4>
+            <p className="builder-section-sub">Reading text, vocab list or images from the book — your student sees these above the exercise</p>
+          </div>
+          {contextImages.length < 3 && (
+            <button className="builder-upload-btn"
+              onClick={() => contextFileRef.current?.click()}>
+              + Upload photo {contextImages.length > 0 ? `(${contextImages.length}/3)` : '(up to 3)'}
+            </button>
+          )}
+        </div>
+        <input ref={contextFileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+          onChange={handleContextImages} />
+        {contextImages.length > 0 && (
+          <div className="builder-thumbs">
+            {contextImages.map((src, i) => (
+              <div key={i} className="builder-thumb">
+                <img src={src} alt={`Context ${i + 1}`} />
+                <button className="builder-thumb-remove"
+                  onClick={() => setContextImages(p => p.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+      {/* ── Exercise type ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">✏️ Exercise type</h4>
+        <div className="builder-type-pills">
+          {BUILDER_TYPES.map(t => (
+            <button key={t.value}
+              className={`builder-type-pill ${selType === t.value ? 'active' : ''}`}
+              onClick={() => selectType(t.value)}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Questions ── */}
+      {selType && (
+        <div className="builder-section">
+          <div className="builder-section-header">
+            <h4 className="builder-section-title">❓ Questions</h4>
+            <button className="builder-ai-btn"
+              onClick={() => exerciseFileRef.current?.click()}
+              disabled={photoLoading}>
+              {photoLoading ? '⏳ Analysing…' : '📸 Extract from photo (AI)'}
+            </button>
+          </div>
+          <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={handleExercisePhoto} />
+          {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
+
+          <div className="builder-questions">
+            {questions.map((q, idx) => (
+              <BuilderQuestion key={q.tempId} idx={idx} question={q}
+                onChange={(fld, val) => updateQ(q.tempId, fld, val)}
+                onRemove={() => removeQ(q.tempId)}
+                canRemove={questions.length > 1} />
+            ))}
+          </div>
+          <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+        </div>
+      )}
 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
-          disabled={saving || !title.trim() || !questions.length}>
-          {saving ? 'Saving…' : `Save exercise (${questions.length} question${questions.length !== 1 ? 's' : ''})`}
+          disabled={saving || !title.trim() || !questions.length || !selType}>
+          {saving
+            ? 'Saving…'
+            : isEdit
+              ? `Update exercise (${questions.length} Q)`
+              : `Save exercise (${questions.length} question${questions.length !== 1 ? 's' : ''})`}
         </button>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>

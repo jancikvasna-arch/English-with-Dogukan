@@ -132,7 +132,7 @@ export async function fetchMyExercises(studentId) {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('exercise_assignments')
-    .select('*, exercises ( id, title, description, course, lesson_no )')
+    .select('*, exercises ( id, title, description, course, lesson_no, context_images )')
     .eq('student_id', studentId)
     .order('assigned_at', { ascending: false })
   if (error) { console.error('[supabase] fetchMyExercises:', error); return [] }
@@ -281,15 +281,16 @@ export async function reviewWriting(resultId, notes) {
 // ─── Exercise Builder ─────────────────────────────────────────
 
 /** Create a new exercise with all its questions in one shot. */
-export async function createExerciseWithQuestions({ title, description, course, lessonNo }, questions) {
+export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages }, questions) {
   if (!supabase) return null
   const exerciseId = crypto.randomUUID()
   const { error: exErr } = await supabase.from('exercises').insert({
-    id:          exerciseId,
+    id:             exerciseId,
     title,
-    description: description || null,
-    course:      course      || null,
-    lesson_no:   lessonNo    || null,
+    description:    description || null,
+    course:         course      || null,
+    lesson_no:      lessonNo    || null,
+    context_images: contextImages?.length ? contextImages : null,
   })
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
@@ -298,13 +299,54 @@ export async function createExerciseWithQuestions({ title, description, course, 
     order_index:    i + 1,
     type:           q.type,
     prompt:         q.prompt,
-    // options: store as JSONB — pass object/array directly (supabase handles JSON)
     options:        q.options ?? null,
     correct_answer: q.correct_answer || null,
     hint:           q.hint           || null,
   }))
   const { error: qErr } = await supabase.from('questions').insert(rows)
   if (qErr) { console.error('[supabase] createQuestions:', qErr); return null }
+  return exerciseId
+}
+
+/** Fetch a single exercise with all its questions (admin, for editing). */
+export async function fetchExerciseWithQuestions(exerciseId) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*, questions(*)')
+    .eq('id', exerciseId)
+    .single()
+  if (error) { console.error('[supabase] fetchExerciseWithQuestions:', error); return null }
+  if (data?.questions) data.questions.sort((a, b) => a.order_index - b.order_index)
+  return data
+}
+
+/** Update an existing exercise and replace all its questions. */
+export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages }, questions) {
+  if (!supabase) return null
+  const { error: exErr } = await supabase.from('exercises').update({
+    title,
+    description:    description    || null,
+    context_images: contextImages?.length ? contextImages : null,
+  }).eq('id', exerciseId)
+  if (exErr) { console.error('[supabase] updateExercise:', exErr); return null }
+
+  const { error: delErr } = await supabase.from('questions').delete().eq('exercise_id', exerciseId)
+  if (delErr) { console.error('[supabase] deleteQuestions:', delErr); return null }
+
+  if (questions.length > 0) {
+    const rows = questions.map((q, i) => ({
+      exercise_id:    exerciseId,
+      order_index:    i + 1,
+      type:           q.type,
+      prompt:         q.prompt,
+      options:        q.options ?? null,
+      correct_answer: q.correct_answer || null,
+      hint:           q.hint           || null,
+    }))
+    const { error: qErr } = await supabase.from('questions').insert(rows)
+    if (qErr) { console.error('[supabase] updateQuestions:', qErr); return null }
+  }
   return exerciseId
 }
 
