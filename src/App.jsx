@@ -919,103 +919,105 @@ function PlacementTest({ onSubmit, onBack }) {
 
 // ─── Grading ──────────────────────────────────────────────────
 function Grading({ answers, onDone }) {
-  const [error, setError] = useState(null)
-  const called = useRef(false)
-
   useEffect(() => {
-    if (called.current) return
-    called.current = true
-    gradeTest(answers).then(onDone).catch((err) => setError(err.message))
+    const timer = setTimeout(() => onDone(gradeTestLocally(answers)), 1500)
+    return () => clearTimeout(timer)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (error) {
-    return (
-      <div className="flow-card text-center">
-        <span className="confirmation-icon">⚠️</span>
-        <h2>Grading error</h2>
-        <p className="flow-sub">{error}</p>
-        <p className="flow-note">
-          Make sure <code>VITE_ANTHROPIC_API_KEY</code> is set in your <code>.env</code> file.
-        </p>
-      </div>
-    )
-  }
 
   return (
     <div className="flow-card text-center">
       <div className="grading-spinner" />
-      <h2>Grading your test…</h2>
+      <h2>Calculating your results…</h2>
       <p className="flow-sub">
-        Dogukan's AI assistant is reviewing your answers. This takes about 10 seconds.
+        Reviewing your answers across grammar, vocabulary and reading.
       </p>
     </div>
   )
 }
 
-async function gradeTest(answers) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-  if (!apiKey || apiKey === 'your_api_key_here') {
-    throw new Error('API key not configured. Add your Anthropic API key to the .env file.')
+function gradeTestLocally(answers) {
+  // Accepted answers for fill-in-the-blank questions (case-insensitive)
+  const FILL_ACCEPTED = {
+    4: ['could'],
+    5: ['had already left'],
+    8: ['absorbed'],
   }
 
-  const formatted = TEST_QUESTIONS.map((q) => {
-    const answer = answers[q.id] || '(no answer)'
-    return `Q${q.id} [${q.category} – ${q.type}]: ${q.question}\nAnswer: ${answer}`
-  }).join('\n\n')
+  let grammar = 0, vocab = 0, reading = 0
+  const writingAnswer = String(answers[12] || '').trim()
 
-  const prompt = `You are an expert English language teacher grading a student placement test. Review the answers carefully and assess the student's CEFR level.
-
-Return ONLY valid JSON with exactly this structure (no markdown, no explanation):
-{
-  "level": "B1",
-  "level_name": "Intermediate",
-  "grammar_score": 72,
-  "vocabulary_score": 68,
-  "reading_score": 80,
-  "writing_score": 65,
-  "overall_score": 71,
-  "strengths": ["Good grasp of basic tenses", "Strong reading comprehension"],
-  "areas_to_improve": ["Conditional sentences need work", "Vocabulary range could be wider"],
-  "teacher_notes": "A brief note for the teacher about this student's profile and priorities.",
-  "recommended_course": "Intermediate",
-  "encouraging_message": "A warm, encouraging message to the student about their results."
-}
-
-CEFR levels: A1 (Beginner), A2 (Elementary), B1 (Pre-Intermediate), B2 (Upper Intermediate), C1 (Advanced)
-Scores are percentages 0–100. overall_score is the weighted average.
-
-Student's answers:
-${formatted}`
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  TEST_QUESTIONS.forEach((q) => {
+    if (q.type === 'writing') return
+    const given = String(answers[q.id] || '').trim().toLowerCase()
+    let correct = false
+    if (q.type === 'multiple-choice' || q.type === 'reading') {
+      correct = given === q.correct.toLowerCase()
+    } else if (q.type === 'fill-blank') {
+      correct = (FILL_ACCEPTED[q.id] || []).some((a) => a.toLowerCase() === given)
+    }
+    if (q.category === 'Grammar') grammar += correct ? 1 : 0
+    else if (q.category === 'Vocabulary') vocab += correct ? 1 : 0
+    else if (q.category === 'Reading') reading += correct ? 1 : 0
   })
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err?.error?.message || `API error ${response.status}`)
+  // Grammar: Q1–Q5 (5 questions), Vocabulary: Q6–Q8 (3), Reading: Q9–Q11 (3)
+  const gs = Math.round((grammar / 5) * 100)
+  const vs = Math.round((vocab / 3) * 100)
+  const rs = Math.round((reading / 3) * 100)
+  const overall = Math.round((gs + vs + rs) / 3)
+
+  let level, levelName
+  if (overall < 25)      { level = 'A1'; levelName = 'Beginner' }
+  else if (overall < 40) { level = 'A2'; levelName = 'Elementary' }
+  else if (overall < 58) { level = 'B1'; levelName = 'Pre-Intermediate' }
+  else if (overall < 73) { level = 'B2'; levelName = 'Upper Intermediate' }
+  else if (overall < 88) { level = 'C1'; levelName = 'Advanced' }
+  else                   { level = 'C2'; levelName = 'Proficiency' }
+
+  const allScores = [
+    { label: 'Grammar',    score: gs },
+    { label: 'Vocabulary', score: vs },
+    { label: 'Reading',    score: rs },
+  ]
+  const STRENGTHS = {
+    Grammar:    'Good command of grammar structures',
+    Vocabulary: 'Strong vocabulary range',
+    Reading:    'Excellent reading comprehension',
+  }
+  const IMPROVEMENTS = {
+    Grammar:    'Grammar structures need more practice',
+    Vocabulary: 'Build a wider vocabulary range',
+    Reading:    'Practise reading longer texts',
   }
 
-  const data = await response.json()
-  const text = data.content[0].text.trim()
+  const strengths = allScores.filter((s) => s.score >= 60).map((s) => STRENGTHS[s.label])
+  const areas_to_improve = allScores.filter((s) => s.score < 60).map((s) => IMPROVEMENTS[s.label])
+  if (!strengths.length) strengths.push('Motivated to learn — a great foundation to build on')
+  if (!areas_to_improve.length) areas_to_improve.push('Keep challenging yourself with advanced material')
 
-  try {
-    return JSON.parse(text)
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/)
-    if (match) return JSON.parse(match[0])
-    throw new Error('Could not parse grading response from API.')
+  const MESSAGES = {
+    A1: "You're at the very start of your English journey — every lesson will make a real difference.",
+    A2: "You have a foundation to build on. With focused practice, you'll progress quickly.",
+    B1: "You're at a solid intermediate level. You can communicate in many situations and you're ready to grow.",
+    B2: "You have strong English skills. Let's polish and take you to the next level.",
+    C1: "Excellent — you're at an advanced level. Dogukan will focus on fluency and nuance.",
+    C2: "Outstanding English. Your results show near-native proficiency.",
+  }
+
+  const preview = writingAnswer.length > 120 ? writingAnswer.slice(0, 120) + '…' : writingAnswer
+  return {
+    level,
+    level_name: levelName,
+    grammar_score: gs,
+    vocabulary_score: vs,
+    reading_score: rs,
+    writing_answer: writingAnswer,
+    overall_score: overall,
+    strengths,
+    areas_to_improve,
+    teacher_notes: `${level} (${overall}% on grammar/vocab/reading). Writing pending review: "${preview}"`,
+    recommended_course: levelName,
+    encouraging_message: MESSAGES[level],
   }
 }
 
@@ -1058,7 +1060,10 @@ function Results({ results, completedPath, onDone }) {
         <ScoreBar label="Grammar" score={results.grammar_score} />
         <ScoreBar label="Vocabulary" score={results.vocabulary_score} />
         <ScoreBar label="Reading" score={results.reading_score} />
-        <ScoreBar label="Writing" score={results.writing_score} />
+        <div className="writing-pending">
+          <span className="writing-pending-label">Writing</span>
+          <span className="writing-pending-note">Dogukan will review your written answer before your first lesson</span>
+        </div>
         <div className="overall-score">
           Overall score: <strong>{results.overall_score}%</strong>
         </div>
