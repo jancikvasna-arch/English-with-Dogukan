@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
 // ─── Constants ───────────────────────────────────────────────
-const CALENDLY_URL = 'https://calendly.com/YOUR_LINK_HERE'
+const CALENDLY_CONSULTATION = 'https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins'
+const CALENDLY_FIRST_LESSON = 'https://calendly.com/dogukan-cy/30min'
 
 const READING_PASSAGE = `Remote work has transformed the modern workplace in ways few anticipated. While many employees celebrate the flexibility and elimination of commutes, managers face new challenges in maintaining team cohesion and monitoring productivity. Studies suggest that remote workers often put in longer hours than their office-based counterparts, blurring the boundary between professional and personal life. However, companies that have embraced remote work report lower overhead costs and access to a broader talent pool, unconstrained by geography.`
 
@@ -670,7 +671,7 @@ function ConsultationScreen({ onContinue }) {
       </p>
       <button
         className="btn-gold btn-lg"
-        onClick={() => window.open(CALENDLY_URL, '_blank')}
+        onClick={() => window.open(CALENDLY_CONSULTATION, '_blank')}
       >
         Open scheduling page →
       </button>
@@ -687,6 +688,8 @@ function ConsultationScreen({ onContinue }) {
 
 // ─── PreTest ──────────────────────────────────────────────────
 function PreTest({ formData, onTakeTest, onSkip }) {
+  const bookLesson = () => window.open(CALENDLY_FIRST_LESSON, '_blank')
+
   return (
     <div className="flow-card text-center">
       <span className="confirmation-icon">✅</span>
@@ -705,8 +708,8 @@ function PreTest({ formData, onTakeTest, onSkip }) {
           <button className="btn-gold btn-lg" onClick={onTakeTest}>
             Take the placement test
           </button>
-          <button className="btn-outline btn-lg" onClick={onSkip}>
-            No thanks, I'm done
+          <button className="btn-outline btn-lg" onClick={() => { bookLesson(); onSkip() }}>
+            Skip — book my lesson now →
           </button>
         </div>
       </div>
@@ -976,8 +979,15 @@ function Results({ results, onDone }) {
         Recommended course: <strong>{results.recommended_course}</strong>
       </div>
 
-      <button className="btn-gold btn-full btn-lg" onClick={onDone}>
-        Back to home →
+      <button
+        className="btn-gold btn-full btn-lg"
+        onClick={() => window.open(CALENDLY_FIRST_LESSON, '_blank')}
+        style={{ marginBottom: '0.75rem' }}
+      >
+        Book your first lesson →
+      </button>
+      <button className="btn-ghost btn-full" onClick={onDone}>
+        Back to home
       </button>
     </div>
   )
