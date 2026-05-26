@@ -433,57 +433,51 @@ function compressImage(file, maxWidth = 1200) {
   })
 }
 
-async function analyzeExercisePhoto(base64, mimeType) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('No Anthropic API key configured (VITE_ANTHROPIC_API_KEY missing in .env).')
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-opus-4-5',
-      max_tokens: 2048,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } },
-          { type: 'text', text: `You are helping an English teacher create digital exercises from a printed textbook page.
-Analyze this image and extract the exercise. Return ONLY a valid JSON object — no markdown, no explanation:
-{
-  "title": "short descriptive title",
-  "questions": [
-    {
-      "type": "fill_blank" | "multiple_choice" | "true_false" | "matching",
-      "prompt": "question text (use ___ for each blank in fill_blank)",
-      "options": null | ["opt1","opt2","opt3","opt4"] | [{"left":"word","right":"match"},...],
-      "correct_answer": "answer string or null for matching/free_text",
-      "hint": null | "hint text"
-    }
-  ]
-}
-Rules:
-- fill_blank: prompt has ___ for each blank; correct_answer is the missing word
-- multiple_choice: options array of strings; correct_answer is correct option text
-- true_false: options is ["True","False"]; correct_answer is "True" or "False"
-- matching: ONE question; options is array of {left, right} pairs; correct_answer is null
-- If you see a dialogue with blanks (like this image), create one fill_blank question per blank
-- Return ONLY the JSON object` },
-        ],
-      }],
-    }),
+/**
+ * OCR: extract raw text from an image file using Tesseract.js.
+ * Runs entirely in the browser — no API key required.
+ */
+async function ocrImage(file) {
+  const { createWorker } = await import('tesseract.js')
+  const worker = await createWorker('eng', 1, {
+    logger: () => {},
+    errorHandler: () => {},
   })
-  if (!res.ok) throw new Error(`AI request failed (${res.status}). Check your API key.`)
-  const data = await res.json()
-  const text = data.content?.[0]?.text ?? ''
-  try { return JSON.parse(text) } catch {
-    const m = text.match(/\{[\s\S]*\}/)
-    if (m) return JSON.parse(m[0])
-    throw new Error('AI returned an unexpected format. Try a clearer or closer photo.')
+  const url = URL.createObjectURL(file)
+  const { data: { text } } = await worker.recognize(url)
+  URL.revokeObjectURL(url)
+  await worker.terminate()
+  return text
+}
+
+/**
+ * Parse raw OCR text into question objects for ExerciseBuilder.
+ * Looks for numbered lines like "1 I ___ to school." or "1. She ___ happy."
+ */
+function parseOcrIntoQuestions(rawText, type) {
+  const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 1)
+
+  const items = []
+  for (const line of lines) {
+    const m = line.match(/^(?:\d+|[a-d])[.)\s]\s*(.+)/i)
+    if (m) {
+      items.push(m[1].trim())
+    } else if (items.length > 0 && line.length > 3 && !/^[A-Z][A-Z]/.test(line)) {
+      // continuation of previous item (wrapped line), skip headings
+      items[items.length - 1] += ' ' + line
+    }
   }
+
+  // Fallback: every line becomes a question
+  if (!items.length) {
+    lines.forEach(l => { if (l.length > 3) items.push(l) })
+  }
+
+  return items.map(text => {
+    const q = newQ(type)
+    q.prompt = text.replace(/_{1,}/g, '___')
+    return q
+  })
 }
 
 // ─── Shared: flow step indicator ──────────────────────────────
@@ -2390,15 +2384,13 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
   // ── AI extract from exercise photo ─────────────────────────
   const handleExercisePhoto = async (e) => {
     const file = e.target.files?.[0]; if (!file) return
+    if (!selType) { setPhotoError('Please select an exercise type first, then upload the photo.'); e.target.value = ''; return }
     setPhotoLoading(true); setPhotoError(null)
     try {
-      const b64    = await fileToBase64(file)
-      const result = await analyzeExercisePhoto(b64, file.type)
-      if (!result?.questions?.length) throw new Error('Could not extract questions. Try a clearer photo or add them manually below.')
-      if (result.title && !title) setTitle(result.title)
-      const type = result.questions[0]?.type || 'fill_blank'
-      setSelType(type)
-      setQuestions(result.questions.map(q => ({ ...newQ(q.type), ...q, tempId: crypto.randomUUID() })))
+      const rawText  = await ocrImage(file)
+      const parsed   = parseOcrIntoQuestions(rawText, selType)
+      if (!parsed.length) throw new Error('Could not read text from the photo. Try a clearer, well-lit shot or type the questions manually.')
+      setQuestions(parsed)
     } catch (err) { setPhotoError(err.message) }
     finally { setPhotoLoading(false); e.target.value = '' }
   }
@@ -2493,7 +2485,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
             <button className="builder-ai-btn"
               onClick={() => exerciseFileRef.current?.click()}
               disabled={photoLoading}>
-              {photoLoading ? '⏳ Analysing…' : '📸 Extract from photo (AI)'}
+              {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
             </button>
           </div>
           <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
