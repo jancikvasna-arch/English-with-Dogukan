@@ -67,23 +67,31 @@ export async function savePlacementResult(results, submissionId = null, studentI
 /** After a guest signs up, link their previous submissions to their new account. */
 export async function linkGuestData(email, userId) {
   if (!supabase) return
+
+  // Step 1: link questionnaire submissions
   await supabase
     .from('questionnaire_submissions')
     .update({ student_id: userId })
     .eq('guest_email', email)
     .is('student_id', null)
 
-  await supabase
-    .from('placement_results')
-    .update({ student_id: userId })
-    .is('student_id', null)
-    .in(
-      'submission_id',
-      supabase
-        .from('questionnaire_submissions')
-        .select('id')
-        .eq('guest_email', email)
-    )
+  // Step 2: fetch submission IDs now linked to this user
+  // (SELECT policy: auth.uid() = student_id — should match after step 1)
+  const { data: subs } = await supabase
+    .from('questionnaire_submissions')
+    .select('id')
+    .eq('guest_email', email)
+    .eq('student_id', userId)
+
+  // Step 3: link placement results via those submission IDs
+  if (subs && subs.length > 0) {
+    const ids = subs.map(s => s.id)
+    await supabase
+      .from('placement_results')
+      .update({ student_id: userId })
+      .is('student_id', null)
+      .in('submission_id', ids)
+  }
 }
 
 /** Fetch all students with their latest submission + result (admin only). */

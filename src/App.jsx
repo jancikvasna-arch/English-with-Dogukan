@@ -310,7 +310,11 @@ export default function App() {
             <AuthPage
               studentData={studentData}
               onSuccess={async (newUser) => {
-                if (studentData.email) await linkGuestData(studentData.email, newUser.id)
+                try {
+                  if (studentData.email) await linkGuestData(studentData.email, newUser.id)
+                } catch (e) {
+                  console.error('[onSuccess] linkGuestData failed:', e)
+                }
                 window.open(CALENDLY_FIRST_LESSON, '_blank')
                 goTo('dashboard')
               }}
