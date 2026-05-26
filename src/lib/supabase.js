@@ -125,6 +125,149 @@ export async function fetchStudent(submissionId) {
   return data
 }
 
+// ─── Exercise helpers (student) ───────────────────────────────
+
+/** Fetch a student's exercise assignments with exercise title/description. */
+export async function fetchMyExercises(studentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('exercise_assignments')
+    .select('*, exercises ( id, title, description, course, lesson_no )')
+    .eq('student_id', studentId)
+    .order('assigned_at', { ascending: false })
+  if (error) { console.error('[supabase] fetchMyExercises:', error); return [] }
+  return data ?? []
+}
+
+/** Fetch questions for a student's exercise — excludes correct_answer. */
+export async function fetchQuestionsForStudent(exerciseId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('questions')
+    .select('id, exercise_id, order_index, type, prompt, options, hint')
+    .eq('exercise_id', exerciseId)
+    .order('order_index')
+  if (error) { console.error('[supabase] fetchQuestionsForStudent:', error); return [] }
+  return data ?? []
+}
+
+/** Submit all answers for an assignment (one-shot). */
+export async function submitExerciseAnswers(assignmentId, answersMap, studentId) {
+  // answersMap: { [questionId]: answerString }
+  if (!supabase) return false
+  const rows = Object.entries(answersMap).map(([questionId, answer]) => ({
+    assignment_id: assignmentId,
+    question_id:   questionId,
+    student_id:    studentId,
+    answer:        answer ?? '',
+  }))
+  const { error: ansErr } = await supabase
+    .from('student_answers')
+    .upsert(rows, { onConflict: 'assignment_id,question_id' })
+  if (ansErr) { console.error('[supabase] submitExerciseAnswers answers:', ansErr); return false }
+  const { error: asgErr } = await supabase
+    .from('exercise_assignments')
+    .update({ status: 'submitted', submitted_at: new Date().toISOString() })
+    .eq('id', assignmentId)
+  if (asgErr) { console.error('[supabase] submitExerciseAnswers status:', asgErr); return false }
+  return true
+}
+
+// ─── Exercise helpers (admin) ─────────────────────────────────
+
+/** Fetch all exercises (for the assign dropdown). */
+export async function fetchAllExercises() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id, title, course, lesson_no')
+    .order('course').order('lesson_no')
+  if (error) { console.error('[supabase] fetchAllExercises:', error); return [] }
+  return data ?? []
+}
+
+/** Fetch all student profiles for the assign dropdown (excludes admin). */
+export async function fetchStudentProfiles() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, email')
+    .neq('role', 'admin')
+    .order('name')
+  if (error) { console.error('[supabase] fetchStudentProfiles:', error); return [] }
+  return data ?? []
+}
+
+/** Assign an exercise to a student. */
+export async function assignExercise({ exerciseId, studentId, assignedBy, mode, note, dueDate }) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('exercise_assignments')
+    .insert({
+      exercise_id: exerciseId,
+      student_id:  studentId,
+      assigned_by: assignedBy,
+      mode:        mode   || 'homework',
+      note:        note   || null,
+      due_date:    dueDate || null,
+    })
+    .select()
+    .single()
+  if (error) { console.error('[supabase] assignExercise:', error); return null }
+  return data
+}
+
+/** Fetch all assignments with exercise + student info (admin list view). */
+export async function fetchAllAssignmentsAdmin() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('exercise_assignments')
+    .select(`
+      id, mode, status, note, assigned_at, submitted_at,
+      exercises ( id, title, course, lesson_no ),
+      profiles:student_id ( id, name, email )
+    `)
+    .order('assigned_at', { ascending: false })
+  if (error) { console.error('[supabase] fetchAllAssignmentsAdmin:', error); return [] }
+  return data ?? []
+}
+
+/** Fetch full assignment details for review (includes correct_answer + student answers). */
+export async function fetchAssignmentDetails(assignmentId) {
+  if (!supabase) return null
+  const [{ data: assignment, error: aErr }, { data: answers, error: anErr }] = await Promise.all([
+    supabase
+      .from('exercise_assignments')
+      .select(`*, exercises ( *, questions ( * ) ), profiles:student_id ( name, email )`)
+      .eq('id', assignmentId)
+      .single(),
+    supabase
+      .from('student_answers')
+      .select('*')
+      .eq('assignment_id', assignmentId),
+  ])
+  if (aErr)  { console.error('[supabase] fetchAssignmentDetails assignment:', aErr);  return null }
+  if (anErr) { console.error('[supabase] fetchAssignmentDetails answers:',    anErr); return null }
+  return { ...assignment, studentAnswers: answers ?? [] }
+}
+
+/** Save teacher review (is_correct + comment) for multiple answers at once. */
+export async function saveAnswerReviews(reviews) {
+  // reviews: [{ id, is_correct, teacher_comment }]
+  if (!supabase || !reviews.length) return
+  for (const r of reviews) {
+    const { error } = await supabase
+      .from('student_answers')
+      .update({
+        is_correct:      r.is_correct,
+        teacher_comment: r.teacher_comment || null,
+        reviewed_at:     new Date().toISOString(),
+      })
+      .eq('id', r.id)
+    if (error) console.error('[supabase] saveAnswerReviews:', error)
+  }
+}
+
 /** Admin: update teacher notes and mark writing as reviewed. */
 export async function reviewWriting(resultId, notes) {
   if (!supabase) return

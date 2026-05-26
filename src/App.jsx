@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
-import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData } from './lib/supabase'
+import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
+  fetchMyExercises, fetchQuestionsForStudent, submitExerciseAnswers,
+  fetchAllExercises, fetchStudentProfiles, assignExercise,
+  fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
+} from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA } from './content'
 
 // ─── Constants ───────────────────────────────────────────────
@@ -1324,6 +1328,8 @@ function StudentDashboard({ user, onSignOut, onBook }) {
   const [submission, setSubmission] = useState(null)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [assignments, setAssignments] = useState([])
+  const [activeAssignment, setActiveAssignment] = useState(null) // { assignment, questions }
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
@@ -1332,12 +1338,34 @@ function StudentDashboard({ user, onSignOut, onBook }) {
         .eq('student_id', user.id).order('submitted_at', { ascending: false }).limit(1).single(),
       supabase.from('placement_results').select('*')
         .eq('student_id', user.id).order('completed_at', { ascending: false }).limit(1).single(),
-    ]).then(([{ data: sub }, { data: res }]) => {
+      fetchMyExercises(user.id),
+    ]).then(([{ data: sub }, { data: res }, exs]) => {
       setSubmission(sub)
       setResult(res)
+      setAssignments(exs)
       setLoading(false)
     })
   }, [user])
+
+  const openExercise = async (assignment) => {
+    const qs = await fetchQuestionsForStudent(assignment.exercises.id)
+    setActiveAssignment({ assignment, questions: qs })
+  }
+
+  if (activeAssignment) {
+    return (
+      <ExercisePlayer
+        assignment={activeAssignment.assignment}
+        questions={activeAssignment.questions}
+        studentId={user.id}
+        onBack={() => setActiveAssignment(null)}
+        onSubmitted={(id) => {
+          setAssignments(prev => prev.map(a => a.id === id ? { ...a, status: 'submitted' } : a))
+          setActiveAssignment(null)
+        }}
+      />
+    )
+  }
 
   if (!user) {
     return (
@@ -1393,8 +1421,450 @@ function StudentDashboard({ user, onSignOut, onBook }) {
               Book your free first lesson →
             </button>
           </div>
+
+          {/* ── Exercises section ── */}
+          <div className="dashboard-exercises">
+            <h3 className="dashboard-section-title">📝 My Exercises</h3>
+            {assignments.length === 0 ? (
+              <p className="dashboard-empty-small">No exercises assigned yet — your teacher will add them here.</p>
+            ) : (
+              <div className="exercise-list">
+                {assignments.map((a) => {
+                  const ex = a.exercises
+                  const submitted = a.status === 'submitted'
+                  return (
+                    <div key={a.id} className={`exercise-row ${submitted ? 'exercise-row--done' : ''}`}>
+                      <div className="exercise-row-left">
+                        <span className="exercise-mode-chip exercise-mode-chip--${a.mode}">
+                          {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                        </span>
+                        <strong className="exercise-title">{ex?.title}</strong>
+                        {a.note && <p className="exercise-note">💬 {a.note}</p>}
+                        <span className="exercise-date">
+                          {submitted
+                            ? `Submitted ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                            : `Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+                        </span>
+                      </div>
+                      <div className="exercise-row-right">
+                        {submitted ? (
+                          <span className="exercise-submitted-badge">✓ Submitted</span>
+                        ) : (
+                          <button className="btn-gold" onClick={() => openExercise(a)}>
+                            Start →
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </>
       )}
+    </div>
+  )
+}
+
+// ─── ExercisePlayer (student) ─────────────────────────────────
+function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted }) {
+  const ex = assignment.exercises
+  const [answers, setAnswers] = useState({})
+  const [confirming, setConfirming] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
+
+  const allAnswered = questions.every(q => {
+    const a = (answers[q.id] ?? '').trim()
+    return a.length > 0
+  })
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    const ok = await submitExerciseAnswers(assignment.id, answers, studentId)
+    setSubmitting(false)
+    if (ok) { setDone(true); setTimeout(() => onSubmitted(assignment.id), 2200) }
+  }
+
+  if (done) {
+    return (
+      <div className="flow-card text-center">
+        <span className="confirmation-icon" style={{ fontSize: '3rem' }}>✅</span>
+        <h2>Submitted!</h2>
+        <p className="flow-sub">Your teacher will review your answers and go through them with you in your next lesson.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flow-card exercise-player-card">
+      <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+
+      <div className="exercise-player-header">
+        <span className={`exercise-mode-chip exercise-mode-chip--${assignment.mode}`}>
+          {assignment.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+        </span>
+        <h2>{ex?.title}</h2>
+        {ex?.description && <p className="flow-sub">{ex.description}</p>}
+        {assignment.note && (
+          <div className="exercise-teacher-note">
+            <strong>Note from Dogukan:</strong> {assignment.note}
+          </div>
+        )}
+      </div>
+
+      <div className="exercise-questions">
+        {questions.map((q, idx) => (
+          <div key={q.id} className="exercise-question">
+            <div className="eq-label">
+              <span className="eq-num">Q{idx + 1}</span>
+              <span className="eq-type">{q.type === 'multiple_choice' ? 'Multiple choice' : q.type === 'fill_blank' ? 'Fill in the blank' : 'Written answer'}</span>
+            </div>
+            <p className="eq-prompt">{q.prompt}</p>
+            {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
+
+            {q.type === 'multiple_choice' && (
+              <div className="options-list">
+                {(q.options || []).map((opt) => (
+                  <button key={opt}
+                    className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
+                    onClick={() => setAnswer(q.id, opt)}
+                  >{opt}</button>
+                ))}
+              </div>
+            )}
+            {q.type === 'fill_blank' && (
+              <input type="text" className="fill-input"
+                placeholder="Type your answer…"
+                value={answers[q.id] || ''}
+                onChange={e => setAnswer(q.id, e.target.value)}
+              />
+            )}
+            {q.type === 'free_text' && (
+              <textarea className="writing-input" rows={4}
+                placeholder={q.hint || 'Write your answer here…'}
+                value={answers[q.id] || ''}
+                onChange={e => setAnswer(q.id, e.target.value)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {!confirming ? (
+        <div className="exercise-submit-row">
+          {!allAnswered && <p className="exercise-submit-hint">Answer all questions before submitting.</p>}
+          <button className="btn-gold btn-lg" disabled={!allAnswered} onClick={() => setConfirming(true)}>
+            Submit answers →
+          </button>
+        </div>
+      ) : (
+        <div className="exercise-confirm-box">
+          <p><strong>⚠️ Are you sure?</strong> Once you submit, you cannot change your answers. Your teacher will review them.</p>
+          <div className="exercise-confirm-actions">
+            <button className="btn-outline" onClick={() => setConfirming(false)}>Go back and check</button>
+            <button className="btn-gold" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Submitting…' : 'Yes, submit now'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── AdminExercises tab ───────────────────────────────────────
+function AdminExercises({ adminUserId }) {
+  const [exercises,    setExercises]    = useState([])
+  const [students,     setStudents]     = useState([])
+  const [assignments,  setAssignments]  = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [view,         setView]         = useState('list') // 'list' | 'assign' | 'review'
+  const [reviewing,    setReviewing]    = useState(null)   // full assignment details
+
+  // assign form state
+  const [aStudentId,   setAStudentId]   = useState('')
+  const [aExerciseId,  setAExerciseId]  = useState('')
+  const [aMode,        setAMode]        = useState('homework')
+  const [aNote,        setANote]        = useState('')
+  const [assigning,    setAssigning]    = useState(false)
+  const [assignError,  setAssignError]  = useState(null)
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      fetchAllExercises(),
+      fetchStudentProfiles(),
+      fetchAllAssignmentsAdmin(),
+    ]).then(([exs, studs, asgns]) => {
+      setExercises(exs)
+      setStudents(studs)
+      setAssignments(asgns)
+      setLoading(false)
+    })
+  }, [])
+
+  const refreshAssignments = () => fetchAllAssignmentsAdmin().then(setAssignments)
+
+  const handleAssign = async (e) => {
+    e.preventDefault()
+    if (!aStudentId || !aExerciseId) { setAssignError('Please select a student and an exercise.'); return }
+    setAssigning(true); setAssignError(null)
+    const result = await assignExercise({
+      exerciseId: aExerciseId, studentId: aStudentId,
+      assignedBy: adminUserId, mode: aMode, note: aNote || null,
+    })
+    setAssigning(false)
+    if (result) { refreshAssignments(); setView('list'); setAStudentId(''); setAExerciseId(''); setANote('') }
+    else setAssignError('Something went wrong. Please try again.')
+  }
+
+  const openReview = async (asgn) => {
+    const details = await fetchAssignmentDetails(asgn.id)
+    if (details) { setReviewing(details); setView('review') }
+  }
+
+  // ── Review view ───────────────────────────────────────────────
+  if (view === 'review' && reviewing) {
+    return <AdminExerciseReview
+      details={reviewing}
+      onBack={() => { setView('list'); setReviewing(null); refreshAssignments() }}
+    />
+  }
+
+  const submitted = assignments.filter(a => a.status === 'submitted')
+  const pending   = assignments.filter(a => a.status !== 'submitted')
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>Exercise Assignments</h3>
+        <button className="btn-gold" onClick={() => setView(view === 'assign' ? 'list' : 'assign')}>
+          {view === 'assign' ? '← Cancel' : '+ Assign exercise'}
+        </button>
+      </div>
+
+      {/* ── Assign form ── */}
+      {view === 'assign' && (
+        <form className="admin-assign-form" onSubmit={handleAssign}>
+          <div className="form-field">
+            <label>Student</label>
+            <select value={aStudentId} onChange={e => setAStudentId(e.target.value)} required>
+              <option value="">Select a student…</option>
+              {students.map(s => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Exercise</label>
+            <select value={aExerciseId} onChange={e => setAExerciseId(e.target.value)} required>
+              <option value="">Select an exercise…</option>
+              {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Type</label>
+            <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+              {['homework','in_class'].map(m => (
+                <button key={m} type="button"
+                  className={`radio-option ${aMode === m ? 'selected' : ''}`}
+                  onClick={() => setAMode(m)}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  {m === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="form-field">
+            <label>Note for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input type="text" placeholder="e.g. Please complete this before Friday's lesson"
+              value={aNote} onChange={e => setANote(e.target.value)} />
+          </div>
+          {assignError && <div className="auth-error">{assignError}</div>}
+          <button type="submit" className="btn-gold btn-full" disabled={assigning}>
+            {assigning ? 'Assigning…' : 'Assign exercise →'}
+          </button>
+        </form>
+      )}
+
+      {/* ── Assignment list ── */}
+      {loading ? <div className="dashboard-loading">Loading…</div> : (
+        <>
+          {submitted.length > 0 && (
+            <div className="admin-asgn-section">
+              <div className="admin-asgn-section-title">
+                <span className="admin-review-chip">Submitted — needs review</span>
+                <span>{submitted.length}</span>
+              </div>
+              {submitted.map(a => (
+                <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
+                  <div className="admin-student-info">
+                    <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
+                    <span className="admin-student-email">{a.exercises?.title}</span>
+                  </div>
+                  <div className="admin-student-meta">
+                    <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
+                    <span className="admin-date-chip">{new Date(a.submitted_at).toLocaleDateString('en-GB')}</span>
+                  </div>
+                  <span className="admin-arrow">›</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {pending.length > 0 && (
+            <div className="admin-asgn-section">
+              <div className="admin-asgn-section-title">
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assigned — awaiting student</span>
+                <span>{pending.length}</span>
+              </div>
+              {pending.map(a => (
+                <div key={a.id} className="admin-student-row" style={{ cursor: 'default' }}>
+                  <div className="admin-student-info">
+                    <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
+                    <span className="admin-student-email">{a.exercises?.title}</span>
+                  </div>
+                  <div className="admin-student-meta">
+                    <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
+                    <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {assignments.length === 0 && (
+            <div className="dashboard-empty">
+              <p>No exercises assigned yet.</p>
+              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Use the button above to assign an exercise to a student.</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── AdminExerciseReview ──────────────────────────────────────
+function AdminExerciseReview({ details, onBack }) {
+  const questions = details.exercises?.questions ?? []
+  const answerMap = Object.fromEntries(details.studentAnswers.map(a => [a.question_id, a]))
+
+  // Local review state: { [questionId]: { is_correct, teacher_comment, answerId } }
+  const [reviews, setReviews] = useState(() => {
+    const init = {}
+    questions.forEach(q => {
+      const sa = answerMap[q.id]
+      // Auto-compute correctness for MC and fill_blank
+      let auto = null
+      if (sa?.answer !== undefined && q.correct_answer) {
+        if (q.type === 'multiple_choice') auto = sa.answer.trim() === q.correct_answer.trim()
+        if (q.type === 'fill_blank')      auto = sa.answer.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()
+      }
+      init[q.id] = {
+        answerId:       sa?.id ?? null,
+        is_correct:     sa?.is_correct ?? auto,
+        teacher_comment: sa?.teacher_comment ?? '',
+      }
+    })
+    return init
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+
+  const setField = (qId, field, val) =>
+    setReviews(prev => ({ ...prev, [qId]: { ...prev[qId], [field]: val } }))
+
+  const handleSave = async () => {
+    setSaving(true)
+    const payload = Object.entries(reviews)
+      .filter(([, r]) => r.answerId)
+      .map(([, r]) => ({ id: r.answerId, is_correct: r.is_correct, teacher_comment: r.teacher_comment }))
+    await saveAnswerReviews(payload)
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
+  const student  = details.profiles
+  const exercise = details.exercises
+
+  return (
+    <div className="admin-detail">
+      <button className="back-btn" onClick={onBack}>← Back to exercises</button>
+      <h2>{exercise?.title}</h2>
+      <p className="admin-email">{student?.name || student?.email}</p>
+      <p className="admin-date">
+        Submitted: {details.submitted_at ? new Date(details.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+        &nbsp;·&nbsp;
+        <span style={{ color: details.mode === 'homework' ? 'var(--text-muted)' : 'var(--gold)' }}>
+          {details.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+        </span>
+      </p>
+
+      <div className="review-questions">
+        {questions.sort((a,b) => a.order_index - b.order_index).map((q, idx) => {
+          const sa     = answerMap[q.id]
+          const review = reviews[q.id] || {}
+          const hasAnswer = sa?.answer?.trim()
+
+          return (
+            <div key={q.id} className="review-question">
+              <div className="review-q-header">
+                <span className="eq-num">Q{idx + 1}</span>
+                <span className="eq-type">{q.type === 'multiple_choice' ? 'Multiple choice' : q.type === 'fill_blank' ? 'Fill in the blank' : 'Written answer'}</span>
+              </div>
+              <p className="eq-prompt">{q.prompt}</p>
+
+              <div className="review-answer-row">
+                <div className="review-answer-left">
+                  <span className="review-label">Student answered:</span>
+                  <div className={`review-answer-box ${!hasAnswer ? 'review-answer-empty' : ''}`}>
+                    {hasAnswer || <em>No answer given</em>}
+                  </div>
+                  {q.correct_answer && (
+                    <div className="review-correct-answer">
+                      <span className="review-label">Correct answer:</span> {q.correct_answer}
+                    </div>
+                  )}
+                </div>
+                <div className="review-answer-right">
+                  <span className="review-label">Mark:</span>
+                  <div className="review-mark-btns">
+                    <button
+                      className={`review-mark-btn review-mark-btn--correct ${review.is_correct === true ? 'active' : ''}`}
+                      onClick={() => setField(q.id, 'is_correct', true)}>✓ Correct</button>
+                    <button
+                      className={`review-mark-btn review-mark-btn--wrong ${review.is_correct === false ? 'active' : ''}`}
+                      onClick={() => setField(q.id, 'is_correct', false)}>✗ Incorrect</button>
+                    <button
+                      className={`review-mark-btn ${review.is_correct === null ? 'active' : ''}`}
+                      onClick={() => setField(q.id, 'is_correct', null)}>— Unset</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-field" style={{ marginTop: '0.75rem' }}>
+                <label style={{ fontSize: '0.8rem' }}>Comment for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <textarea className="writing-input" rows={2}
+                  placeholder="e.g. Good try! Remember that 'he' uses 'is', not 'are'."
+                  value={review.teacher_comment || ''}
+                  onChange={e => setField(q.id, 'teacher_comment', e.target.value)}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <button className="btn-gold" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : 'Save review →'}
+        </button>
+        {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
+      </div>
     </div>
   )
 }
@@ -1412,6 +1882,7 @@ function AdminPanel({ user, onSignOut }) {
   const [selected, setSelected] = useState(null)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [adminTab, setAdminTab] = useState('students') // 'students' | 'exercises'
 
   const isAdmin = user?.email === ADMIN_EMAIL
 
@@ -1566,40 +2037,58 @@ function AdminPanel({ user, onSignOut }) {
     <div className="flow-card admin-panel">
       <div className="admin-header">
         <div>
-          <h2>Students</h2>
-          <p className="flow-sub">{students.length} {students.length === 1 ? 'submission' : 'submissions'}</p>
+          <h2>Admin panel</h2>
+          <p className="flow-sub">English with Dogukan</p>
         </div>
         <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
       </div>
 
-      {dataLoading ? (
-        <div className="dashboard-loading">Loading students…</div>
-      ) : students.length === 0 ? (
-        <div className="dashboard-empty">
-          <p>No student submissions yet.</p>
-          <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who complete the questionnaire will appear here.</p>
-        </div>
-      ) : (
-        <div className="admin-list">
-          {students.map((s) => {
-            const result = s.placement_results?.[0]
-            const needsReview = result && !result.writing_reviewed
-            return (
-              <button key={s.id} className="admin-student-row" onClick={() => { setSelected(s); setNotes(result?.teacher_notes || '') }}>
-                <div className="admin-student-info">
-                  <strong>{s.guest_name || 'Unknown'}</strong>
-                  <span className="admin-student-email">{s.guest_email}</span>
-                </div>
-                <div className="admin-student-meta">
-                  {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
-                  {needsReview && <span className="admin-review-chip">Writing to review</span>}
-                  <span className="admin-date-chip">{new Date(s.submitted_at).toLocaleDateString('en-GB')}</span>
-                </div>
-                <span className="admin-arrow">›</span>
-              </button>
-            )
-          })}
-        </div>
+      {/* Tab bar */}
+      <div className="admin-tabs">
+        <button className={`admin-tab ${adminTab === 'students' ? 'active' : ''}`} onClick={() => setAdminTab('students')}>
+          👥 Students
+        </button>
+        <button className={`admin-tab ${adminTab === 'exercises' ? 'active' : ''}`} onClick={() => setAdminTab('exercises')}>
+          📝 Exercises
+        </button>
+      </div>
+
+      {/* Exercises tab */}
+      {adminTab === 'exercises' && (
+        <AdminExercises adminUserId={user?.id} />
+      )}
+
+      {/* Students tab */}
+      {adminTab === 'students' && (
+        dataLoading ? (
+          <div className="dashboard-loading">Loading students…</div>
+        ) : students.length === 0 ? (
+          <div className="dashboard-empty">
+            <p>No student submissions yet.</p>
+            <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who complete the questionnaire will appear here.</p>
+          </div>
+        ) : (
+          <div className="admin-list">
+            {students.map((s) => {
+              const result = s.placement_results?.[0]
+              const needsReview = result && !result.writing_reviewed
+              return (
+                <button key={s.id} className="admin-student-row" onClick={() => { setSelected(s); setNotes(result?.teacher_notes || '') }}>
+                  <div className="admin-student-info">
+                    <strong>{s.guest_name || 'Unknown'}</strong>
+                    <span className="admin-student-email">{s.guest_email}</span>
+                  </div>
+                  <div className="admin-student-meta">
+                    {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
+                    {needsReview && <span className="admin-review-chip">Writing to review</span>}
+                    <span className="admin-date-chip">{new Date(s.submitted_at).toLocaleDateString('en-GB')}</span>
+                  </div>
+                  <span className="admin-arrow">›</span>
+                </button>
+              )
+            })}
+          </div>
+        )
       )}
     </div>
   )
