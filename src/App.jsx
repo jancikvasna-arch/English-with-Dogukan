@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
+import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData } from './lib/supabase'
 
 // ─── Constants ───────────────────────────────────────────────
 const CALENDLY_CONSULTATION = 'https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins'
@@ -182,13 +183,46 @@ const TEST_QUESTIONS = [
 
 // ─── App ─────────────────────────────────────────────────────
 export default function App() {
-  const [page, setPage] = useState('landing')
+  const initPage = () => {
+    const path = window.location.pathname
+    if (path.startsWith('/admin')) return 'admin'
+    if (path.startsWith('/dashboard')) return 'dashboard'
+    return 'landing'
+  }
+
+  const [page, setPage] = useState(initPage)
   const [completedPath, setCompletedPath] = useState(null) // 'questionnaire' | 'consultation'
   const [studentData, setStudentData] = useState({})
   const [testAnswers, setTestAnswers] = useState({})
   const [results, setResults] = useState(null)
+  const [submissionId, setSubmissionId] = useState(null)
+  const [user, setUser] = useState(null)
 
-  const goTo = (p) => { setPage(p); window.scrollTo(0, 0) }
+  // Listen for Supabase auth state changes
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const goTo = (p) => {
+    setPage(p)
+    window.scrollTo(0, 0)
+    if (p === 'admin')     window.history.pushState({}, '', '/admin')
+    else if (p === 'dashboard') window.history.pushState({}, '', '/dashboard')
+    else if (p === 'landing')   window.history.pushState({}, '', '/')
+  }
+
+  const handleSignOut = async () => {
+    await supabase?.auth.signOut()
+    setUser(null)
+    goTo('landing')
+  }
 
   if (page !== 'landing') {
     return (
@@ -197,6 +231,12 @@ export default function App() {
           <button className="back-link" onClick={() => goTo('landing')}>
             ← English with Dogukan
           </button>
+          {user && (
+            <button className="back-link" style={{ marginLeft: 'auto' }}
+              onClick={() => goTo(user.email === 'dogukan.cy@gmail.com' ? 'admin' : 'dashboard')}>
+              My account →
+            </button>
+          )}
         </div>
         <div className="flow-content">
           {page === 'start' && (
@@ -207,10 +247,12 @@ export default function App() {
           )}
           {page === 'questionnaire' && (
             <Questionnaire
-              onSubmit={(data) => {
+              onSubmit={async (data) => {
                 setStudentData(data)
                 setCompletedPath('questionnaire')
                 sendQuestionnaireNotification(data)
+                const sid = await saveQuestionnaire(data, user?.id ?? null)
+                setSubmissionId(sid)
                 goTo('pretest')
               }}
               onBack={() => goTo('start')}
@@ -227,7 +269,13 @@ export default function App() {
               completedPath={completedPath}
               studentName={studentData.name}
               onTakeTest={() => goTo('test')}
-              onSkip={() => goTo('landing')}
+              onSkip={() => {
+                if (completedPath === 'questionnaire') {
+                  user ? (window.open(CALENDLY_FIRST_LESSON, '_blank'), goTo('landing')) : goTo('auth')
+                } else {
+                  goTo('landing')
+                }
+              }}
             />
           )}
           {page === 'test' && (
@@ -239,15 +287,41 @@ export default function App() {
           {page === 'grading' && (
             <Grading
               answers={testAnswers}
-              onDone={(r) => { setResults(r); goTo('results') }}
+              onDone={async (r) => {
+                setResults(r)
+                await savePlacementResult(r, submissionId, user?.id ?? null)
+                goTo('results')
+              }}
             />
           )}
           {page === 'results' && (
             <Results
               results={results}
               completedPath={completedPath}
+              user={user}
+              onBookLesson={() => {
+                if (user) { window.open(CALENDLY_FIRST_LESSON, '_blank'); goTo('dashboard') }
+                else goTo('auth')
+              }}
               onDone={() => goTo('landing')}
             />
+          )}
+          {page === 'auth' && (
+            <AuthPage
+              studentData={studentData}
+              onSuccess={async (newUser) => {
+                if (studentData.email) await linkGuestData(studentData.email, newUser.id)
+                window.open(CALENDLY_FIRST_LESSON, '_blank')
+                goTo('dashboard')
+              }}
+              onBack={() => goTo(results ? 'results' : 'landing')}
+            />
+          )}
+          {page === 'dashboard' && (
+            <StudentDashboard user={user} onSignOut={handleSignOut} onBook={() => window.open(CALENDLY_FIRST_LESSON, '_blank')} />
+          )}
+          {page === 'admin' && (
+            <AdminPanel user={user} onSignOut={handleSignOut} />
           )}
         </div>
       </div>
@@ -256,7 +330,8 @@ export default function App() {
 
   return (
     <div className="site">
-      <Navbar onBook={() => goTo('start')} />
+      <Navbar onBook={() => goTo('start')} user={user}
+        onAccount={() => goTo(user?.email === 'dogukan.cy@gmail.com' ? 'admin' : 'dashboard')} />
       <Hero onBook={() => goTo('start')} />
       <HowItWorks />
       <Courses />
@@ -314,7 +389,7 @@ function FlowSteps({ current }) {
 }
 
 // ─── Navbar ───────────────────────────────────────────────────
-function Navbar({ onBook }) {
+function Navbar({ onBook, user, onAccount }) {
   return (
     <nav className="navbar">
       <div className="nav-inner">
@@ -325,7 +400,11 @@ function Navbar({ onBook }) {
           <a href="#how-it-works">How it works</a>
           <a href="#courses">Courses</a>
           <a href="#pricing">Pricing</a>
-          <button className="btn-gold" onClick={onBook}>Book free lesson</button>
+          {user ? (
+            <button className="btn-outline" onClick={onAccount}>My account</button>
+          ) : (
+            <button className="btn-gold" onClick={onBook}>Book free lesson</button>
+          )}
         </div>
       </div>
     </nav>
@@ -1022,7 +1101,7 @@ function gradeTestLocally(answers) {
 }
 
 // ─── Results ──────────────────────────────────────────────────
-function Results({ results, completedPath, onDone }) {
+function Results({ results, completedPath, user, onBookLesson, onDone }) {
   if (!results) return null
 
   const levelColors = {
@@ -1100,9 +1179,9 @@ function Results({ results, completedPath, onDone }) {
           <button
             className="btn-gold btn-full btn-lg"
             style={{ marginBottom: '0.75rem' }}
-            onClick={() => window.open(CALENDLY_FIRST_LESSON, '_blank')}
+            onClick={onBookLesson}
           >
-            Book your free first lesson →
+            {user ? 'Book your free first lesson →' : 'Create account & book your lesson →'}
           </button>
           <button className="btn-ghost btn-full" onClick={onDone}>
             Back to home
@@ -1117,6 +1196,390 @@ function Results({ results, completedPath, onDone }) {
             Back to home
           </button>
         </>
+      )}
+    </div>
+  )
+}
+
+// ─── AuthPage ─────────────────────────────────────────────────
+function AuthPage({ studentData, onSuccess, onBack }) {
+  const [mode, setMode] = useState('signup') // 'signup' | 'login'
+  const [name, setName] = useState(studentData?.name || '')
+  const [email, setEmail] = useState(studentData?.email || '')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      if (mode === 'signup') {
+        const { data, error: err } = await supabase.auth.signUp({
+          email, password,
+          options: { data: { name } },
+        })
+        if (err) throw err
+        if (data.user) onSuccess(data.user)
+      } else {
+        const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
+        if (err) throw err
+        if (data.user) onSuccess(data.user)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!supabase) {
+    return (
+      <div className="flow-card text-center">
+        <span className="confirmation-icon">⚠️</span>
+        <h2>Database not connected</h2>
+        <p className="flow-sub">
+          Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to your environment variables to enable accounts.
+        </p>
+        <button className="btn-ghost btn-full" onClick={onBack}>← Back</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flow-card">
+      <FlowSteps current={3} />
+      <button className="back-btn" onClick={onBack}>← Back</button>
+      <h2>{mode === 'signup' ? 'Create your account' : 'Sign in'}</h2>
+      <p className="flow-sub">
+        {mode === 'signup'
+          ? 'Your test results will be saved and you can book your free first lesson.'
+          : 'Welcome back — sign in to access your lessons and results.'}
+      </p>
+
+      <form onSubmit={handleSubmit} className="booking-form">
+        {mode === 'signup' && (
+          <div className="form-field">
+            <label>Your name</label>
+            <input type="text" placeholder="e.g. Maria" value={name}
+              onChange={(e) => setName(e.target.value)} required />
+          </div>
+        )}
+        <div className="form-field">
+          <label>Email address</label>
+          <input type="email" placeholder="e.g. maria@email.com" value={email}
+            onChange={(e) => setEmail(e.target.value)} required />
+        </div>
+        <div className="form-field">
+          <label>Password {mode === 'signup' && <span className="field-hint">(at least 6 characters)</span>}</label>
+          <input type="password" placeholder="••••••••" value={password}
+            onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+        </div>
+
+        {error && <div className="auth-error">{error}</div>}
+
+        <button type="submit" className="btn-gold btn-full btn-lg" disabled={loading}>
+          {loading ? 'Please wait…' : mode === 'signup' ? 'Create account & book lesson →' : 'Sign in →'}
+        </button>
+      </form>
+
+      <div className="auth-toggle">
+        {mode === 'signup' ? (
+          <>Already have an account?{' '}
+            <button className="link-btn" onClick={() => { setMode('login'); setError(null) }}>Sign in</button>
+          </>
+        ) : (
+          <>Don't have an account?{' '}
+            <button className="link-btn" onClick={() => { setMode('signup'); setError(null) }}>Sign up</button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── StudentDashboard ─────────────────────────────────────────
+function StudentDashboard({ user, onSignOut, onBook }) {
+  const [submission, setSubmission] = useState(null)
+  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!supabase || !user) { setLoading(false); return }
+    Promise.all([
+      supabase.from('questionnaire_submissions').select('*')
+        .eq('student_id', user.id).order('submitted_at', { ascending: false }).limit(1).single(),
+      supabase.from('placement_results').select('*')
+        .eq('student_id', user.id).order('completed_at', { ascending: false }).limit(1).single(),
+    ]).then(([{ data: sub }, { data: res }]) => {
+      setSubmission(sub)
+      setResult(res)
+      setLoading(false)
+    })
+  }, [user])
+
+  if (!user) {
+    return (
+      <div className="flow-card text-center">
+        <span className="confirmation-icon">🔒</span>
+        <h2>Sign in to view your dashboard</h2>
+        <p className="flow-sub">Create an account or sign in to access your lessons and results.</p>
+      </div>
+    )
+  }
+
+  const name = user.user_metadata?.name || user.email?.split('@')[0]
+  const levelColors = { A1: '#94a3b8', A2: '#60a5fa', B1: '#3b82f6', B2: '#6366f1', C1: '#d4a853', C2: '#f59e0b' }
+  const color = result ? (levelColors[result.cefr_level] || '#d4a853') : '#d4a853'
+
+  return (
+    <div className="flow-card dashboard-card">
+      <div className="dashboard-header">
+        <div>
+          <h2>Welcome back, {name}!</h2>
+          <p className="flow-sub">Your English learning journey</p>
+        </div>
+        <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
+      </div>
+
+      {loading ? (
+        <div className="dashboard-loading">Loading your data…</div>
+      ) : (
+        <>
+          {result ? (
+            <div className="dashboard-result-card">
+              <div className="dashboard-level" style={{ borderColor: color, color }}>
+                {result.cefr_level}
+              </div>
+              <div className="dashboard-result-info">
+                <h3>{result.level_name}</h3>
+                <p>Overall score: <strong>{result.overall_score}%</strong></p>
+                <p>Recommended course: <strong>{result.recommended_course}</strong></p>
+                {!result.writing_reviewed && (
+                  <p className="dashboard-pending">✍️ Writing answer pending Dogukan's review</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="dashboard-empty">
+              <p>No placement test results yet.</p>
+              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Complete a placement test to see your level here.</p>
+            </div>
+          )}
+
+          <div className="dashboard-actions">
+            <button className="btn-gold btn-full btn-lg" onClick={onBook}>
+              Book your free first lesson →
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── AdminPanel ───────────────────────────────────────────────
+const ADMIN_EMAIL = 'dogukan.cy@gmail.com'
+
+function AdminPanel({ user, onSignOut }) {
+  const [adminEmail, setAdminEmail] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+  const [loginError, setLoginError] = useState(null)
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [students, setStudents] = useState([])
+  const [dataLoading, setDataLoading] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const isAdmin = user?.email === ADMIN_EMAIL
+
+  useEffect(() => {
+    if (!isAdmin || !supabase) return
+    setDataLoading(true)
+    supabase
+      .from('questionnaire_submissions')
+      .select(`id, guest_name, guest_email, level, goal, challenge, background,
+               time_commitment, content_preference, submitted_at,
+               placement_results ( id, cefr_level, overall_score, writing_answer, writing_reviewed, teacher_notes, completed_at )`)
+      .order('submitted_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) console.error(error)
+        setStudents(data ?? [])
+        setDataLoading(false)
+      })
+  }, [isAdmin])
+
+  const handleAdminLogin = async (e) => {
+    e.preventDefault()
+    setLoginError(null)
+    setLoginLoading(true)
+    const { data, error } = await supabase.auth.signInWithPassword({ email: adminEmail, password: adminPassword })
+    setLoginLoading(false)
+    if (error) { setLoginError(error.message); return }
+    if (data.user?.email !== ADMIN_EMAIL) {
+      await supabase.auth.signOut()
+      setLoginError('This account does not have admin access.')
+    }
+  }
+
+  const handleReview = async (resultId) => {
+    setSaving(true)
+    const { error } = await supabase.from('placement_results')
+      .update({ teacher_notes: notes, writing_reviewed: true })
+      .eq('id', resultId)
+    if (!error) {
+      setStudents((prev) => prev.map((s) => ({
+        ...s,
+        placement_results: s.placement_results?.map((r) =>
+          r.id === resultId ? { ...r, teacher_notes: notes, writing_reviewed: true } : r
+        ),
+      })))
+      setSelected(null)
+    }
+    setSaving(false)
+  }
+
+  if (!supabase) {
+    return (
+      <div className="flow-card text-center">
+        <span className="confirmation-icon">⚠️</span>
+        <h2>Database not connected</h2>
+        <p className="flow-sub">Set up Supabase environment variables to enable the admin panel.</p>
+      </div>
+    )
+  }
+
+  // Not logged in as admin → show login form
+  if (!isAdmin) {
+    return (
+      <div className="flow-card">
+        <h2>Admin access</h2>
+        <p className="flow-sub">Sign in with Dogukan's account to access the admin panel.</p>
+        <form onSubmit={handleAdminLogin} className="booking-form" style={{ marginTop: '1.5rem' }}>
+          <div className="form-field">
+            <label>Email</label>
+            <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required />
+          </div>
+          <div className="form-field">
+            <label>Password</label>
+            <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required />
+          </div>
+          {loginError && <div className="auth-error">{loginError}</div>}
+          <button type="submit" className="btn-gold btn-full btn-lg" disabled={loginLoading}>
+            {loginLoading ? 'Signing in…' : 'Sign in →'}
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  // Student detail view
+  if (selected) {
+    const result = selected.placement_results?.[0]
+    return (
+      <div className="flow-card admin-detail">
+        <button className="back-btn" onClick={() => { setSelected(null); setNotes('') }}>← Back to students</button>
+        <h2>{selected.guest_name || 'Student'}</h2>
+        <p className="admin-email">{selected.guest_email}</p>
+        <p className="admin-date">Submitted: {new Date(selected.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+
+        <div className="admin-section">
+          <h3>Questionnaire answers</h3>
+          <div className="admin-answers">
+            {[
+              ['Level',       selected.level],
+              ['Goal',        selected.goal],
+              ['Challenge',   selected.challenge],
+              ['Background',  selected.background],
+              ['Time/week',   selected.time_commitment],
+              ['Content',     selected.content_preference],
+            ].map(([label, val]) => val && (
+              <div key={label} className="admin-answer-row">
+                <span className="admin-answer-label">{label}</span>
+                <span className="admin-answer-val">{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {result ? (
+          <div className="admin-section">
+            <h3>Placement test results</h3>
+            <div className="admin-scores">
+              <span className="admin-level-badge">{result.cefr_level}</span>
+              <span>Overall: <strong>{result.overall_score}%</strong></span>
+            </div>
+
+            <div className="admin-writing">
+              <h4>Writing answer {result.writing_reviewed ? <span className="reviewed-badge">✓ Reviewed</span> : <span className="pending-badge">Pending review</span>}</h4>
+              <blockquote className="writing-quote">{result.writing_answer || '(no answer provided)'}</blockquote>
+            </div>
+
+            <div className="admin-section">
+              <h4>Teacher notes</h4>
+              <textarea
+                className="writing-input"
+                rows={4}
+                placeholder="Add your notes about this student's writing and overall profile…"
+                value={notes || result.teacher_notes || ''}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+              <button className="btn-gold" style={{ marginTop: '0.75rem' }}
+                onClick={() => handleReview(result.id)} disabled={saving}>
+                {saving ? 'Saving…' : result.writing_reviewed ? 'Update notes' : 'Mark as reviewed & save notes'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="admin-section">
+            <p className="flow-sub">No placement test completed yet.</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Student list view
+  return (
+    <div className="flow-card admin-panel">
+      <div className="admin-header">
+        <div>
+          <h2>Students</h2>
+          <p className="flow-sub">{students.length} {students.length === 1 ? 'submission' : 'submissions'}</p>
+        </div>
+        <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
+      </div>
+
+      {dataLoading ? (
+        <div className="dashboard-loading">Loading students…</div>
+      ) : students.length === 0 ? (
+        <div className="dashboard-empty">
+          <p>No student submissions yet.</p>
+          <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who complete the questionnaire will appear here.</p>
+        </div>
+      ) : (
+        <div className="admin-list">
+          {students.map((s) => {
+            const result = s.placement_results?.[0]
+            const needsReview = result && !result.writing_reviewed
+            return (
+              <button key={s.id} className="admin-student-row" onClick={() => { setSelected(s); setNotes(result?.teacher_notes || '') }}>
+                <div className="admin-student-info">
+                  <strong>{s.guest_name || 'Unknown'}</strong>
+                  <span className="admin-student-email">{s.guest_email}</span>
+                </div>
+                <div className="admin-student-meta">
+                  {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
+                  {needsReview && <span className="admin-review-chip">Writing to review</span>}
+                  <span className="admin-date-chip">{new Date(s.submitted_at).toLocaleDateString('en-GB')}</span>
+                </div>
+                <span className="admin-arrow">›</span>
+              </button>
+            )
+          })}
+        </div>
       )}
     </div>
   )
