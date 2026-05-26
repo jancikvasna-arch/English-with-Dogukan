@@ -34,22 +34,22 @@ export const ABOUT = {
 // ─── How It Works steps ───────────────────────────────────────────────────────
 export const HOW_IT_WORKS_STEPS = [
   {
-    num: '01',
+    num: '1',
     title: 'Tell me about your learning needs',
     desc: 'Please answer a few quick questions or book a free 15-minute consultation call. I will use your answers to understand your exact needs and design your trial lesson, should you request one.',
   },
   {
-    num: '02',
+    num: '2',
     title: 'Free Level Test',
     desc: '12 questions, about 10 minutes. Helps pinpoint your exact level. Completely optional.',
   },
   {
-    num: '03',
-    title: 'First lesson free',
+    num: '3',
+    title: 'Your first lesson is free',
     desc: 'A 60-minute lesson built specifically around what you told me. No payment, no commitment — just good teaching.',
   },
   {
-    num: '04',
+    num: '4',
     title: 'Start your course',
     desc: 'If you enjoyed it, choose a lesson package and start making real, measurable progress.',
   },
