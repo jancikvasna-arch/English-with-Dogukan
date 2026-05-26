@@ -4,6 +4,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, submitExerciseAnswers,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
   fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
+  createExerciseWithQuestions, fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA } from './content'
 
@@ -375,6 +376,69 @@ async function sendQuestionnaireNotification(data) {
     })
   } catch {
     // Silent — never block the student flow
+  }
+}
+
+// ─── Photo → Exercise AI helpers ─────────────────────────────
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve(reader.result.split(',')[1])
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+async function analyzeExercisePhoto(base64, mimeType) {
+  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error('No Anthropic API key configured (VITE_ANTHROPIC_API_KEY missing in .env).')
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-5',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } },
+          { type: 'text', text: `You are helping an English teacher create digital exercises from a printed textbook page.
+Analyze this image and extract the exercise. Return ONLY a valid JSON object — no markdown, no explanation:
+{
+  "title": "short descriptive title",
+  "questions": [
+    {
+      "type": "fill_blank" | "multiple_choice" | "true_false" | "matching",
+      "prompt": "question text (use ___ for each blank in fill_blank)",
+      "options": null | ["opt1","opt2","opt3","opt4"] | [{"left":"word","right":"match"},...],
+      "correct_answer": "answer string or null for matching/free_text",
+      "hint": null | "hint text"
+    }
+  ]
+}
+Rules:
+- fill_blank: prompt has ___ for each blank; correct_answer is the missing word
+- multiple_choice: options array of strings; correct_answer is correct option text
+- true_false: options is ["True","False"]; correct_answer is "True" or "False"
+- matching: ONE question; options is array of {left, right} pairs; correct_answer is null
+- If you see a dialogue with blanks (like this image), create one fill_blank question per blank
+- Return ONLY the JSON object` },
+        ],
+      }],
+    }),
+  })
+  if (!res.ok) throw new Error(`AI request failed (${res.status}). Check your API key.`)
+  const data = await res.json()
+  const text = data.content?.[0]?.text ?? ''
+  try { return JSON.parse(text) } catch {
+    const m = text.match(/\{[\s\S]*\}/)
+    if (m) return JSON.parse(m[0])
+    throw new Error('AI returned an unexpected format. Try a clearer or closer photo.')
   }
 }
 
@@ -1478,8 +1542,14 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
   const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
 
   const allAnswered = questions.every(q => {
-    const a = (answers[q.id] ?? '').trim()
-    return a.length > 0
+    if (q.type === 'matching') {
+      if (!answers[q.id]) return false
+      try {
+        const matched = JSON.parse(answers[q.id])
+        return (q.options || []).length > 0 && (q.options || []).every(p => matched[p.left])
+      } catch { return false }
+    }
+    return (answers[q.id] ?? '').trim().length > 0
   })
 
   const handleSubmit = async () => {
@@ -1521,7 +1591,13 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
           <div key={q.id} className="exercise-question">
             <div className="eq-label">
               <span className="eq-num">Q{idx + 1}</span>
-              <span className="eq-type">{q.type === 'multiple_choice' ? 'Multiple choice' : q.type === 'fill_blank' ? 'Fill in the blank' : 'Written answer'}</span>
+              <span className="eq-type">
+                {q.type === 'multiple_choice' ? 'Multiple choice'
+                 : q.type === 'fill_blank'     ? 'Fill in the blank'
+                 : q.type === 'true_false'      ? 'True / False'
+                 : q.type === 'matching'        ? 'Matching'
+                 : 'Written answer'}
+              </span>
             </div>
             <p className="eq-prompt">{q.prompt}</p>
             {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
@@ -1541,6 +1617,24 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
                 placeholder="Type your answer…"
                 value={answers[q.id] || ''}
                 onChange={e => setAnswer(q.id, e.target.value)}
+              />
+            )}
+            {q.type === 'true_false' && (
+              <div className="options-list" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+                {['True', 'False'].map(opt => (
+                  <button key={opt}
+                    className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
+                    style={{ flex: 1, textAlign: 'center' }}
+                    onClick={() => setAnswer(q.id, opt)}
+                  >{opt === 'True' ? '✓ True' : '✗ False'}</button>
+                ))}
+              </div>
+            )}
+            {q.type === 'matching' && (
+              <MatchingQuestion
+                pairs={q.options || []}
+                answer={answers[q.id] || null}
+                onChange={val => setAnswer(q.id, val)}
               />
             )}
             {q.type === 'free_text' && (
@@ -1576,63 +1670,150 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
   )
 }
 
+// ─── MatchingQuestion (student drag-and-drop) ─────────────────
+function MatchingQuestion({ pairs, answer, onChange }) {
+  const [rightShuffled] = useState(() => [...pairs.map(p => p.right)].sort(() => Math.random() - 0.5))
+  const [dragOver, setDragOver]   = useState(null)
+
+  const current   = answer ? (() => { try { return JSON.parse(answer) } catch { return {} } })() : {}
+  const usedRight = Object.values(current)
+
+  const unmatched = rightShuffled.filter(r => !usedRight.includes(r))
+
+  const drop = (e, leftVal) => {
+    e.preventDefault()
+    const rightVal = e.dataTransfer.getData('text/plain')
+    const next = { ...current }
+    Object.keys(next).forEach(k => { if (next[k] === rightVal) delete next[k] })
+    next[leftVal] = rightVal
+    onChange(JSON.stringify(next))
+    setDragOver(null)
+  }
+
+  const clearMatch = (leftVal) => {
+    const next = { ...current }
+    delete next[leftVal]
+    onChange(JSON.stringify(next))
+  }
+
+  return (
+    <div className="matching-container">
+      {unmatched.length > 0 && (
+        <div className="matching-bank">
+          <p className="matching-bank-label">Drag to match ↓</p>
+          <div className="matching-bank-items">
+            {unmatched.map(r => (
+              <div key={r} className="matching-chip"
+                draggable
+                onDragStart={e => e.dataTransfer.setData('text/plain', r)}>
+                {r}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="matching-pairs">
+        {pairs.map(pair => {
+          const matched = current[pair.left]
+          const isOver  = dragOver === pair.left
+          return (
+            <div key={pair.left} className="matching-pair-row">
+              <div className="matching-left">{pair.left}</div>
+              <span className="matching-arrow">→</span>
+              <div
+                className={`matching-drop ${isOver ? 'drag-over' : ''} ${matched ? 'matched' : ''}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(pair.left) }}
+                onDragLeave={() => setDragOver(null)}
+                onDrop={e => drop(e, pair.left)}
+              >
+                {matched
+                  ? <><span className="matching-chip matched-chip">{matched}</span>
+                      <button className="matching-clear" onClick={() => clearMatch(pair.left)}>✕</button></>
+                  : <span className="matching-placeholder">Drop here…</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── AdminExercises tab ───────────────────────────────────────
 function AdminExercises({ adminUserId }) {
-  const [exercises,    setExercises]    = useState([])
-  const [students,     setStudents]     = useState([])
-  const [assignments,  setAssignments]  = useState([])
-  const [loading,      setLoading]      = useState(true)
-  const [view,         setView]         = useState('list') // 'list' | 'assign' | 'review'
-  const [reviewing,    setReviewing]    = useState(null)   // full assignment details
+  const [exercises,   setExercises]   = useState([])
+  const [students,    setStudents]    = useState([])
+  const [assignments, setAssignments] = useState([])
+  const [plans,       setPlans]       = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [exTab,       setExTab]       = useState('assignments') // 'assignments' | 'library' | 'plans'
+  const [view,        setView]        = useState('list') // 'list' | 'review' | 'create-exercise' | 'create-plan'
+  const [reviewing,   setReviewing]   = useState(null)
 
-  // assign form state
-  const [aStudentId,   setAStudentId]   = useState('')
-  const [aExerciseId,  setAExerciseId]  = useState('')
-  const [aMode,        setAMode]        = useState('homework')
-  const [aNote,        setANote]        = useState('')
-  const [assigning,    setAssigning]    = useState(false)
-  const [assignError,  setAssignError]  = useState(null)
+  // assign form
+  const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise' | 'plan'
+  const [aStudentId,  setAStudentId]  = useState('')
+  const [aExerciseId, setAExerciseId] = useState('')
+  const [aPlanId,     setAPlanId]     = useState('')
+  const [aMode,       setAMode]       = useState('homework')
+  const [aNote,       setANote]       = useState('')
+  const [assigning,   setAssigning]   = useState(false)
+  const [assignError, setAssignError] = useState(null)
+  const [showAssign,  setShowAssign]  = useState(false)
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true)
     Promise.all([
       fetchAllExercises(),
       fetchStudentProfiles(),
       fetchAllAssignmentsAdmin(),
-    ]).then(([exs, studs, asgns]) => {
-      setExercises(exs)
-      setStudents(studs)
-      setAssignments(asgns)
+      fetchAllLessonPlans(),
+    ]).then(([exs, studs, asgns, pls]) => {
+      setExercises(exs); setStudents(studs)
+      setAssignments(asgns); setPlans(pls)
       setLoading(false)
     })
-  }, [])
-
-  const refreshAssignments = () => fetchAllAssignmentsAdmin().then(setAssignments)
-
-  const handleAssign = async (e) => {
-    e.preventDefault()
-    if (!aStudentId || !aExerciseId) { setAssignError('Please select a student and an exercise.'); return }
-    setAssigning(true); setAssignError(null)
-    const result = await assignExercise({
-      exerciseId: aExerciseId, studentId: aStudentId,
-      assignedBy: adminUserId, mode: aMode, note: aNote || null,
-    })
-    setAssigning(false)
-    if (result) { refreshAssignments(); setView('list'); setAStudentId(''); setAExerciseId(''); setANote('') }
-    else setAssignError('Something went wrong. Please try again.')
   }
+  useEffect(load, [])
 
   const openReview = async (asgn) => {
     const details = await fetchAssignmentDetails(asgn.id)
     if (details) { setReviewing(details); setView('review') }
   }
 
-  // ── Review view ───────────────────────────────────────────────
+  const handleAssign = async (e) => {
+    e.preventDefault()
+    if (!aStudentId) { setAssignError('Please select a student.'); return }
+    if (assignMode === 'exercise' && !aExerciseId) { setAssignError('Please select an exercise.'); return }
+    if (assignMode === 'plan'     && !aPlanId)     { setAssignError('Please select a lesson plan.'); return }
+    setAssigning(true); setAssignError(null)
+
+    let ok
+    if (assignMode === 'exercise') {
+      ok = await assignExercise({ exerciseId: aExerciseId, studentId: aStudentId, assignedBy: adminUserId, mode: aMode, note: aNote || null })
+    } else {
+      ok = await assignLessonPlan({ planId: aPlanId, studentId: aStudentId, assignedBy: adminUserId, mode: aMode, note: aNote || null })
+    }
+    setAssigning(false)
+    if (ok) {
+      fetchAllAssignmentsAdmin().then(setAssignments)
+      setShowAssign(false); setAStudentId(''); setAExerciseId(''); setAPlanId(''); setANote('')
+    } else { setAssignError('Something went wrong. Please try again.') }
+  }
+
   if (view === 'review' && reviewing) {
-    return <AdminExerciseReview
-      details={reviewing}
-      onBack={() => { setView('list'); setReviewing(null); refreshAssignments() }}
-    />
+    return <AdminExerciseReview details={reviewing}
+      onBack={() => { setView('list'); setReviewing(null); fetchAllAssignmentsAdmin().then(setAssignments) }} />
+  }
+  if (view === 'create-exercise') {
+    return <ExerciseBuilder
+      onCancel={() => setView('list')}
+      onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library') }} />
+  }
+  if (view === 'create-plan') {
+    return <LessonPlanBuilder exercises={exercises} adminUserId={adminUserId}
+      onCancel={() => setView('list')}
+      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setExTab('plans') }} />
   }
 
   const submitted = assignments.filter(a => a.status === 'submitted')
@@ -1640,110 +1821,554 @@ function AdminExercises({ adminUserId }) {
 
   return (
     <div>
-      <div className="admin-exercises-toolbar">
-        <h3 style={{ margin: 0 }}>Exercise Assignments</h3>
-        <button className="btn-gold" onClick={() => setView(view === 'assign' ? 'list' : 'assign')}>
-          {view === 'assign' ? '← Cancel' : '+ Assign exercise'}
-        </button>
+      {/* Sub-tabs */}
+      <div className="admin-tabs" style={{ marginTop: 0 }}>
+        {[['assignments','📋 Assignments'],['library','📚 Library'],['plans','🗂 Lesson Plans']].map(([k, label]) => (
+          <button key={k} className={`admin-tab ${exTab === k ? 'active' : ''}`} onClick={() => setExTab(k)}>{label}</button>
+        ))}
       </div>
 
-      {/* ── Assign form ── */}
-      {view === 'assign' && (
-        <form className="admin-assign-form" onSubmit={handleAssign}>
-          <div className="form-field">
-            <label>Student</label>
-            <select value={aStudentId} onChange={e => setAStudentId(e.target.value)} required>
-              <option value="">Select a student…</option>
-              {students.map(s => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
-            </select>
+      {/* ── Assignments tab ── */}
+      {exTab === 'assignments' && (
+        <div>
+          <div className="admin-exercises-toolbar">
+            <h3 style={{ margin: 0 }}>Assignments</h3>
+            <button className="btn-gold" onClick={() => setShowAssign(v => !v)}>
+              {showAssign ? '← Cancel' : '+ Assign'}
+            </button>
           </div>
-          <div className="form-field">
-            <label>Exercise</label>
-            <select value={aExerciseId} onChange={e => setAExerciseId(e.target.value)} required>
-              <option value="">Select an exercise…</option>
-              {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
-            </select>
-          </div>
-          <div className="form-field">
-            <label>Type</label>
-            <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
-              {['homework','in_class'].map(m => (
-                <button key={m} type="button"
-                  className={`radio-option ${aMode === m ? 'selected' : ''}`}
-                  onClick={() => setAMode(m)}
-                  style={{ flex: 1, justifyContent: 'center' }}
-                >
-                  {m === 'homework' ? '🏠 Homework' : '🎓 In class'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="form-field">
-            <label>Note for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-            <input type="text" placeholder="e.g. Please complete this before Friday's lesson"
-              value={aNote} onChange={e => setANote(e.target.value)} />
-          </div>
-          {assignError && <div className="auth-error">{assignError}</div>}
-          <button type="submit" className="btn-gold btn-full" disabled={assigning}>
-            {assigning ? 'Assigning…' : 'Assign exercise →'}
-          </button>
-        </form>
-      )}
 
-      {/* ── Assignment list ── */}
-      {loading ? <div className="dashboard-loading">Loading…</div> : (
-        <>
-          {submitted.length > 0 && (
-            <div className="admin-asgn-section">
-              <div className="admin-asgn-section-title">
-                <span className="admin-review-chip">Submitted — needs review</span>
-                <span>{submitted.length}</span>
+          {showAssign && (
+            <form className="admin-assign-form" onSubmit={handleAssign}>
+              {/* Assign type toggle */}
+              <div className="form-field">
+                <label>Assign</label>
+                <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+                  {[['exercise','Single exercise'],['plan','Lesson plan']].map(([val, lbl]) => (
+                    <button key={val} type="button"
+                      className={`radio-option ${assignMode === val ? 'selected' : ''}`}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                      onClick={() => setAssignMode(val)}>{lbl}</button>
+                  ))}
+                </div>
               </div>
-              {submitted.map(a => (
-                <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
-                  <div className="admin-student-info">
-                    <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
-                    <span className="admin-student-email">{a.exercises?.title}</span>
-                  </div>
-                  <div className="admin-student-meta">
-                    <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
-                    <span className="admin-date-chip">{new Date(a.submitted_at).toLocaleDateString('en-GB')}</span>
-                  </div>
-                  <span className="admin-arrow">›</span>
-                </button>
-              ))}
-            </div>
+              <div className="form-field">
+                <label>Student</label>
+                <select value={aStudentId} onChange={e => setAStudentId(e.target.value)} required>
+                  <option value="">Select a student…</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
+                </select>
+              </div>
+              {assignMode === 'exercise' ? (
+                <div className="form-field">
+                  <label>Exercise</label>
+                  <select value={aExerciseId} onChange={e => setAExerciseId(e.target.value)} required>
+                    <option value="">Select an exercise…</option>
+                    {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div className="form-field">
+                  <label>Lesson plan</label>
+                  <select value={aPlanId} onChange={e => setAPlanId(e.target.value)} required>
+                    <option value="">Select a lesson plan…</option>
+                    {plans.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="form-field">
+                <label>Type</label>
+                <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+                  {['homework','in_class'].map(m => (
+                    <button key={m} type="button"
+                      className={`radio-option ${aMode === m ? 'selected' : ''}`}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                      onClick={() => setAMode(m)}>
+                      {m === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="form-field">
+                <label>Note for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <input type="text" placeholder="e.g. Please complete before Friday's lesson"
+                  value={aNote} onChange={e => setANote(e.target.value)} />
+              </div>
+              {assignError && <div className="auth-error">{assignError}</div>}
+              <button type="submit" className="btn-gold btn-full" disabled={assigning}>
+                {assigning ? 'Assigning…' : assignMode === 'plan' ? 'Assign all exercises in plan →' : 'Assign exercise →'}
+              </button>
+            </form>
           )}
 
-          {pending.length > 0 && (
-            <div className="admin-asgn-section">
-              <div className="admin-asgn-section-title">
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assigned — awaiting student</span>
-                <span>{pending.length}</span>
-              </div>
-              {pending.map(a => (
-                <div key={a.id} className="admin-student-row" style={{ cursor: 'default' }}>
-                  <div className="admin-student-info">
-                    <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
-                    <span className="admin-student-email">{a.exercises?.title}</span>
+          {loading ? <div className="dashboard-loading">Loading…</div> : (
+            <>
+              {submitted.length > 0 && (
+                <div className="admin-asgn-section">
+                  <div className="admin-asgn-section-title">
+                    <span className="admin-review-chip">Submitted — needs review</span>
+                    <span>{submitted.length}</span>
                   </div>
-                  <div className="admin-student-meta">
-                    <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
-                    <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
+                  {submitted.map(a => (
+                    <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
+                      <div className="admin-student-info">
+                        <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
+                        <span className="admin-student-email">{a.exercises?.title}</span>
+                      </div>
+                      <div className="admin-student-meta">
+                        <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
+                        <span className="admin-date-chip">{new Date(a.submitted_at).toLocaleDateString('en-GB')}</span>
+                      </div>
+                      <span className="admin-arrow">›</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {pending.length > 0 && (
+                <div className="admin-asgn-section">
+                  <div className="admin-asgn-section-title">
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assigned — awaiting student</span>
+                    <span>{pending.length}</span>
+                  </div>
+                  {pending.map(a => (
+                    <div key={a.id} className="admin-student-row" style={{ cursor: 'default' }}>
+                      <div className="admin-student-info">
+                        <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
+                        <span className="admin-student-email">{a.exercises?.title}</span>
+                      </div>
+                      <div className="admin-student-meta">
+                        <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
+                        <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {assignments.length === 0 && (
+                <div className="dashboard-empty">
+                  <p>No exercises assigned yet.</p>
+                  <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Create exercises in the Library, then assign them here.</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Library tab ── */}
+      {exTab === 'library' && (
+        <div>
+          <div className="admin-exercises-toolbar">
+            <h3 style={{ margin: 0 }}>Exercise Library ({exercises.length})</h3>
+            <button className="btn-gold" onClick={() => setView('create-exercise')}>+ Create exercise</button>
+          </div>
+          {loading ? <div className="dashboard-loading">Loading…</div>
+          : exercises.length === 0 ? (
+            <div className="dashboard-empty">
+              <p>No exercises yet.</p>
+              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "Create exercise" to build your first one — or upload a textbook photo.</p>
+            </div>
+          ) : (
+            <div className="library-list">
+              {exercises.map(ex => (
+                <div key={ex.id} className="library-row">
+                  <div>
+                    <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
+                    {ex.course && <span className="admin-level-chip" style={{ marginLeft: '0.5rem' }}>{ex.course}</span>}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </div>
+      )}
 
-          {assignments.length === 0 && (
+      {/* ── Lesson Plans tab ── */}
+      {exTab === 'plans' && (
+        <div>
+          <div className="admin-exercises-toolbar">
+            <h3 style={{ margin: 0 }}>Lesson Plans ({plans.length})</h3>
+            <button className="btn-gold" onClick={() => setView('create-plan')}>+ Create plan</button>
+          </div>
+          {loading ? <div className="dashboard-loading">Loading…</div>
+          : plans.length === 0 ? (
             <div className="dashboard-empty">
-              <p>No exercises assigned yet.</p>
-              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Use the button above to assign an exercise to a student.</p>
+              <p>No lesson plans yet.</p>
+              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Bundle exercises into a lesson plan, then assign the whole plan to a student at once.</p>
+            </div>
+          ) : (
+            <div className="library-list">
+              {plans.map(p => {
+                const count = p.lesson_plan_exercises?.[0]?.count ?? 0
+                return (
+                  <div key={p.id} className="library-row">
+                    <div>
+                      <strong style={{ fontSize: '0.95rem' }}>{p.title}</strong>
+                      <span className="admin-level-chip" style={{ marginLeft: '0.5rem' }}>{count} exercise{count !== 1 ? 's' : ''}</span>
+                    </div>
+                    {p.description && <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{p.description}</p>}
+                  </div>
+                )
+              })}
             </div>
           )}
-        </>
+        </div>
       )}
+    </div>
+  )
+}
+
+// ─── ExerciseBuilder ─────────────────────────────────────────
+const BUILDER_TYPES = [
+  { value: 'multiple_choice', label: 'Multiple Choice', icon: '☑️', desc: 'One correct answer from options' },
+  { value: 'fill_blank',      label: 'Fill in the Blank', icon: '✏️', desc: 'Student types missing words' },
+  { value: 'true_false',      label: 'True / False', icon: '✓✗', desc: 'Is the statement true or false?' },
+  { value: 'matching',        label: 'Matching', icon: '↔️', desc: 'Connect words to their pairs' },
+]
+
+function newQ(type) {
+  return {
+    tempId:         crypto.randomUUID(),
+    type,
+    prompt:         '',
+    options:        type === 'multiple_choice' ? ['', '', '', '']
+                  : type === 'true_false'      ? ['True', 'False']
+                  : type === 'matching'        ? [{ left: '', right: '' }]
+                  : null,
+    correct_answer: type === 'true_false' ? 'True' : '',
+    hint:           '',
+  }
+}
+
+function ExerciseBuilder({ onSaved, onCancel }) {
+  const [step,         setStep]        = useState('type') // 'type' | 'form'
+  const [selType,      setSelType]     = useState(null)
+  const [title,        setTitle]       = useState('')
+  const [description,  setDescription] = useState('')
+  const [questions,    setQuestions]   = useState([])
+  const [saving,       setSaving]      = useState(false)
+  const [saveError,    setSaveError]   = useState(null)
+  const [photoLoading, setPhotoLoading]= useState(false)
+  const [photoError,   setPhotoError]  = useState(null)
+  const fileRef = useRef(null)
+
+  const pickType = (type) => { setSelType(type); setQuestions([newQ(type)]); setStep('form') }
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    setPhotoLoading(true); setPhotoError(null)
+    try {
+      const b64    = await fileToBase64(file)
+      const result = await analyzeExercisePhoto(b64, file.type)
+      if (!result?.questions?.length) throw new Error('Could not extract questions. Try a clearer photo.')
+      setTitle(result.title || '')
+      setSelType(result.questions[0]?.type || 'fill_blank')
+      setQuestions(result.questions.map(q => ({ ...newQ(q.type), ...q, tempId: crypto.randomUUID() })))
+      setStep('form')
+    } catch (err) { setPhotoError(err.message) }
+    finally { setPhotoLoading(false); e.target.value = '' }
+  }
+
+  const addQ     = ()              => setQuestions(p => [...p, newQ(selType)])
+  const removeQ  = (id)            => setQuestions(p => p.filter(q => q.tempId !== id))
+  const updateQ  = (id, fld, val)  => setQuestions(p => p.map(q => q.tempId === id ? { ...q, [fld]: val } : q))
+
+  const handleSave = async () => {
+    if (!title.trim() || !questions.length) return
+    setSaving(true); setSaveError(null)
+    const id = await createExerciseWithQuestions({ title, description }, questions)
+    setSaving(false)
+    if (id) onSaved(id)
+    else setSaveError('Something went wrong. Please try again.')
+  }
+
+  if (step === 'type') {
+    return (
+      <div>
+        <div className="admin-exercises-toolbar">
+          <h3 style={{ margin: 0 }}>Create Exercise — Choose Type</h3>
+          <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        </div>
+        <div className="builder-type-grid">
+          {BUILDER_TYPES.map(t => (
+            <button key={t.value} className="builder-type-card" onClick={() => pickType(t.value)}>
+              <span className="builder-type-icon">{t.icon}</span>
+              <strong>{t.label}</strong>
+              <span className="builder-type-desc">{t.desc}</span>
+            </button>
+          ))}
+        </div>
+        <div className="builder-photo-section">
+          <p className="builder-photo-or">— or —</p>
+          <button className="builder-photo-btn" onClick={() => fileRef.current?.click()} disabled={photoLoading}>
+            {photoLoading ? <><span className="builder-photo-spin"/>Analysing photo…</> : '📸 Upload textbook photo — AI creates the exercise'}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhoto} />
+          {photoError && <div className="auth-error" style={{ marginTop: '0.75rem' }}>{photoError}</div>}
+          <p className="builder-photo-hint">Works best with fill-in-blank and MC exercises from printed books.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>
+          {BUILDER_TYPES.find(t => t.value === selType)?.label} Exercise
+        </h3>
+        <button className="btn-ghost" onClick={() => setStep('type')}>← Change type</button>
+      </div>
+
+      <div className="admin-assign-form" style={{ marginBottom: '1.5rem' }}>
+        <div className="form-field">
+          <label>Title *</label>
+          <input type="text" placeholder="e.g. Lesson 2 — Present Simple"
+            value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="form-field">
+          <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(shown to student)</span></label>
+          <input type="text" placeholder="e.g. Fill in the correct form of the verb."
+            value={description} onChange={e => setDescription(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="builder-questions">
+        {questions.map((q, idx) => (
+          <BuilderQuestion key={q.tempId} idx={idx} question={q}
+            onChange={(fld, val) => updateQ(q.tempId, fld, val)}
+            onRemove={() => removeQ(q.tempId)}
+            canRemove={questions.length > 1} />
+        ))}
+      </div>
+
+      <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+
+      {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+        <button className="btn-gold" onClick={handleSave}
+          disabled={saving || !title.trim() || !questions.length}>
+          {saving ? 'Saving…' : `Save exercise (${questions.length} question${questions.length !== 1 ? 's' : ''})`}
+        </button>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── BuilderQuestion ──────────────────────────────────────────
+function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
+  const { type, prompt, options, correct_answer, hint } = question
+
+  return (
+    <div className="builder-question-card">
+      <div className="builder-q-header">
+        <span className="eq-num">{idx + 1}</span>
+        <span className="eq-type" style={{ flex: 1 }}>
+          {type === 'multiple_choice' ? 'Multiple choice'
+           : type === 'fill_blank'    ? 'Fill in the blank'
+           : type === 'true_false'    ? 'True / False'
+           : 'Matching'}
+        </span>
+        {canRemove && <button className="builder-q-remove" onClick={onRemove}>✕</button>}
+      </div>
+
+      <div className="form-field">
+        <label>
+          {type === 'fill_blank' ? 'Sentence (use ___ for each blank)'
+           : type === 'matching' ? 'Instruction (e.g. "Match the words to their meanings")'
+           : 'Question'}
+        </label>
+        <input type="text"
+          placeholder={
+            type === 'fill_blank'      ? 'e.g. She ___ from Spain.'
+            : type === 'multiple_choice' ? 'e.g. Which sentence is correct?'
+            : type === 'true_false'      ? 'e.g. "Good morning" is used in the evening.'
+            : 'e.g. Match the words to their definitions.'
+          }
+          value={prompt}
+          onChange={e => onChange('prompt', e.target.value)}
+        />
+      </div>
+
+      {type === 'multiple_choice' && (
+        <div className="form-field">
+          <label>Options <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(click ○ to mark correct)</span></label>
+          <div className="builder-mc-options">
+            {(options || ['', '', '', '']).map((opt, i) => (
+              <div key={i} className="builder-mc-row">
+                <button type="button"
+                  className={`builder-mc-correct-btn ${correct_answer === opt && opt ? 'active' : ''}`}
+                  onClick={() => opt && onChange('correct_answer', opt)}>
+                  {correct_answer === opt && opt ? '✓' : '○'}
+                </button>
+                <input type="text" placeholder={`Option ${i + 1}`} value={opt}
+                  onChange={e => {
+                    const nxt = [...(options || ['','','',''])]
+                    nxt[i] = e.target.value
+                    onChange('options', nxt)
+                  }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {type === 'fill_blank' && (
+        <div className="form-field">
+          <label>Correct answer</label>
+          <input type="text" placeholder="e.g. is  (for multiple blanks, separate with commas)"
+            value={correct_answer || ''} onChange={e => onChange('correct_answer', e.target.value)} />
+        </div>
+      )}
+
+      {type === 'true_false' && (
+        <div className="form-field">
+          <label>Correct answer</label>
+          <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+            {['True', 'False'].map(v => (
+              <button key={v} type="button"
+                className={`radio-option ${correct_answer === v ? 'selected' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => onChange('correct_answer', v)}>
+                {v === 'True' ? '✓ True' : '✗ False'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {type === 'matching' && (
+        <div className="form-field">
+          <label>Pairs <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(left ↔ right)</span></label>
+          <div className="builder-pairs">
+            {(options || []).map((pair, i) => (
+              <div key={i} className="builder-pair-row">
+                <input type="text" placeholder="Left (word)" value={pair.left || ''}
+                  onChange={e => {
+                    const nxt = [...options]; nxt[i] = { ...nxt[i], left: e.target.value }
+                    onChange('options', nxt)
+                  }} />
+                <span className="builder-pair-arrow">↔</span>
+                <input type="text" placeholder="Right (match)" value={pair.right || ''}
+                  onChange={e => {
+                    const nxt = [...options]; nxt[i] = { ...nxt[i], right: e.target.value }
+                    onChange('options', nxt)
+                  }} />
+                {options.length > 1 && (
+                  <button type="button" className="builder-q-remove"
+                    onClick={() => onChange('options', options.filter((_, j) => j !== i))}>✕</button>
+                )}
+              </div>
+            ))}
+            <button type="button" className="builder-add-pair-btn"
+              onClick={() => onChange('options', [...(options || []), { left: '', right: '' }])}>
+              + Add pair
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="form-field">
+        <label>Hint <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+        <input type="text" placeholder="e.g. am / is / are"
+          value={hint || ''} onChange={e => onChange('hint', e.target.value)} />
+      </div>
+    </div>
+  )
+}
+
+// ─── LessonPlanBuilder ────────────────────────────────────────
+function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel }) {
+  const [title,    setTitle]    = useState('')
+  const [desc,     setDesc]     = useState('')
+  const [selected, setSelected] = useState([]) // [{id, title}] ordered
+  const [saving,   setSaving]   = useState(false)
+  const [err,      setErr]      = useState(null)
+
+  const toggle = (ex) => setSelected(prev => {
+    if (prev.find(e => e.id === ex.id)) return prev.filter(e => e.id !== ex.id)
+    return [...prev, { id: ex.id, title: ex.title }]
+  })
+
+  const moveUp   = (i) => setSelected(p => { const a=[...p]; [a[i-1],a[i]]=[a[i],a[i-1]]; return a })
+  const moveDown = (i) => setSelected(p => { const a=[...p]; [a[i],a[i+1]]=[a[i+1],a[i]]; return a })
+
+  const handleSave = async () => {
+    if (!title.trim() || !selected.length) return
+    setSaving(true); setErr(null)
+    const id = await createLessonPlan(title, desc, adminUserId, selected.map(e => e.id))
+    setSaving(false)
+    if (id) onSaved(id)
+    else setErr('Something went wrong. Please try again.')
+  }
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>Create Lesson Plan</h3>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+
+      <div className="admin-assign-form" style={{ marginBottom: '1.5rem' }}>
+        <div className="form-field">
+          <label>Plan title *</label>
+          <input type="text" placeholder="e.g. Beginner — Lesson 2: Present Simple"
+            value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="form-field">
+          <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+          <input type="text" placeholder="Brief description"
+            value={desc} onChange={e => setDesc(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="plan-builder-grid">
+        <div>
+          <p className="plan-col-label">Exercise Library — click to add</p>
+          <div className="plan-picker-list">
+            {exercises.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No exercises yet.</p>}
+            {exercises.map(ex => {
+              const sel = !!selected.find(e => e.id === ex.id)
+              return (
+                <button key={ex.id} className={`plan-picker-item ${sel ? 'selected' : ''}`} onClick={() => toggle(ex)}>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{ex.title}</span>
+                  <span className="plan-picker-check">{sel ? '✓' : '+'}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div>
+          <p className="plan-col-label">Lesson order ({selected.length})</p>
+          {selected.length === 0 ? (
+            <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem' }}>Click exercises on the left to add them.</p>
+          ) : (
+            <div className="plan-order-list">
+              {selected.map((ex, i) => (
+                <div key={ex.id} className="plan-order-item">
+                  <span className="plan-order-num">{i + 1}</span>
+                  <span style={{ flex: 1, fontSize: '0.88rem' }}>{ex.title}</span>
+                  <div style={{ display: 'flex', gap: '0.2rem' }}>
+                    <button className="plan-order-btn" onClick={() => moveUp(i)}   disabled={i === 0}>▲</button>
+                    <button className="plan-order-btn" onClick={() => moveDown(i)} disabled={i === selected.length - 1}>▼</button>
+                    <button className="plan-order-btn plan-order-btn--remove" onClick={() => toggle(ex)}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {err && <div className="auth-error" style={{ marginTop: '1rem' }}>{err}</div>}
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+        <button className="btn-gold" onClick={handleSave}
+          disabled={saving || !title.trim() || !selected.length}>
+          {saving ? 'Saving…' : `Save plan (${selected.length} exercise${selected.length !== 1 ? 's' : ''})`}
+        </button>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   )
 }
@@ -1758,11 +2383,21 @@ function AdminExerciseReview({ details, onBack }) {
     const init = {}
     questions.forEach(q => {
       const sa = answerMap[q.id]
-      // Auto-compute correctness for MC and fill_blank
+      // Auto-compute correctness for auto-gradeable types
       let auto = null
-      if (sa?.answer !== undefined && q.correct_answer) {
-        if (q.type === 'multiple_choice') auto = sa.answer.trim() === q.correct_answer.trim()
-        if (q.type === 'fill_blank')      auto = sa.answer.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()
+      if (sa?.answer !== undefined) {
+        if (q.type === 'multiple_choice' && q.correct_answer)
+          auto = sa.answer.trim() === q.correct_answer.trim()
+        if (q.type === 'fill_blank' && q.correct_answer)
+          auto = sa.answer.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()
+        if (q.type === 'true_false' && q.correct_answer)
+          auto = sa.answer.trim() === q.correct_answer.trim()
+        if (q.type === 'matching' && sa.answer) {
+          try {
+            const studentMatch = JSON.parse(sa.answer)
+            auto = (q.options || []).every(p => studentMatch[p.left] === p.right)
+          } catch { auto = null }
+        }
       }
       init[q.id] = {
         answerId:       sa?.id ?? null,
@@ -1814,19 +2449,44 @@ function AdminExerciseReview({ details, onBack }) {
             <div key={q.id} className="review-question">
               <div className="review-q-header">
                 <span className="eq-num">Q{idx + 1}</span>
-                <span className="eq-type">{q.type === 'multiple_choice' ? 'Multiple choice' : q.type === 'fill_blank' ? 'Fill in the blank' : 'Written answer'}</span>
+                <span className="eq-type">
+                  {q.type === 'multiple_choice' ? 'Multiple choice'
+                   : q.type === 'fill_blank'     ? 'Fill in the blank'
+                   : q.type === 'true_false'      ? 'True / False'
+                   : q.type === 'matching'        ? 'Matching'
+                   : 'Written answer'}
+                </span>
               </div>
               <p className="eq-prompt">{q.prompt}</p>
 
               <div className="review-answer-row">
                 <div className="review-answer-left">
                   <span className="review-label">Student answered:</span>
-                  <div className={`review-answer-box ${!hasAnswer ? 'review-answer-empty' : ''}`}>
-                    {hasAnswer || <em>No answer given</em>}
-                  </div>
+                  {q.type === 'matching' && hasAnswer ? (
+                    <div className="review-matching-pairs">
+                      {(() => { try {
+                        const m = JSON.parse(sa.answer)
+                        return (q.options || []).map(p => (
+                          <div key={p.left} className={`review-match-row ${m[p.left] === p.right ? 'match-correct' : 'match-wrong'}`}>
+                            <span>{p.left}</span><span>→</span><span>{m[p.left] || <em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                          </div>
+                        ))
+                      } catch { return <em>Error reading answer</em> } })()}
+                    </div>
+                  ) : (
+                    <div className={`review-answer-box ${!hasAnswer ? 'review-answer-empty' : ''}`}>
+                      {hasAnswer || <em>No answer given</em>}
+                    </div>
+                  )}
                   {q.correct_answer && (
                     <div className="review-correct-answer">
                       <span className="review-label">Correct answer:</span> {q.correct_answer}
+                    </div>
+                  )}
+                  {q.type === 'matching' && q.options && (
+                    <div className="review-correct-answer">
+                      <span className="review-label">Correct pairs:</span>{' '}
+                      {(q.options || []).map(p => `${p.left} → ${p.right}`).join(' · ')}
                     </div>
                   )}
                 </div>
