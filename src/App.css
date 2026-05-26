@@ -479,17 +479,46 @@ a { text-decoration: none; }
 /* ─── Pre-test / confirmation ───────────────────────────── */
 .confirmation-icon { font-size: 3rem; margin-bottom: 1rem; display: block; }
 .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
-.pretest-box {
+
+/* ─── PreTest next-steps layout ─────────────────────────── */
+.pretest-card { max-width: 780px; }
+.pretest-heading { text-align: center; margin-bottom: 2rem; }
+.pretest-heading .confirmation-icon { margin-bottom: 0.75rem; }
+.pretest-heading h2 { margin-bottom: 0.5rem; }
+.pretest-heading .flow-sub { margin-bottom: 0; }
+.next-steps-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+.next-step-card {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 2rem;
-  margin-top: 2rem;
-  text-align: left;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
-.pretest-box h3 { margin-bottom: 0.6rem; font-size: 1.1rem; }
-.pretest-box p { color: var(--text-muted); margin-bottom: 1.75rem; font-size: 0.92rem; }
-.pretest-actions { display: flex; gap: 1rem; flex-wrap: wrap; }
+.next-step-primary {
+  border-color: rgba(212, 168, 83, 0.35);
+  background: linear-gradient(160deg, #131f35 0%, #111827 100%);
+}
+.next-step-icon { font-size: 1.75rem; }
+.next-step-card h3 { font-size: 1.05rem; margin: 0; }
+.next-step-card p { color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; flex: 1; }
+.next-step-tag {
+  display: inline-block;
+  background: rgba(212, 168, 83, 0.15);
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 100px;
+  align-self: flex-start;
+}
 
 /* ─── Placement test ────────────────────────────────────── */
 .test-card { max-width: 700px; }
@@ -795,6 +824,6 @@ a { text-decoration: none; }
   .steps-grid { grid-template-columns: 1fr; }
   .nav-links a { display: none; }
   .flow-card { padding: 1.75rem 1.25rem; }
-  .pretest-actions { flex-direction: column; }
+  .next-steps-grid { grid-template-columns: 1fr; }
   .hero-actions { flex-direction: column; }
 }

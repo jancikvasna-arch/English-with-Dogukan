@@ -184,6 +184,7 @@ const TEST_QUESTIONS = [
 export default function App() {
   const [page, setPage] = useState('landing')
   const [completedPath, setCompletedPath] = useState(null) // 'questionnaire' | 'consultation'
+  const [studentData, setStudentData] = useState({})
   const [testAnswers, setTestAnswers] = useState({})
   const [results, setResults] = useState(null)
 
@@ -194,7 +195,7 @@ export default function App() {
       <div className="flow-wrapper">
         <div className="flow-header">
           <button className="back-link" onClick={() => goTo('landing')}>
-            ← English with Doğukan
+            ← English with Dogukan
           </button>
         </div>
         <div className="flow-content">
@@ -206,7 +207,12 @@ export default function App() {
           )}
           {page === 'questionnaire' && (
             <Questionnaire
-              onSubmit={() => { setCompletedPath('questionnaire'); goTo('pretest') }}
+              onSubmit={(data) => {
+                setStudentData(data)
+                setCompletedPath('questionnaire')
+                sendQuestionnaireNotification(data)
+                goTo('pretest')
+              }}
               onBack={() => goTo('start')}
             />
           )}
@@ -219,6 +225,7 @@ export default function App() {
           {page === 'pretest' && (
             <PreTest
               completedPath={completedPath}
+              studentName={studentData.name}
               onTakeTest={() => goTo('test')}
               onSkip={() => goTo('landing')}
             />
@@ -261,6 +268,31 @@ export default function App() {
   )
 }
 
+// ─── Questionnaire notification ──────────────────────────────
+async function sendQuestionnaireNotification(data) {
+  const endpoint = import.meta.env.VITE_FORMSPREE_ENDPOINT
+  if (!endpoint || endpoint === 'your_formspree_endpoint_here') return
+  try {
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        _subject: `New student enquiry: ${data.name}`,
+        Name: data.name,
+        Email: data.email,
+        'Current level': data.level,
+        'Main goal': data.goal,
+        'Biggest challenge': data.challenge,
+        'Study background': data.background,
+        'Time per week': data.time,
+        'Content preference': data.content,
+      }),
+    })
+  } catch {
+    // Silent — never block the student flow
+  }
+}
+
 // ─── Shared: flow step indicator ──────────────────────────────
 function FlowSteps({ current }) {
   const steps = ['About you', 'Placement test', 'Book your lesson']
@@ -287,7 +319,7 @@ function Navbar({ onBook }) {
     <nav className="navbar">
       <div className="nav-inner">
         <span className="nav-logo">
-          English with <span className="gold">Doğukan</span>
+          English with <span className="gold">Dogukan</span>
         </span>
         <div className="nav-links">
           <a href="#how-it-works">How it works</a>
@@ -369,15 +401,15 @@ function HowItWorks() {
   const steps = [
     {
       num: '01', title: 'Tell us about yourself',
-      desc: "Answer 6 quick questions or book a free 15-minute consultation. Doğukan uses this to design your first lesson — no wasted time.",
+      desc: "Answer 6 quick questions or book a free 15-minute consultation call. Dogukan uses this to design your first lesson around your exact needs.",
     },
     {
       num: '02', title: 'Optional placement test',
-      desc: '12 questions, about 10 minutes. Helps Doğukan pinpoint your exact level. Completely optional.',
+      desc: '12 questions, about 10 minutes. Helps Dogukan pinpoint your exact level. Completely optional.',
     },
     {
       num: '03', title: 'Your free first lesson',
-      desc: 'A 30-minute lesson built specifically around what you told us. No payment, no commitment — just good teaching.',
+      desc: 'A 60-minute lesson built specifically around what you told us. No payment, no commitment — just good teaching.',
     },
     {
       num: '04', title: 'Start your course',
@@ -408,19 +440,19 @@ function HowItWorks() {
 function Courses() {
   const courses = [
     {
-      level: 'Beginner', tag: 'A1 – A2', color: '#3b82f6',
-      desc: 'Build a solid foundation from the ground up. Everyday vocabulary, basic grammar, and the confidence to hold simple conversations.',
-      topics: ['Greetings & introductions', 'Present & past tenses', 'Numbers, dates & time', 'Shopping, travel & directions', 'Asking & answering questions'],
+      name: 'Conversational English', tag: 'Beginner → Advanced', color: '#3b82f6',
+      desc: 'Build real confidence speaking English. Whether you\'re starting from scratch or already getting by, these lessons focus on natural speech, listening, and everyday fluency.',
+      topics: ['Speaking with confidence', 'Everyday vocabulary & phrases', 'Listening & comprehension', 'Social situations & small talk', 'Travel & getting around', 'Natural, fluent expression'],
     },
     {
-      level: 'Intermediate', tag: 'B1 – B2', color: '#d4a853', featured: true,
-      desc: 'Break through the plateau. Learn to express opinions, discuss complex topics, and handle real-world English at work and in social situations.',
-      topics: ['Business & professional English', 'Complex grammar structures', 'Reading & listening comprehension', 'Debate & discussion skills', 'Writing emails & reports'],
+      name: 'Business English', tag: 'For professionals', color: '#d4a853', featured: true,
+      desc: 'Take your career further with professional English. From emails and meetings to presentations and negotiations — lessons built around what you actually need at work.',
+      topics: ['Professional emails & communication', 'Meetings, presentations & negotiations', 'Business vocabulary & idioms', 'Report & proposal writing', 'Interview & career conversations'],
     },
     {
-      level: 'Advanced', tag: 'C1', color: '#a855f7',
-      desc: 'Refine your English to near-native level. Master nuance, idioms, and academic or professional English that sets you apart.',
-      topics: ['Idiomatic & natural expression', 'Academic writing', 'Presentations & public speaking', 'Subtle grammar & style', 'Media & current affairs'],
+      name: 'Exam Preparation', tag: 'IELTS · TOEFL · Cambridge', color: '#a855f7',
+      desc: 'Targeted preparation for English exams. Structured lessons covering every part of the test — with proven strategies, practice papers, and expert feedback on all four skills.',
+      topics: ['IELTS Academic & General Training', 'TOEFL iBT preparation', 'Cambridge B2 First & C1 Advanced', 'Exam strategies & time management', 'Practice tests with detailed feedback'],
     },
   ]
 
@@ -431,10 +463,10 @@ function Courses() {
         <h2 className="section-title">Courses</h2>
         <div className="courses-grid">
           {courses.map((c) => (
-            <div key={c.level} className={`course-card ${c.featured ? 'course-featured' : ''}`}>
+            <div key={c.name} className={`course-card ${c.featured ? 'course-featured' : ''}`}>
               {c.featured && <div className="course-badge">Most popular</div>}
               <div className="course-tag" style={{ color: c.color }}>{c.tag}</div>
-              <h3 className="course-level">{c.level}</h3>
+              <h3 className="course-name">{c.name}</h3>
               <p className="course-desc">{c.desc}</p>
               <ul className="course-topics">
                 {c.topics.map((t) => (
@@ -456,11 +488,11 @@ function Testimonials() {
   const testimonials = [
     {
       name: 'Maria S.', country: 'Spain', level: 'B2 → C1',
-      text: 'After 6 months with Doğukan I went from struggling in meetings to confidently leading them. His approach is patient, structured and genuinely fun.',
+      text: 'After 6 months with Dogukan I went from struggling in meetings to confidently leading them. His approach is patient, structured and genuinely fun.',
     },
     {
       name: 'Kaito M.', country: 'Japan', level: 'B1 → B2',
-      text: 'I tried many tutors before but Doğukan is different. He actually listens to what you need and adapts every lesson. My business English has improved massively.',
+      text: 'I tried many tutors before but Dogukan is different. He actually listens to what you need and adapts every lesson. My business English has improved massively.',
     },
     {
       name: 'Anya K.', country: 'Russia', level: 'B2 → C1',
@@ -498,8 +530,8 @@ function Pricing({ onBook }) {
   const plans = [
     {
       name: 'Free first lesson', price: '£0', per: 'no commitment',
-      desc: 'Try before you commit. A 30-minute lesson designed around you — no payment required.',
-      features: ['30-minute lesson', 'Built around your goals', 'No credit card needed'],
+      desc: 'Try before you commit. A 60-minute lesson designed around you — no payment required.',
+      features: ['60-minute lesson', 'Built around your goals', 'No credit card needed'],
       cta: 'Get started',
     },
     {
@@ -545,7 +577,7 @@ function Pricing({ onBook }) {
             </div>
           ))}
         </div>
-        <p className="section-note">* Placeholder pricing — Doğukan to confirm final numbers.</p>
+        <p className="section-note">* Placeholder pricing — Dogukan to confirm final numbers.</p>
       </div>
     </section>
   )
@@ -558,7 +590,7 @@ function BookingCTA({ onBook }) {
       <div className="container">
         <h2>Ready to start speaking with confidence?</h2>
         <p className="cta-sub">
-          Tell Doğukan about yourself and book your free first lesson. No commitment, no pressure.
+          Tell Dogukan about yourself and book your free first lesson. No commitment, no pressure.
         </p>
         <button className="btn-gold btn-lg" onClick={onBook}>
           Get started — it's free →
@@ -574,7 +606,7 @@ function Footer() {
     <footer className="footer">
       <div className="container">
         <span className="nav-logo">
-          English with <span className="gold">Doğukan</span>
+          English with <span className="gold">Dogukan</span>
         </span>
         <p>CELTA-certified English tutor · Personalised one-to-one lessons</p>
       </div>
@@ -589,7 +621,7 @@ function Start({ onQuestionnaire, onConsultation }) {
       <FlowSteps current={1} />
       <h2>Let's understand what you need</h2>
       <p className="flow-sub">
-        Before Doğukan designs your first lesson, he needs to know a little about you.
+        Before Dogukan designs your first lesson, he needs to know a little about you.
         Choose how you'd like to share that — both take under 5 minutes.
       </p>
       <div className="path-options">
@@ -597,7 +629,7 @@ function Start({ onQuestionnaire, onConsultation }) {
           <span className="path-icon">📋</span>
           <div>
             <strong>Answer 6 quick questions</strong>
-            <p>~3 minutes. Doğukan reviews your answers and designs the lesson around them.</p>
+            <p>~3 minutes. Dogukan reviews your answers and designs the lesson around them.</p>
           </div>
           <span className="path-arrow">→</span>
         </button>
@@ -605,7 +637,7 @@ function Start({ onQuestionnaire, onConsultation }) {
           <span className="path-icon">📞</span>
           <div>
             <strong>Book a free consultation call</strong>
-            <p>Prefer to talk? Book a short call and Doğukan will ask you these questions himself.</p>
+            <p>Prefer to talk? Book a short call and Dogukan will ask you these questions himself.</p>
           </div>
           <span className="path-arrow">→</span>
         </button>
@@ -652,7 +684,7 @@ function Questionnaire({ onSubmit, onBack }) {
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>About you</h2>
       <p className="flow-sub">
-        6 quick questions so Doğukan can design your first lesson around your exact needs.
+        6 quick questions so Dogukan can design your first lesson around your exact needs.
       </p>
       <form onSubmit={handleSubmit} className="booking-form">
         <div className="form-field">
@@ -718,7 +750,7 @@ function ConsultationScreen({ onContinue, onBack }) {
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>Book your free consultation</h2>
       <p className="flow-sub">
-        Pick a time that works for you. Doğukan will ask you a few questions about your goals
+        Pick a time that works for you. Dogukan will ask you a few questions about your goals
         and design your first lesson from there.
       </p>
 
@@ -746,37 +778,50 @@ function ConsultationScreen({ onContinue, onBack }) {
 }
 
 // ─── PreTest ──────────────────────────────────────────────────
-function PreTest({ completedPath, onTakeTest, onSkip }) {
+function PreTest({ completedPath, studentName, onTakeTest, onSkip }) {
   const isQuestionnaire = completedPath === 'questionnaire'
 
-  const handleSkip = () => {
-    if (isQuestionnaire) window.open(CALENDLY_FIRST_LESSON, '_blank')
+  const handleBookLesson = () => {
+    window.open(CALENDLY_FIRST_LESSON, '_blank')
     onSkip()
   }
 
   return (
-    <div className="flow-card text-center">
+    <div className="flow-card pretest-card">
       <FlowSteps current={2} />
-      <span className="confirmation-icon">✅</span>
-      <h2>{isQuestionnaire ? 'All done — one optional step left' : 'Your consultation is booked!'}</h2>
-      <p className="flow-sub">
-        {isQuestionnaire
-          ? 'Doğukan has everything he needs. You can also take a quick placement test — it helps him plan your first lesson even better.'
-          : 'Doğukan will chat with you at your consultation and design your first lesson from there. In the meantime, you can take an optional placement test.'}
-      </p>
-
-      <div className="pretest-box">
-        <h3>Want to take a placement test?</h3>
-        <p>
-          12 questions, about 10 minutes. Covers grammar, vocabulary, reading and writing.
-          Completely optional — no pressure either way.
+      <div className="pretest-heading">
+        <span className="confirmation-icon">✅</span>
+        <h2>
+          {isQuestionnaire
+            ? (studentName ? `Thanks, ${studentName}!` : "You're all set!")
+            : 'Your consultation is booked!'}
+        </h2>
+        <p className="flow-sub">
+          {isQuestionnaire
+            ? 'Dogukan has everything he needs. What would you like to do next?'
+            : 'Dogukan will design your lesson from your consultation. You can also take a quick placement test in the meantime — completely optional.'}
         </p>
-        <div className="pretest-actions">
-          <button className="btn-gold btn-lg" onClick={onTakeTest}>
-            Yes, take the test
+      </div>
+      <div className="next-steps-grid">
+        <div className="next-step-card next-step-primary">
+          <div className="next-step-icon">📝</div>
+          <span className="next-step-tag">Recommended</span>
+          <h3>Take the placement test</h3>
+          <p>12 questions, about 10 minutes. Covers grammar, vocabulary, reading and writing. Helps Dogukan plan your first lesson even better.</p>
+          <button className="btn-gold btn-full" onClick={onTakeTest}>
+            Take the test →
           </button>
-          <button className="btn-outline btn-lg" onClick={handleSkip}>
-            {isQuestionnaire ? 'Skip — book my lesson now →' : 'Skip, I\'m all done'}
+        </div>
+        <div className="next-step-card">
+          <div className="next-step-icon">{isQuestionnaire ? '📅' : '✓'}</div>
+          <h3>{isQuestionnaire ? 'Book my first lesson now' : "I'm all done"}</h3>
+          <p>
+            {isQuestionnaire
+              ? 'Skip the test and go straight to booking your free 60-minute first lesson with Dogukan.'
+              : "No test needed — Dogukan will assess your level naturally during your consultation call."}
+          </p>
+          <button className="btn-outline btn-full" onClick={isQuestionnaire ? handleBookLesson : onSkip}>
+            {isQuestionnaire ? 'Book my lesson →' : 'Back to home'}
           </button>
         </div>
       </div>
@@ -901,7 +946,7 @@ function Grading({ answers, onDone }) {
       <div className="grading-spinner" />
       <h2>Grading your test…</h2>
       <p className="flow-sub">
-        Doğukan's AI assistant is reviewing your answers. This takes about 10 seconds.
+        Dogukan's AI assistant is reviewing your answers. This takes about 10 seconds.
       </p>
     </div>
   )
@@ -1036,7 +1081,7 @@ function Results({ results, completedPath, onDone }) {
 
       {results.teacher_notes && (
         <div className="teacher-notes">
-          <h3>Doğukan's notes</h3>
+          <h3>Dogukan's notes</h3>
           <p>{results.teacher_notes}</p>
         </div>
       )}
@@ -1061,7 +1106,7 @@ function Results({ results, completedPath, onDone }) {
       ) : (
         <>
           <div className="consultation-note">
-            Your results will be shared with Doğukan before your consultation call.
+            Your results will be shared with Dogukan before your consultation call.
           </div>
           <button className="btn-ghost btn-full" onClick={onDone}>
             Back to home
