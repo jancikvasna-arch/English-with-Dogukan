@@ -367,6 +367,63 @@ a { text-decoration: none; }
 .cta-section h2 { margin-bottom: 1rem; }
 .cta-sub { color: var(--text-muted); margin-bottom: 2.5rem; font-size: 1.1rem; }
 
+/* ─── About Me ──────────────────────────────────────────── */
+.about-inner {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 4rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+.about-photo-wrap {
+  position: sticky;
+  top: 5rem;
+}
+.about-photo-placeholder {
+  width: 100%;
+  aspect-ratio: 3/4;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 2px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-dim);
+}
+.about-photo-icon { font-size: 3.5rem; }
+.about-photo-label { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.about-bio {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.about-bio p {
+  color: var(--text-muted);
+  line-height: 1.8;
+  font-size: 1.05rem;
+}
+.about-credentials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.credential-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-size: 0.87rem;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+}
+.credential-icon { font-size: 1rem; }
+
 /* ─── Footer ────────────────────────────────────────────── */
 .footer {
   padding: 3rem 1.5rem;
@@ -961,6 +1018,9 @@ a { text-decoration: none; }
   .testimonials-grid { grid-template-columns: 1fr; }
   .pricing-grid { grid-template-columns: 1fr; }
   .results-feedback { grid-template-columns: 1fr; }
+  .about-inner { grid-template-columns: 1fr; gap: 2rem; }
+  .about-photo-wrap { position: static; }
+  .about-photo-placeholder { aspect-ratio: 16/9; max-height: 260px; }
 }
 @media (max-width: 640px) {
   .steps-grid { grid-template-columns: 1fr; }
