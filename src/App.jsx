@@ -2351,7 +2351,6 @@ function newQ(type) {
 function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
   const isEdit = !!initialExercise
 
-  // Pre-fill from existing exercise when editing
   const [title,          setTitle]          = useState(initialExercise?.title        ?? '')
   const [description,    setDescription]    = useState(initialExercise?.description  ?? '')
   const [selType,        setSelType]        = useState(initialExercise?.questions?.[0]?.type ?? null)
@@ -2363,6 +2362,8 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
   const [saveError,      setSaveError]      = useState(null)
   const [photoLoading,   setPhotoLoading]   = useState(false)
   const [photoError,     setPhotoError]     = useState(null)
+  // OCR review state: null = not in review, string = raw text to review
+  const [ocrDraft,       setOcrDraft]       = useState(null)
   const contextFileRef  = useRef(null)
   const exerciseFileRef = useRef(null)
 
@@ -2381,18 +2382,34 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
     if (!questions.length) setQuestions([newQ(type)])
   }
 
-  // ── AI extract from exercise photo ─────────────────────────
+  // ── OCR photo → show raw text for review ───────────────────
   const handleExercisePhoto = async (e) => {
     const file = e.target.files?.[0]; if (!file) return
     if (!selType) { setPhotoError('Please select an exercise type first, then upload the photo.'); e.target.value = ''; return }
     setPhotoLoading(true); setPhotoError(null)
     try {
-      const rawText  = await ocrImage(file)
-      const parsed   = parseOcrIntoQuestions(rawText, selType)
-      if (!parsed.length) throw new Error('Could not read text from the photo. Try a clearer, well-lit shot or type the questions manually.')
-      setQuestions(parsed)
+      const rawText = await ocrImage(file)
+      if (!rawText.trim()) throw new Error('Could not read any text. Try a clearer, well-lit photo.')
+      // Pre-clean: remove leading/trailing blank lines
+      setOcrDraft(rawText.trim())
     } catch (err) { setPhotoError(err.message) }
     finally { setPhotoLoading(false); e.target.value = '' }
+  }
+
+  // ── Convert reviewed OCR text → question cards ─────────────
+  const applyOcrDraft = () => {
+    if (!ocrDraft?.trim() || !selType) return
+    const lines = ocrDraft
+      .split('\n')
+      .map(l => l.replace(/^\s*\d+[.)]\s*/, '').trim())  // strip "1. " "2) " etc.
+      .filter(l => l.length > 2)
+    if (!lines.length) return
+    setQuestions(lines.map(line => {
+      const q = newQ(selType)
+      q.prompt = line.replace(/_{1,}/g, '___')
+      return q
+    }))
+    setOcrDraft(null)
   }
 
   // ── Questions ───────────────────────────────────────────────
@@ -2491,6 +2508,30 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
           <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
             onChange={handleExercisePhoto} />
           {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
+
+          {/* ── OCR review: edit raw text before converting ── */}
+          {ocrDraft !== null && (
+            <div className="ocr-review-box">
+              <p className="ocr-review-label">
+                📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
+              </p>
+              <textarea
+                className="ocr-review-textarea"
+                rows={10}
+                value={ocrDraft}
+                onChange={e => setOcrDraft(e.target.value)}
+                spellCheck={false}
+              />
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
+                <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                  onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
+                  ✓ Create questions from this text
+                </button>
+                <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                  onClick={() => setOcrDraft(null)}>Discard</button>
+              </div>
+            </div>
+          )}
 
           <div className="builder-questions">
             {questions.map((q, idx) => (

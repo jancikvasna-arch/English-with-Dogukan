@@ -1596,6 +1596,26 @@ a { text-decoration: none; }
 }
 .library-row-info { flex: 1; }
 
+/* ─── OCR Review Box ─────────────────────────────────────────── */
+.ocr-review-box {
+  background: rgba(212,168,83,0.05);
+  border: 1px solid rgba(212,168,83,0.25);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.ocr-review-label {
+  font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0.65rem;
+}
+.ocr-review-label strong { color: var(--text); }
+.ocr-review-textarea {
+  width: 100%; box-sizing: border-box;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: 'DM Mono', 'Courier New', monospace; font-size: 0.85rem;
+  line-height: 1.6; padding: 0.65rem 0.85rem; resize: vertical;
+}
+.ocr-review-textarea:focus { outline: none; border-color: var(--gold); }
+
 /* ─── Exercise Player — Context Images ───────────────────────── */
 .exercise-context-images {
   margin-bottom: 1.5rem;
