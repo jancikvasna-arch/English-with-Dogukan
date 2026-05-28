@@ -151,6 +151,29 @@ export async function fetchQuestionsForStudent(exerciseId) {
   return data ?? []
 }
 
+/** Fetch questions including correct_answer — used in the post-submission review view. */
+export async function fetchQuestionsForReview(exerciseId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('questions')
+    .select('id, exercise_id, order_index, type, prompt, options, hint, correct_answer')
+    .eq('exercise_id', exerciseId)
+    .order('order_index')
+  if (error) { console.error('[supabase] fetchQuestionsForReview:', error); return [] }
+  return data ?? []
+}
+
+/** Fetch a student's own submitted answers for one assignment (includes review marks). */
+export async function fetchMyAnswersForAssignment(assignmentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('student_answers')
+    .select('id, question_id, answer, is_correct, teacher_comment')
+    .eq('assignment_id', assignmentId)
+  if (error) { console.error('[supabase] fetchMyAnswersForAssignment:', error); return [] }
+  return data ?? []
+}
+
 /** Submit all answers for an assignment (one-shot). */
 export async function submitExerciseAnswers(assignmentId, answersMap, studentId) {
   // answersMap: { [questionId]: answerString }

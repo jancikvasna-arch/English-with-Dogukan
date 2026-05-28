@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
-  fetchMyExercises, fetchQuestionsForStudent, submitExerciseAnswers,
+  fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
+  fetchMyAnswersForAssignment, submitExerciseAnswers,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
   fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
@@ -1469,7 +1470,8 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [loading,     setLoading]     = useState(true)
   const [assignments, setAssignments] = useState([])
   const [lessons,     setLessons]     = useState([])
-  const [activeAssignment, setActiveAssignment] = useState(null)
+  const [activeAssignment,  setActiveAssignment]  = useState(null)
+  const [viewingSubmission, setViewingSubmission] = useState(null) // {assignment, questions, answerMap}
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
@@ -1491,6 +1493,26 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const openExercise = async (assignment) => {
     const qs = await fetchQuestionsForStudent(assignment.exercises.id)
     setActiveAssignment({ assignment, questions: qs })
+  }
+
+  const handleViewSubmission = async (assignment) => {
+    const [qs, ans] = await Promise.all([
+      fetchQuestionsForReview(assignment.exercises.id),
+      fetchMyAnswersForAssignment(assignment.id),
+    ])
+    const answerMap = Object.fromEntries(ans.map(sa => [sa.question_id, sa]))
+    setViewingSubmission({ assignment, questions: qs, answerMap })
+  }
+
+  if (viewingSubmission) {
+    return (
+      <StudentSubmissionReview
+        assignment={viewingSubmission.assignment}
+        questions={viewingSubmission.questions}
+        answerMap={viewingSubmission.answerMap}
+        onBack={() => setViewingSubmission(null)}
+      />
+    )
   }
 
   if (activeAssignment) {
@@ -1622,7 +1644,8 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                       </div>
                       <div className="exercise-row-right">
                         {submitted ? (
-                          <span className="exercise-submitted-badge">✓ Submitted</span>
+                          <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
+                            onClick={() => handleViewSubmission(a)}>View →</button>
                         ) : (
                           <button className="btn-gold" onClick={() => openExercise(a)}>Start →</button>
                         )}
@@ -2074,6 +2097,247 @@ function MatchingQuestion({ pairs, answer, onChange }) {
   )
 }
 
+// ─── ExerciseDemoPlayer (admin — interactive preview) ─────────
+function ExerciseDemoPlayer({ exercise, questions, onBack }) {
+  const [answers, setAnswers] = useState({})
+  const [checked, setChecked] = useState(false)
+
+  const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
+
+  const getResult = (q) => {
+    if (!checked) return null
+    const ans = (answers[q.id] ?? '').toString().trim()
+    if (!ans) return null
+    if (q.type === 'multiple_choice' || q.type === 'true_false')
+      return ans === (q.correct_answer ?? '').trim() ? true : false
+    if (q.type === 'fill_blank')
+      return ans.toLowerCase() === (q.correct_answer ?? '').trim().toLowerCase() ? true : false
+    if (q.type === 'matching') {
+      try { const m = JSON.parse(ans); return (q.options||[]).every(p => m[p.left] === p.right) }
+      catch { return null }
+    }
+    return null // free_text — not auto-graded
+  }
+
+  const typeLabel = (t) =>
+    t === 'multiple_choice' ? 'Multiple choice'
+    : t === 'fill_blank'    ? 'Fill in the blank'
+    : t === 'true_false'    ? 'True / False'
+    : t === 'matching'      ? 'Matching'
+    : 'Written answer'
+
+  return (
+    <div className="flow-card exercise-player-card">
+      <button className="back-btn" onClick={onBack}>← Back to library</button>
+      <div className="exercise-demo-badge">🎓 Preview / Demo mode</div>
+      <div className="exercise-player-header">
+        <h2>{exercise?.title}</h2>
+        {exercise?.description && <p className="flow-sub">{exercise.description}</p>}
+      </div>
+
+      {exercise?.context_images?.length > 0 && (
+        <div className="exercise-context-images">
+          <p className="exercise-context-label">📖 Reference material</p>
+          {exercise.context_images.map((src, i) => (
+            <img key={i} src={src} alt={`Reference ${i + 1}`} className="exercise-context-img" />
+          ))}
+        </div>
+      )}
+
+      <div className="exercise-questions">
+        {questions.map((q, idx) => {
+          const result = getResult(q)
+          return (
+            <div key={q.id} className={`exercise-question${checked && result === true ? ' eq--correct' : checked && result === false ? ' eq--wrong' : ''}`}>
+              <div className="eq-label">
+                <span className="eq-num">Q{idx + 1}</span>
+                <span className="eq-type">{typeLabel(q.type)}</span>
+                {checked && result === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
+                {checked && result === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
+              </div>
+              <p className="eq-prompt">{q.prompt}</p>
+              {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
+
+              {q.type === 'multiple_choice' && (
+                <div className="options-list">
+                  {(q.options||[]).map(opt => (
+                    <button key={opt} className={`option-btn ${answers[q.id]===opt?'selected':''}`}
+                      onClick={() => setAnswer(q.id, opt)}>{opt}</button>
+                  ))}
+                </div>
+              )}
+              {q.type === 'fill_blank' && (
+                <input type="text" className="fill-input" placeholder="Type your answer…"
+                  value={answers[q.id]||''} onChange={e => setAnswer(q.id, e.target.value)} />
+              )}
+              {q.type === 'true_false' && (
+                <div className="options-list" style={{ flexDirection:'row', gap:'0.75rem' }}>
+                  {['True','False'].map(opt => (
+                    <button key={opt} className={`option-btn ${answers[q.id]===opt?'selected':''}`}
+                      style={{ flex:1, textAlign:'center' }}
+                      onClick={() => setAnswer(q.id, opt)}>
+                      {opt === 'True' ? '✓ True' : '✗ False'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {q.type === 'matching' && (
+                <MatchingQuestion pairs={q.options||[]} answer={answers[q.id]||null}
+                  onChange={val => setAnswer(q.id, val)} />
+              )}
+              {q.type === 'free_text' && (
+                <textarea className="writing-input" rows={4}
+                  placeholder={q.hint || 'Write your answer here…'}
+                  value={answers[q.id]||''} onChange={e => setAnswer(q.id, e.target.value)} />
+              )}
+
+              {/* Reveal correct answer after Check */}
+              {checked && q.correct_answer && q.type !== 'matching' && (
+                <div className="demo-correct-answer">✓ Answer: <strong>{q.correct_answer}</strong></div>
+              )}
+              {checked && q.type === 'matching' && q.options && (
+                <div className="demo-correct-answer">
+                  ✓ Pairs: {(q.options||[]).map(p => `${p.left} → ${p.right}`).join(' · ')}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="exercise-submit-row">
+        {!checked ? (
+          <button className="btn-gold btn-lg" onClick={() => setChecked(true)}>Check answers →</button>
+        ) : (
+          <button className="btn-ghost" onClick={() => { setChecked(false); setAnswers({}) }}>
+            ↺ Reset &amp; try again
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── StudentSubmissionReview ──────────────────────────────────
+function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
+  const ex = assignment.exercises
+  const allAnswers = Object.values(answerMap)
+  const reviewed = allAnswers.some(a => a.is_correct !== null && a.is_correct !== undefined)
+  const correctCount = allAnswers.filter(a => a.is_correct === true).length
+  const reviewedCount = allAnswers.filter(a => a.is_correct !== null && a.is_correct !== undefined).length
+
+  const typeLabel = (t) =>
+    t === 'multiple_choice' ? 'Multiple choice'
+    : t === 'fill_blank'    ? 'Fill in the blank'
+    : t === 'true_false'    ? 'True / False'
+    : t === 'matching'      ? 'Matching'
+    : 'Written answer'
+
+  return (
+    <div className="flow-card exercise-player-card">
+      <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+
+      <div className="exercise-player-header">
+        <span className={`exercise-mode-chip exercise-mode-chip--${assignment.mode}`}>
+          {assignment.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+        </span>
+        <h2>{ex?.title}</h2>
+        {ex?.description && <p className="flow-sub">{ex.description}</p>}
+        {assignment.note && (
+          <div className="exercise-teacher-note">
+            <strong>Note from Dogukan:</strong> {assignment.note}
+          </div>
+        )}
+      </div>
+
+      {/* Score card */}
+      {reviewed ? (
+        <div className="submission-score-card">
+          <div className="submission-score-num">{correctCount}<span>/{reviewedCount}</span></div>
+          <div className="submission-score-label">correct answers</div>
+          {reviewedCount < questions.length && (
+            <p style={{ fontSize:'0.8rem', color:'var(--text-muted)', margin:'0.3rem 0 0' }}>
+              {questions.length - reviewedCount} question{questions.length - reviewedCount !== 1 ? 's' : ''} still pending review
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="submission-pending-msg">
+          ⏳ Dogukan hasn't reviewed this exercise yet. Check back after your next lesson.
+        </div>
+      )}
+
+      {/* Context images */}
+      {ex?.context_images?.length > 0 && (
+        <div className="exercise-context-images">
+          <p className="exercise-context-label">📖 Reference material</p>
+          {ex.context_images.map((src, i) => (
+            <img key={i} src={src} alt={`Reference ${i + 1}`} className="exercise-context-img" />
+          ))}
+        </div>
+      )}
+
+      <div className="exercise-questions">
+        {questions.map((q, idx) => {
+          const sa = answerMap[q.id]
+          const isCorrect = sa?.is_correct
+          const hasReview = isCorrect !== null && isCorrect !== undefined
+          return (
+            <div key={q.id} className={`exercise-question${hasReview && isCorrect ? ' eq--correct' : hasReview && !isCorrect ? ' eq--wrong' : ''}`}>
+              <div className="eq-label">
+                <span className="eq-num">Q{idx + 1}</span>
+                <span className="eq-type">{typeLabel(q.type)}</span>
+                {hasReview && <span className={`demo-mark ${isCorrect ? 'demo-mark--correct' : 'demo-mark--wrong'}`}>
+                  {isCorrect ? '✓ Correct' : '✗ Incorrect'}
+                </span>}
+              </div>
+              <p className="eq-prompt">{q.prompt}</p>
+
+              <div className="submission-answer-block">
+                <span className="review-label">Your answer:</span>
+                {q.type === 'matching' && sa?.answer ? (
+                  <div className="review-matching-pairs">
+                    {(() => { try {
+                      const m = JSON.parse(sa.answer)
+                      return (q.options||[]).map(p => (
+                        <div key={p.left} className={`review-match-row ${m[p.left]===p.right?'match-correct':'match-wrong'}`}>
+                          <span>{p.left}</span><span>→</span><span>{m[p.left]||<em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                        </div>
+                      ))
+                    } catch { return <em>Error reading answer</em> } })()}
+                  </div>
+                ) : (
+                  <div className={`review-answer-box ${!sa?.answer?.trim()?'review-answer-empty':''}`}>
+                    {sa?.answer?.trim() || <em>No answer given</em>}
+                  </div>
+                )}
+
+                {/* Show correct answer when marked wrong */}
+                {hasReview && !isCorrect && q.correct_answer && q.type !== 'matching' && (
+                  <div className="demo-correct-answer">✓ Correct answer: <strong>{q.correct_answer}</strong></div>
+                )}
+                {hasReview && !isCorrect && q.type === 'matching' && q.options && (
+                  <div className="demo-correct-answer">
+                    ✓ Correct pairs: {(q.options||[]).map(p=>`${p.left} → ${p.right}`).join(' · ')}
+                  </div>
+                )}
+
+                {/* Teacher comment */}
+                {sa?.teacher_comment && (
+                  <div className="submission-teacher-comment">
+                    <span className="review-label">💬 Dogukan's feedback:</span>
+                    <p>{sa.teacher_comment}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── AdminExercises tab ───────────────────────────────────────
 function AdminExercises({ adminUserId }) {
   const [exercises,   setExercises]   = useState([])
@@ -2085,6 +2349,7 @@ function AdminExercises({ adminUserId }) {
   const [view,           setView]           = useState('list') // 'list'|'review'|'create-exercise'|'edit-exercise'|'create-plan'
   const [reviewing,      setReviewing]      = useState(null)
   const [editingExercise,setEditingExercise]= useState(null)
+  const [demoExercise,   setDemoExercise]   = useState(null) // {exercise, questions} for admin preview
   const [deletingId,     setDeletingId]     = useState(null) // exercise id pending delete confirm
   const [expandedPlanId, setExpandedPlanId] = useState(null) // plan id currently open in the Plans tab
 
@@ -2165,6 +2430,11 @@ function AdminExercises({ adminUserId }) {
     if (full) { setEditingExercise(full); setView('edit-exercise') }
   }
 
+  const openDemo = async (ex) => {
+    const full = await fetchExerciseWithQuestions(ex.id)
+    if (full) { setDemoExercise(full); setView('demo-exercise') }
+  }
+
   const handleDeleteExercise = async (id) => {
     const ok = await deleteExercise(id)
     if (ok) {
@@ -2183,6 +2453,12 @@ function AdminExercises({ adminUserId }) {
       initialExercise={editingExercise}
       onCancel={() => { setView('list'); setEditingExercise(null) }}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }} />
+  }
+  if (view === 'demo-exercise' && demoExercise) {
+    return <ExerciseDemoPlayer
+      exercise={demoExercise}
+      questions={demoExercise.questions ?? []}
+      onBack={() => { setView('list'); setDemoExercise(null) }} />
   }
   if (view === 'create-plan') {
     return <LessonPlanBuilder exercises={exercises} adminUserId={adminUserId}
@@ -2359,6 +2635,9 @@ function AdminExercises({ adminUserId }) {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => openDemo(ex)}>View</button>
                       <button className="btn-ghost"
                         style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
                         onClick={() => openEdit(ex)}>Edit</button>
