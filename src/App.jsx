@@ -17,6 +17,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
   fetchNextLesson, fetchBadgeDefinitions, fetchStudentBadges, checkAndAwardBadges,
   updateLessonNotes, fetchStudentLessonsAdmin,
+  fetchMyVocabulary, addVocabularyWord, deleteVocabularyWord,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -24,6 +25,38 @@ import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER
 const CALENDLY_CONSULTATION = 'https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins'
 const CALENDLY_FIRST_LESSON = 'https://calendly.com/dogukan-cy/30min'
 const ADMIN_EMAIL           = 'dogukan.cy@gmail.com'
+
+// ─── Demo exercise ───────────────────────────────────────────
+const DEMO_EXERCISE = {
+  title: 'Try a sample exercise',
+  passage: `The internet has transformed the way we communicate, work, and learn. Despite its many benefits, researchers have raised concerns about the effect of constant connectivity on mental health. A 2023 study found that adults who limited their social media use to 30 minutes per day reported significantly lower levels of anxiety and loneliness after just three weeks.`,
+  questions: [
+    {
+      id: 'q1',
+      type: 'multiple_choice',
+      text: 'What did the 2023 study find?',
+      options: [
+        'Social media causes permanent mental health damage',
+        'Limiting social media to 30 minutes daily reduced anxiety',
+        'The internet has no effect on mental health',
+        'Adults should avoid the internet entirely',
+      ],
+      correct: 1,
+    },
+    {
+      id: 'q2',
+      type: 'fill_blank',
+      text: 'Researchers raised concerns about the effect of constant ________ on mental health.',
+      correct: 'connectivity',
+    },
+    {
+      id: 'q3',
+      type: 'true_false',
+      text: 'The study lasted three weeks.',
+      correct: true,
+    },
+  ],
+}
 
 // ─── Label colour swatches ────────────────────────────────────
 const LABEL_COLORS = [
@@ -405,11 +438,12 @@ export default function App() {
       <Hero onBook={() => goTo('consultation')} />
       <HowItWorks />
       <Courses />
-      <Testimonials />
-      <Pricing onBook={() => goTo('consultation')} />
       <AboutMe />
+      <DemoExercise onBook={() => goTo('consultation')} />
+      <Testimonials />
       <FAQ />
       <BookingCTA onBook={() => goTo('consultation')} />
+      <Pricing onBook={() => goTo('consultation')} />
       <Footer />
       {WHATSAPP_NUMBER && <WhatsAppButton number={WHATSAPP_NUMBER} />}
     </div>
@@ -866,6 +900,123 @@ function AboutMe() {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ─── DemoExercise ─────────────────────────────────────────────
+function DemoExercise({ onBook }) {
+  const [answers, setAnswers]   = useState({})
+  const [revealed, setRevealed] = useState(false)
+
+  const setAnswer = (id, val) => {
+    if (revealed) return
+    setAnswers(prev => ({ ...prev, [id]: val }))
+  }
+
+  const allAnswered = DEMO_EXERCISE.questions.every(q => {
+    const a = answers[q.id]
+    return a !== undefined && a !== ''
+  })
+
+  const score = revealed ? DEMO_EXERCISE.questions.reduce((n, q) => {
+    const a = answers[q.id]
+    if (q.type === 'multiple_choice') return n + (a === q.correct ? 1 : 0)
+    if (q.type === 'true_false')      return n + (a === q.correct ? 1 : 0)
+    if (q.type === 'fill_blank')      return n + (
+      typeof a === 'string' && a.trim().toLowerCase() === q.correct.toLowerCase() ? 1 : 0
+    )
+    return n
+  }, 0) : 0
+
+  const isCorrect = (q) => {
+    const a = answers[q.id]
+    if (q.type === 'multiple_choice') return a === q.correct
+    if (q.type === 'true_false')      return a === q.correct
+    if (q.type === 'fill_blank')
+      return typeof a === 'string' && a.trim().toLowerCase() === q.correct.toLowerCase()
+    return false
+  }
+
+  return (
+    <section className="demo-section" id="try-it">
+      <div className="section-container">
+        <p className="section-eyebrow">See how it works</p>
+        <h2 className="section-title">Try a real exercise</h2>
+        <p className="section-sub">This is exactly what you'll see in your student portal after signing up.</p>
+
+        <div className="demo-card">
+          <div className="demo-passage">
+            <p className="demo-passage-label">📄 Reading passage</p>
+            <p className="demo-passage-text">{DEMO_EXERCISE.passage}</p>
+          </div>
+
+          <div className="demo-questions">
+            {DEMO_EXERCISE.questions.map((q, qi) => (
+              <div key={q.id} className={`demo-question ${revealed ? (isCorrect(q) ? 'demo-q--correct' : 'demo-q--wrong') : ''}`}>
+                <p className="demo-q-text"><strong>Q{qi + 1}.</strong> {q.text}</p>
+
+                {q.type === 'multiple_choice' && (
+                  <div className="demo-options">
+                    {q.options.map((opt, oi) => (
+                      <button key={oi}
+                        className={`demo-option ${answers[q.id] === oi ? 'selected' : ''} ${revealed && oi === q.correct ? 'correct' : ''} ${revealed && answers[q.id] === oi && oi !== q.correct ? 'wrong' : ''}`}
+                        onClick={() => setAnswer(q.id, oi)}>
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {q.type === 'true_false' && (
+                  <div className="demo-tf">
+                    {[true, false].map(val => (
+                      <button key={String(val)}
+                        className={`demo-tf-btn ${answers[q.id] === val ? 'selected' : ''} ${revealed && val === q.correct ? 'correct' : ''} ${revealed && answers[q.id] === val && val !== q.correct ? 'wrong' : ''}`}
+                        onClick={() => setAnswer(q.id, val)}>
+                        {val ? 'True' : 'False'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {q.type === 'fill_blank' && (
+                  <input className={`demo-fill-input ${revealed ? (isCorrect(q) ? 'correct' : 'wrong') : ''}`}
+                    type="text" placeholder="Type your answer…"
+                    value={answers[q.id] || ''}
+                    onChange={e => setAnswer(q.id, e.target.value)}
+                    disabled={revealed} />
+                )}
+
+                {revealed && (
+                  <p className="demo-feedback">
+                    {isCorrect(q) ? '✅ Correct!' : `❌ The answer is: ${
+                      q.type === 'multiple_choice' ? q.options[q.correct]
+                      : q.type === 'true_false'    ? (q.correct ? 'True' : 'False')
+                      : q.correct
+                    }`}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {!revealed ? (
+            <button className="btn-gold btn-full btn-lg" disabled={!allAnswered}
+              onClick={() => setRevealed(true)}>
+              Check my answers →
+            </button>
+          ) : (
+            <div className="demo-result">
+              <p className="demo-score">You scored <strong>{score}/{DEMO_EXERCISE.questions.length}</strong></p>
+              <p className="demo-result-sub">In your real lessons, Dogukan reviews every answer with you — and builds the next exercise around what you found difficult.</p>
+              <button className="btn-gold btn-full btn-lg" onClick={onBook}>
+                Book my free consultation →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -1551,6 +1702,27 @@ function AccessBadge({ level, style = {} }) {
   )
 }
 
+// ─── getWeeklyProgress helper ─────────────────────────────────
+function getWeeklyProgress(assignments) {
+  const now = new Date()
+  const weeks = []
+  for (let i = 7; i >= 0; i--) {
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - i * 7 - now.getDay())
+    weekStart.setHours(0, 0, 0, 0)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekStart.getDate() + 7)
+    const count = assignments.filter(a =>
+      a.status === 'submitted' && a.submitted_at &&
+      new Date(a.submitted_at) >= weekStart &&
+      new Date(a.submitted_at) < weekEnd
+    ).length
+    const label = weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    weeks.push({ label, count })
+  }
+  return weeks
+}
+
 // ─── StudentDashboard ─────────────────────────────────────────
 function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [profile,     setProfile]     = useState(null)
@@ -1564,6 +1736,12 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [badgeDefs,    setBadgeDefs]    = useState([])
   const [earnedBadges, setEarnedBadges] = useState([]) // [{badge_key, earned_at}]
   const [newBadges,    setNewBadges]    = useState([]) // keys of just-earned badges (for toast)
+  const [vocabulary,      setVocabulary]      = useState([])
+  const [vocabWord,       setVocabWord]       = useState('')
+  const [vocabDef,        setVocabDef]        = useState('')
+  const [addingVocab,     setAddingVocab]     = useState(false)
+  const [vocabSaving,     setVocabSaving]     = useState(false)
+  const [showVocab,       setShowVocab]       = useState(false)
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
@@ -1576,7 +1754,8 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       fetchNextLesson(user.id),
       fetchBadgeDefinitions(),
       fetchStudentBadges(user.id),
-    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned]) => {
+      fetchMyVocabulary(user.id),
+    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab]) => {
       setProfile(prof)
       setResult(res)
       setAssignments(exs)
@@ -1584,6 +1763,7 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       setNextLesson(nextL)
       setBadgeDefs(defs)
       setEarnedBadges(earned)
+      setVocabulary(vocab)
       setLoading(false)
     })
   }, [user])
@@ -1600,6 +1780,23 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     ])
     const answerMap = Object.fromEntries(ans.map(sa => [sa.question_id, sa]))
     setViewingSubmission({ assignment, questions: qs, answerMap })
+  }
+
+  const handleAddVocab = async (e) => {
+    e.preventDefault()
+    if (!vocabWord.trim()) return
+    setVocabSaving(true)
+    const entry = await addVocabularyWord({ studentId: user.id, word: vocabWord, definition: vocabDef })
+    setVocabSaving(false)
+    if (entry) {
+      setVocabulary(prev => [entry, ...prev])
+      setVocabWord(''); setVocabDef(''); setAddingVocab(false)
+    }
+  }
+
+  const handleDeleteVocab = async (id) => {
+    const ok = await deleteVocabularyWord(id)
+    if (ok) setVocabulary(prev => prev.filter(v => v.id !== id))
   }
 
   if (viewingSubmission) {
@@ -1862,6 +2059,98 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                   </div>
                 </div>
               )}
+
+              {/* ── Progress chart ── */}
+              {assignments.length > 0 && (() => {
+                const weeks = getWeeklyProgress(assignments)
+                const maxCount = Math.max(...weeks.map(w => w.count), 1)
+                return (
+                  <div className="dashboard-exercises">
+                    <h3 className="dashboard-section-title">📈 Your progress</h3>
+                    <div className="progress-chart">
+                      {weeks.map((w, i) => (
+                        <div key={i} className="progress-chart-col">
+                          <span className="progress-chart-count">{w.count > 0 ? w.count : ''}</span>
+                          <div className="progress-chart-bar-wrap">
+                            <div className="progress-chart-bar"
+                              style={{ height: `${Math.round((w.count / maxCount) * 72) + (w.count > 0 ? 8 : 0)}px` }} />
+                          </div>
+                          <span className="progress-chart-label">{w.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.5rem', marginBottom: 0 }}>
+                      Exercises completed per week — last 8 weeks
+                    </p>
+                  </div>
+                )
+              })()}
+
+              {/* ── Vocabulary log ── */}
+              <div className="dashboard-exercises">
+                <div className="vocab-header">
+                  <h3 className="dashboard-section-title" style={{ margin: 0 }}>📖 My Vocabulary</h3>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span className="vocab-count">{vocabulary.length} word{vocabulary.length !== 1 ? 's' : ''}</span>
+                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }}
+                      onClick={() => setAddingVocab(v => !v)}>
+                      {addingVocab ? 'Cancel' : '+ Add word'}
+                    </button>
+                    {vocabulary.length > 0 && (
+                      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }}
+                        onClick={() => setShowVocab(v => !v)}>
+                        {showVocab ? 'Hide' : 'Show all'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {addingVocab && (
+                  <form className="vocab-add-form" onSubmit={handleAddVocab}>
+                    <input type="text" placeholder="Word or phrase…" value={vocabWord}
+                      onChange={e => setVocabWord(e.target.value)} required autoFocus />
+                    <input type="text" placeholder="Meaning or note (optional)" value={vocabDef}
+                      onChange={e => setVocabDef(e.target.value)} />
+                    <button type="submit" className="btn-gold" disabled={vocabSaving || !vocabWord.trim()}>
+                      {vocabSaving ? 'Saving…' : 'Save →'}
+                    </button>
+                  </form>
+                )}
+
+                {vocabulary.length === 0 && !addingVocab && (
+                  <p className="dashboard-empty-small">No words saved yet. Add new words as you complete exercises.</p>
+                )}
+
+                {showVocab && vocabulary.length > 0 && (
+                  <div className="vocab-list">
+                    {vocabulary.map(v => (
+                      <div key={v.id} className="vocab-item">
+                        <div className="vocab-item-left">
+                          <strong className="vocab-word">{v.word}</strong>
+                          {v.definition && <span className="vocab-def">{v.definition}</span>}
+                          {v.exercises?.title && (
+                            <span className="vocab-source">from: {v.exercises.title}</span>
+                          )}
+                        </div>
+                        <button className="vocab-delete" onClick={() => handleDeleteVocab(v.id)}
+                          title="Remove word">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!showVocab && vocabulary.length > 0 && (
+                  <div className="vocab-preview">
+                    {vocabulary.slice(0, 5).map(v => (
+                      <span key={v.id} className="vocab-preview-chip">{v.word}</span>
+                    ))}
+                    {vocabulary.length > 5 && (
+                      <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                        onClick={() => setShowVocab(true)}>+{vocabulary.length - 5} more</button>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </>
@@ -2815,6 +3104,34 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
   )
 }
 
+// ─── VocabCaptureBar ──────────────────────────────────────────
+function VocabCaptureBar({ exerciseId, studentId }) {
+  const [word,    setWord]    = useState('')
+  const [saved,   setSaved]   = useState(false)
+  const [saving,  setSaving]  = useState(false)
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    if (!word.trim() || !studentId) return
+    setSaving(true)
+    const ok = await addVocabularyWord({ studentId, word: word.trim(), exerciseId })
+    setSaving(false)
+    if (ok) { setWord(''); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  }
+
+  return (
+    <form className="vocab-capture-bar no-print" onSubmit={handleSave}>
+      <span className="vocab-capture-label">📖 Save a word from this exercise:</span>
+      <input type="text" placeholder="Type a word or phrase…" value={word}
+        onChange={e => { setWord(e.target.value); setSaved(false) }} />
+      <button type="submit" className="btn-ghost" disabled={saving || !word.trim()}
+        style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }}>
+        {saving ? '…' : saved ? '✓ Saved' : 'Save'}
+      </button>
+    </form>
+  )
+}
+
 // ─── StudentSubmissionReview ──────────────────────────────────
 function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
   const ex = assignment.exercises
@@ -2838,6 +3155,7 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
           🖨️ Print / Save PDF
         </button>
       </div>
+      <VocabCaptureBar exerciseId={ex?.id} studentId={assignment.student_id} />
 
       <div className="exercise-player-header">
         <span className={`exercise-mode-chip exercise-mode-chip--${assignment.mode}`}>
@@ -3512,6 +3830,8 @@ function AdminLessonPlans({ adminUserId }) {
   const [apSaving,        setApSaving]        = useState(false)
   const [apError,         setApError]         = useState(null)
   const [apDone,          setApDone]          = useState(false)
+  const [apMultiIds,      setApMultiIds]      = useState([]) // selected student IDs for bulk assign
+  const [apBulkDone,      setApBulkDone]      = useState([]) // track which student IDs succeeded
 
   useEffect(() => {
     setLoading(true)

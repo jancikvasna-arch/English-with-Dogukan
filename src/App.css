@@ -2574,3 +2574,139 @@ button.label-chip:hover { opacity: 0.8; }
   /* Force full width for print */
   * { box-sizing: border-box; }
 }
+
+/* ─── Progress chart ────────────────────────────────────────── */
+.progress-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  height: 100px;
+  padding: 0.25rem 0;
+}
+.progress-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+.progress-chart-bar-wrap {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.progress-chart-bar {
+  width: 100%;
+  max-width: 32px;
+  background: var(--gold);
+  border-radius: 4px 4px 0 0;
+  min-height: 0;
+  transition: height 0.3s ease;
+  opacity: 0.85;
+}
+.progress-chart-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gold);
+  min-height: 14px;
+}
+.progress-chart-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ─── Vocabulary log ─────────────────────────────────────────── */
+.vocab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.vocab-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  background: var(--bg-darker);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.vocab-add-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.vocab-add-form input {
+  flex: 1;
+  min-width: 120px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.87rem;
+  color: var(--text);
+}
+.vocab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.vocab-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+}
+.vocab-item-left { display: flex; flex-direction: column; gap: 0.15rem; }
+.vocab-word { font-size: 0.92rem; font-weight: 600; color: var(--text); }
+.vocab-def  { font-size: 0.8rem;  color: var(--text-muted); }
+.vocab-source { font-size: 0.75rem; color: var(--text-muted); font-style: italic; }
+.vocab-delete {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 0.85rem; padding: 0.2rem 0.4rem; flex-shrink: 0;
+}
+.vocab-delete:hover { color: #e05c5c; }
+.vocab-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.vocab-preview-chip {
+  background: var(--bg-darker);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+/* ─── Vocabulary capture bar (on submission review) ─────────── */
+.vocab-capture-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--bg-darker);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.vocab-capture-label { font-size: 0.82rem; color: var(--text-muted); white-space: nowrap; }
+.vocab-capture-bar input {
+  flex: 1;
+  min-width: 140px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.87rem;
+  color: var(--text);
+}
