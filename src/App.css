@@ -2474,3 +2474,103 @@ button.label-chip:hover { opacity: 0.8; }
   margin: 0;
 }
 .faq-item.open .faq-question { color: var(--gold); }
+
+/* ─── Upcoming lesson card ──────────────────────────────────── */
+.upcoming-lesson-card {
+  background: linear-gradient(135deg, #004466 0%, #006699 100%);
+  color: #fff;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.upcoming-lesson-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.75;
+  margin-bottom: 0.4rem;
+}
+.upcoming-lesson-meta { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+.upcoming-lesson-date { font-size: 1.05rem; font-weight: 700; }
+.upcoming-lesson-time { font-size: 0.9rem; opacity: 0.8; }
+.upcoming-lesson-title { font-style: italic; opacity: 0.9; margin: 0.4rem 0 0; font-size: 0.92rem; }
+.upcoming-lesson-note  { opacity: 0.8; margin: 0.4rem 0 0; font-size: 0.85rem; }
+
+/* ─── Badge achievements ────────────────────────────────────── */
+.badge-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.badge-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: 1.5px solid var(--border);
+  cursor: default;
+  transition: transform 0.15s;
+}
+.badge-chip--earned {
+  background: #FFF8E0;
+  border-color: #F5C842;
+  color: #7A5C00;
+}
+.badge-chip--earned:hover { transform: scale(1.04); }
+.badge-chip--locked {
+  background: var(--bg);
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+.badge-emoji { font-size: 1rem; }
+.badge-name  { font-size: 0.8rem; }
+.badge-check { color: #F5C842; font-size: 0.75rem; font-weight: 700; }
+
+/* ─── Badge toast ───────────────────────────────────────────── */
+.badge-toast {
+  background: #004466;
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Print styles ──────────────────────────────────────────── */
+.submission-review-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+@media print {
+  .no-print,
+  .flow-header,
+  .flow-steps,
+  .back-btn,
+  .btn-gold,
+  .btn-ghost,
+  .submission-review-toolbar,
+  .dashboard-header,
+  .navbar { display: none !important; }
+
+  body, html { background: #fff !important; }
+  .flow-wrapper, .flow-content { background: #fff !important; }
+  .flow-card { box-shadow: none !important; border: none !important; padding: 0 !important; }
+
+  .exercise-player-card { max-width: 100% !important; }
+
+  /* Force full width for print */
+  * { box-sizing: border-box; }
+}

@@ -15,6 +15,8 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   updateStudentAccessLevel, updateStudentEnglishLevel,
   fetchStudentsAdmin, fetchManualStudents, createManualStudent,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
+  fetchNextLesson, fetchBadgeDefinitions, fetchStudentBadges, checkAndAwardBadges,
+  updateLessonNotes, fetchStudentLessonsAdmin,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -1558,6 +1560,10 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [lessons,     setLessons]     = useState([])
   const [activeAssignment,  setActiveAssignment]  = useState(null)
   const [viewingSubmission, setViewingSubmission] = useState(null) // {assignment, questions, answerMap}
+  const [nextLesson,   setNextLesson]   = useState(null)
+  const [badgeDefs,    setBadgeDefs]    = useState([])
+  const [earnedBadges, setEarnedBadges] = useState([]) // [{badge_key, earned_at}]
+  const [newBadges,    setNewBadges]    = useState([]) // keys of just-earned badges (for toast)
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
@@ -1567,11 +1573,17 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
         .eq('student_id', user.id).order('completed_at', { ascending: false }).limit(1).single(),
       fetchMyExercises(user.id),
       fetchMyLessons(user.id),
-    ]).then(([prof, { data: res }, exs, lsns]) => {
+      fetchNextLesson(user.id),
+      fetchBadgeDefinitions(),
+      fetchStudentBadges(user.id),
+    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned]) => {
       setProfile(prof)
       setResult(res)
       setAssignments(exs)
       setLessons(lsns)
+      setNextLesson(nextL)
+      setBadgeDefs(defs)
+      setEarnedBadges(earned)
       setLoading(false)
     })
   }, [user])
@@ -1608,9 +1620,17 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
         questions={activeAssignment.questions ?? []}
         studentId={user.id}
         onBack={() => setActiveAssignment(null)}
-        onSubmitted={(id) => {
+        onSubmitted={async (id) => {
           setAssignments(prev => prev.map(a => a.id === id ? { ...a, status: 'submitted' } : a))
           setActiveAssignment(null)
+          // Check for newly earned badges
+          const newlyEarned = await checkAndAwardBadges(user.id)
+          if (newlyEarned.length > 0) {
+            const updated = await fetchStudentBadges(user.id)
+            setEarnedBadges(updated)
+            setNewBadges(newlyEarned)
+            setTimeout(() => setNewBadges([]), 5000)
+          }
         }}
       />
     )
@@ -1635,6 +1655,16 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
 
   return (
     <div className="flow-card dashboard-card">
+      {/* ── New badge toast ── */}
+      {newBadges.length > 0 && (
+        <div className="badge-toast">
+          🎉 New badge{newBadges.length > 1 ? 's' : ''} earned!{' '}
+          {newBadges.map(k => {
+            const def = badgeDefs.find(d => d.key === k)
+            return def ? ` ${def.emoji} ${def.name}` : ''
+          }).join(' · ')}
+        </div>
+      )}
       <div className="dashboard-header">
         <div>
           <h2>Welcome back, {name}!</h2>
@@ -1670,6 +1700,32 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
             </div>
           ) : (
             <>
+              {/* ── Upcoming lesson ── */}
+              {nextLesson && (
+                <div className="upcoming-lesson-card">
+                  <div className="upcoming-lesson-label">📅 Next lesson</div>
+                  <div className="upcoming-lesson-meta">
+                    <strong className="upcoming-lesson-date">
+                      {new Date(nextLesson.scheduled_at).toLocaleDateString('en-GB', {
+                        weekday: 'long', day: 'numeric', month: 'long'
+                      })}
+                    </strong>
+                    <span className="upcoming-lesson-time">
+                      {new Date(nextLesson.scheduled_at).toLocaleTimeString('en-GB', {
+                        hour: '2-digit', minute: '2-digit'
+                      })}
+                      {nextLesson.duration_minutes ? ` · ${nextLesson.duration_minutes} min` : ''}
+                    </span>
+                  </div>
+                  {nextLesson.title && (
+                    <p className="upcoming-lesson-title">"{nextLesson.title}"</p>
+                  )}
+                  {nextLesson.teacher_notes_public && (
+                    <p className="upcoming-lesson-note">📝 {nextLesson.teacher_notes_public}</p>
+                  )}
+                </div>
+              )}
+
               {/* ── Placement result ── */}
               {result ? (
                 <div className="dashboard-result-card">
@@ -1786,6 +1842,26 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                   </>
                 )
               })()}
+
+              {/* ── Achievements ── */}
+              {badgeDefs.length > 0 && (
+                <div className="dashboard-exercises">
+                  <h3 className="dashboard-section-title">🏅 My Achievements</h3>
+                  <div className="badge-grid">
+                    {badgeDefs.map(def => {
+                      const earned = earnedBadges.find(b => b.badge_key === def.key)
+                      return (
+                        <div key={def.key} className={`badge-chip ${earned ? 'badge-chip--earned' : 'badge-chip--locked'}`}
+                          title={earned ? `Earned ${new Date(earned.earned_at).toLocaleDateString('en-GB')}` : 'Not yet earned'}>
+                          <span className="badge-emoji">{def.emoji}</span>
+                          <span className="badge-name">{def.name}</span>
+                          {earned && <span className="badge-check">✓</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </>
@@ -1834,10 +1910,10 @@ function StudentLessonList({ lessons, onFeedbackSaved }) {
                 )}
               </div>
             </div>
-            {l.notes_visible && l.teacher_notes && (
+            {(l.teacher_notes_public || (l.notes_visible && l.teacher_notes)) && (
               <div className="lesson-teacher-note">
-                <span className="lesson-note-label">Dogukan's note:</span>
-                <p>{l.teacher_notes}</p>
+                <span className="lesson-note-label">📝 Note from Dogukan:</span>
+                <p>{l.teacher_notes_public || l.teacher_notes}</p>
               </div>
             )}
             {l.student_feedback ? (
@@ -2755,7 +2831,13 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
 
   return (
     <div className="flow-card exercise-player-card">
-      <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+      <div className="submission-review-toolbar no-print">
+        <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+        <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
+          onClick={() => window.print()}>
+          🖨️ Print / Save PDF
+        </button>
+      </div>
 
       <div className="exercise-player-header">
         <span className={`exercise-mode-chip exercise-mode-chip--${assignment.mode}`}>
@@ -5852,9 +5934,13 @@ function AdminStudentLessons({ student, adminUserId }) {
   const [newDate,       setNewDate]       = useState('')
   const [newDuration,   setNewDuration]   = useState('')
   const [saving,        setSaving]        = useState(false)
+  const [editingNotesId,      setEditingNotesId]      = useState(null)
+  const [editTeacherNotes,    setEditTeacherNotes]    = useState('')
+  const [editPublicNotes,     setEditPublicNotes]     = useState('')
+  const [notesSaving,         setNotesSaving]         = useState(false)
 
   useEffect(() => {
-    fetchStudentLessons(student.id).then(data => {
+    fetchStudentLessonsAdmin(student.id).then(data => {
       setLessons(data)
       setLoading(false)
     })
@@ -5890,6 +5976,21 @@ function AdminStudentLessons({ student, adminUserId }) {
     const ok = await updateLesson(lessonId, updates)
     if (ok) setLessons(prev => prev.map(l => l.id === lessonId ? { ...l, ...updates } : l))
     return ok
+  }
+
+  const handleSaveNotes = async (lessonId) => {
+    setNotesSaving(true)
+    const ok = await updateLessonNotes(lessonId, {
+      teacherNotes:       editTeacherNotes || null,
+      teacherNotesPublic: editPublicNotes  || null,
+    })
+    setNotesSaving(false)
+    if (ok) {
+      setLessons(prev => prev.map(l => l.id === lessonId
+        ? { ...l, teacher_notes: editTeacherNotes || null, teacher_notes_public: editPublicNotes || null }
+        : l))
+      setEditingNotesId(null)
+    }
   }
 
   return (
@@ -5939,7 +6040,42 @@ function AdminStudentLessons({ student, adminUserId }) {
       ) : (
         <div className="admin-lesson-list">
           {lessons.map(l => (
-            <AdminLessonRow key={l.id} lesson={l} onUpdate={handleUpdate} />
+            <div key={l.id}>
+              <AdminLessonRow lesson={l} onUpdate={handleUpdate} />
+              {editingNotesId === l.id ? (
+                <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div className="form-field">
+                    <label style={{ fontSize: '0.8rem' }}>Private notes (admin only)</label>
+                    <textarea rows={2} placeholder="Your private notes about this lesson…"
+                      value={editTeacherNotes} onChange={e => setEditTeacherNotes(e.target.value)}
+                      style={{ resize: 'vertical', minHeight: '60px', fontSize: '0.87rem' }} />
+                  </div>
+                  <div className="form-field">
+                    <label style={{ fontSize: '0.8rem' }}>Note for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(visible on their dashboard)</span></label>
+                    <textarea rows={2} placeholder="e.g. Great work on conditionals today. Review pronunciation for next time."
+                      value={editPublicNotes} onChange={e => setEditPublicNotes(e.target.value)}
+                      style={{ resize: 'vertical', minHeight: '60px', fontSize: '0.87rem' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
+                      onClick={() => handleSaveNotes(l.id)} disabled={notesSaving}>
+                      {notesSaving ? 'Saving…' : 'Save notes'}
+                    </button>
+                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
+                      onClick={() => setEditingNotesId(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem', marginTop: '0.5rem' }}
+                  onClick={() => {
+                    setEditingNotesId(l.id)
+                    setEditTeacherNotes(l.teacher_notes || '')
+                    setEditPublicNotes(l.teacher_notes_public || '')
+                  }}>
+                  📝 {l.teacher_notes || l.teacher_notes_public ? 'Edit notes' : 'Add notes'}
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
