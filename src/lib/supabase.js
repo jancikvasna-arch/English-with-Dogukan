@@ -1102,3 +1102,67 @@ export async function deleteVocabularyWord(wordId) {
   if (error) { console.error('[supabase] deleteVocabularyWord:', error); return false }
   return true
 }
+
+// ─── Referrals ────────────────────────────────────────────────
+
+/** Fetch this student's referral code. */
+export async function fetchMyReferralCode(studentId) {
+  if (!supabase) return null
+  const { data } = await supabase
+    .from('profiles')
+    .select('referral_code')
+    .eq('id', studentId)
+    .single()
+  return data?.referral_code ?? null
+}
+
+/** Fetch referrals made by this student. */
+export async function fetchMyReferrals(studentId) {
+  if (!supabase) return []
+  const { data } = await supabase
+    .from('referrals')
+    .select('*')
+    .eq('referrer_id', studentId)
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
+/** Look up a referral code — returns referrer profile or null. */
+export async function lookupReferralCode(code) {
+  if (!supabase) return null
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, name')
+    .eq('referral_code', code.toUpperCase().trim())
+    .single()
+  return data ?? null
+}
+
+/** Log a referral when a new user signs up with a code. */
+export async function logReferral({ referrerId, referredEmail, referredId }) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('referrals')
+    .insert({ referrer_id: referrerId, referred_email: referredEmail, referred_id: referredId })
+  return !error
+}
+
+/** Admin: toggle discount applied on a referral. */
+export async function markDiscountApplied(referralId, applied) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('referrals')
+    .update({ discount_applied: applied })
+    .eq('id', referralId)
+  return !error
+}
+
+/** Admin: fetch all referrals with referrer name and email. */
+export async function fetchAllReferrals() {
+  if (!supabase) return []
+  const { data } = await supabase
+    .from('referrals')
+    .select('*, referrer:profiles!referrals_referrer_id_fkey(name, email)')
+    .order('created_at', { ascending: false })
+  return data ?? []
+}

@@ -18,6 +18,8 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchNextLesson, fetchBadgeDefinitions, fetchStudentBadges, checkAndAwardBadges,
   updateLessonNotes, fetchStudentLessonsAdmin,
   fetchMyVocabulary, addVocabularyWord, deleteVocabularyWord,
+  fetchMyReferralCode, fetchMyReferrals, lookupReferralCode, logReferral,
+  markDiscountApplied, fetchAllReferrals,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -1595,6 +1597,8 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
   const [name, setName] = useState(studentData?.name || '')
   const [email, setEmail] = useState(studentData?.email || '')
   const [password, setPassword] = useState('')
+  const [referralCodeInput, setReferralCodeInput] = useState('')
+  const [referralApplied, setReferralApplied] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -1609,7 +1613,17 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
           options: { data: { name } },
         })
         if (err) throw err
-        if (data.user) onSuccess(data.user)
+        if (data.user) {
+          // Process referral code if provided
+          if (referralCodeInput.trim()) {
+            const referrer = await lookupReferralCode(referralCodeInput)
+            if (referrer && referrer.id !== data.user.id) {
+              await logReferral({ referrerId: referrer.id, referredEmail: email, referredId: data.user.id })
+              setReferralApplied(true)
+            }
+          }
+          onSuccess(data.user)
+        }
       } else {
         const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
         if (err) throw err
@@ -1664,7 +1678,25 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
           <input type="password" placeholder="••••••••" value={password}
             onChange={(e) => setPassword(e.target.value)} required minLength={6} />
         </div>
+        {mode === 'signup' && (
+          <div className="form-field">
+            <label>Referral code <span className="optional">(optional)</span></label>
+            <input
+              type="text"
+              placeholder="e.g. DOG4F2"
+              value={referralCodeInput}
+              onChange={e => setReferralCodeInput(e.target.value.toUpperCase())}
+              maxLength={8}
+              style={{ textTransform: 'uppercase' }}
+            />
+          </div>
+        )}
 
+        {referralApplied && (
+          <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '0.4rem', padding: '0.6rem 0.85rem', fontSize: '0.88rem', color: '#166534' }}>
+            Referral code applied! Your friend will get their discount.
+          </div>
+        )}
         {error && <div className="auth-error">{error}</div>}
 
         <button type="submit" className="btn-gold btn-full btn-lg" disabled={loading}>
@@ -1742,6 +1774,9 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [addingVocab,     setAddingVocab]     = useState(false)
   const [vocabSaving,     setVocabSaving]     = useState(false)
   const [showVocab,       setShowVocab]       = useState(false)
+  const [referralCode,    setReferralCode]    = useState(null)
+  const [myReferrals,     setMyReferrals]     = useState([])
+  const [referralCopied,  setReferralCopied]  = useState(false)
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
@@ -1755,7 +1790,9 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       fetchBadgeDefinitions(),
       fetchStudentBadges(user.id),
       fetchMyVocabulary(user.id),
-    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab]) => {
+      fetchMyReferralCode(user.id),
+      fetchMyReferrals(user.id),
+    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab, refCode, refs]) => {
       setProfile(prof)
       setResult(res)
       setAssignments(exs)
@@ -1764,6 +1801,8 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       setBadgeDefs(defs)
       setEarnedBadges(earned)
       setVocabulary(vocab)
+      setReferralCode(refCode)
+      setMyReferrals(refs)
       setLoading(false)
     })
   }, [user])
@@ -2057,6 +2096,39 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                       )
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* ── Refer a friend ── */}
+              {referralCode && (
+                <div className="dashboard-exercises" style={{ background: '#fff', borderRadius: '0.75rem', border: '1.5px solid #F5C842', padding: '1.1rem 1.25rem' }}>
+                  <h3 className="dashboard-section-title" style={{ marginBottom: '0.6rem' }}>🎁 Refer a friend</h3>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.85rem', lineHeight: '1.6' }}>
+                    Share your code with a friend. When they join, you get <strong>10% off your next lesson</strong> — Dogukan will apply it automatically.
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem' }}>
+                    <span style={{
+                      fontFamily: 'monospace', fontSize: '1.35rem', fontWeight: 700,
+                      letterSpacing: '0.18em', background: '#F8F5EE', border: '1.5px solid #e8e3d8',
+                      borderRadius: '0.4rem', padding: '0.35rem 0.8rem', color: '#006699',
+                    }}>{referralCode}</span>
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.9rem' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(referralCode)
+                        setReferralCopied(true)
+                        setTimeout(() => setReferralCopied(false), 2000)
+                      }}
+                    >
+                      {referralCopied ? 'Copied! ✓' : 'Copy'}
+                    </button>
+                  </div>
+                  {myReferrals.length > 0 && (
+                    <p style={{ fontSize: '0.85rem', color: '#006699', fontWeight: 500, marginBottom: 0 }}>
+                      You've referred {myReferrals.length} friend{myReferrals.length !== 1 ? 's' : ''} so far.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -6602,6 +6674,10 @@ function AdminPanel({ user, onSignOut }) {
   const isAdmin      = user?.email === ADMIN_EMAIL
   const pendingCount = students.filter(s => s.access_level === 'pending').length
 
+  // Referrals state
+  const [allReferrals,        setAllReferrals]        = useState([])
+  const [referralsLoading,    setReferralsLoading]    = useState(false)
+
   useEffect(() => {
     if (!isAdmin || !supabase) return
     setDataLoading(true)
@@ -6611,6 +6687,23 @@ function AdminPanel({ user, onSignOut }) {
       setDataLoading(false)
     })
   }, [isAdmin])
+
+  // Load referrals when Referrals tab is opened
+  useEffect(() => {
+    if (adminTab !== 'referrals' || !isAdmin || !supabase) return
+    setReferralsLoading(true)
+    fetchAllReferrals().then(data => {
+      setAllReferrals(data)
+      setReferralsLoading(false)
+    })
+  }, [adminTab, isAdmin])
+
+  const handleToggleDiscount = async (ref) => {
+    const newVal = !ref.discount_applied
+    // Optimistic update
+    setAllReferrals(prev => prev.map(r => r.id === ref.id ? { ...r, discount_applied: newVal } : r))
+    await markDiscountApplied(ref.id, newVal)
+  }
 
   // Lock the browser back button while inside the admin panel so the admin
   // never accidentally navigates away from /admin.
@@ -6944,6 +7037,10 @@ function AdminPanel({ user, onSignOut }) {
           onClick={() => setAdminTab('books')}>
           📖 Books
         </button>
+        <button className={`admin-tab ${adminTab === 'referrals' ? 'active' : ''}`}
+          onClick={() => setAdminTab('referrals')}>
+          🎁 Referrals
+        </button>
       </div>
 
       {/* Lesson Stages tab */}
@@ -6954,6 +7051,56 @@ function AdminPanel({ user, onSignOut }) {
 
       {/* Books tab */}
       {adminTab === 'books' && <AdminBooks adminUserId={user?.id} />}
+
+      {/* Referrals tab */}
+      {adminTab === 'referrals' && (
+        <div style={{ marginTop: '1rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.85rem' }}>Referral activity</h3>
+          {referralsLoading ? (
+            <div className="dashboard-loading">Loading referrals…</div>
+          ) : allReferrals.length === 0 ? (
+            <p className="dashboard-empty-small">No referrals yet.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e8e3d8', textAlign: 'left' }}>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Referred by</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Referred email</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Discount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allReferrals.map(ref => (
+                    <tr key={ref.id} style={{ borderBottom: '1px solid #f0ece4' }}>
+                      <td style={{ padding: '0.55rem 0.75rem' }}>
+                        <strong>{ref.referrer?.name || '—'}</strong>
+                        {ref.referrer?.email && (
+                          <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{ref.referrer.email}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{ref.referred_email}</td>
+                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {new Date(ref.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td style={{ padding: '0.55rem 0.75rem' }}>
+                        <button
+                          className={ref.discount_applied ? 'btn-gold' : 'btn-ghost'}
+                          style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem', whiteSpace: 'nowrap' }}
+                          onClick={() => handleToggleDiscount(ref)}
+                        >
+                          {ref.discount_applied ? 'Discount given ✓' : 'Mark discount given'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Students tab */}
       {adminTab === 'students' && (
