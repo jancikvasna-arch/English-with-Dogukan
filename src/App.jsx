@@ -2483,9 +2483,15 @@ function AdminExercises({ adminUserId }) {
         <div>
           <div className="admin-exercises-toolbar">
             <h3 style={{ margin: 0 }}>Assignments</h3>
-            <button className="btn-gold" onClick={() => setShowAssign(v => !v)}>
-              {showAssign ? '← Cancel' : '+ Assign'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
+                onClick={refreshAssignments} disabled={refreshing}>
+                {refreshing ? '…' : '↺ Refresh'}
+              </button>
+              <button className="btn-gold" onClick={() => setShowAssign(v => !v)}>
+                {showAssign ? '← Cancel' : '+ Assign'}
+              </button>
+            </div>
           </div>
 
           {showAssign && (
@@ -2556,7 +2562,7 @@ function AdminExercises({ adminUserId }) {
               {submitted.length > 0 && (
                 <div className="admin-asgn-section">
                   <div className="admin-asgn-section-title">
-                    <span className="admin-review-chip">Submitted — needs review</span>
+                    <span className="admin-review-chip">✓ Completed — open to add comments</span>
                     <span>{submitted.length}</span>
                   </div>
                   {submitted.map(a => (
@@ -2581,7 +2587,7 @@ function AdminExercises({ adminUserId }) {
                     <span>{pending.length}</span>
                   </div>
                   {pending.map(a => (
-                    <div key={a.id} className="admin-student-row" style={{ cursor: 'default' }}>
+                    <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
                       <div className="admin-student-info">
                         <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
                         <span className="admin-student-email">{a.exercises?.title}</span>
@@ -2590,7 +2596,8 @@ function AdminExercises({ adminUserId }) {
                         <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
                         <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
                       </div>
-                    </div>
+                      <span className="admin-arrow">›</span>
+                    </button>
                   ))}
                 </div>
               )}
@@ -3182,49 +3189,43 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel }) {
 
 // ─── AdminExerciseReview ──────────────────────────────────────
 function AdminExerciseReview({ details, onBack }) {
-  const questions = details.exercises?.questions ?? []
+  const questions = (details.exercises?.questions ?? [])
+    .slice().sort((a, b) => a.order_index - b.order_index)
   const answerMap = Object.fromEntries(details.studentAnswers.map(a => [a.question_id, a]))
 
-  // Local review state: { [questionId]: { is_correct, teacher_comment, answerId } }
-  const [reviews, setReviews] = useState(() => {
+  // Comments only — no manual grading. is_correct is auto-computed on save.
+  const [comments, setComments] = useState(() => {
     const init = {}
-    questions.forEach(q => {
-      const sa = answerMap[q.id]
-      // Auto-compute correctness for auto-gradeable types
-      let auto = null
-      if (sa?.answer !== undefined) {
-        if (q.type === 'multiple_choice' && q.correct_answer)
-          auto = sa.answer.trim() === q.correct_answer.trim()
-        if (q.type === 'fill_blank' && q.correct_answer)
-          auto = sa.answer.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()
-        if (q.type === 'true_false' && q.correct_answer)
-          auto = sa.answer.trim() === q.correct_answer.trim()
-        if (q.type === 'matching' && sa.answer) {
-          try {
-            const studentMatch = JSON.parse(sa.answer)
-            auto = (q.options || []).every(p => studentMatch[p.left] === p.right)
-          } catch { auto = null }
-        }
-      }
-      init[q.id] = {
-        answerId:       sa?.id ?? null,
-        is_correct:     sa?.is_correct ?? auto,
-        teacher_comment: sa?.teacher_comment ?? '',
-      }
-    })
+    questions.forEach(q => { init[q.id] = answerMap[q.id]?.teacher_comment ?? '' })
     return init
   })
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
 
-  const setField = (qId, field, val) =>
-    setReviews(prev => ({ ...prev, [qId]: { ...prev[qId], [field]: val } }))
+  // Auto-compute correctness for question types that have a single right answer
+  const autoCorrect = (q) => {
+    const sa = answerMap[q.id]
+    if (!sa?.answer?.trim()) return null
+    if (q.type === 'multiple_choice' || q.type === 'true_false')
+      return sa.answer.trim() === (q.correct_answer ?? '').trim() ? true : false
+    if (q.type === 'fill_blank')
+      return sa.answer.trim().toLowerCase() === (q.correct_answer ?? '').trim().toLowerCase() ? true : false
+    if (q.type === 'matching') {
+      try { const m = JSON.parse(sa.answer); return (q.options||[]).every(p => m[p.left] === p.right) }
+      catch { return null }
+    }
+    return null // free_text — no auto-grade
+  }
 
   const handleSave = async () => {
     setSaving(true)
-    const payload = Object.entries(reviews)
-      .filter(([, r]) => r.answerId)
-      .map(([, r]) => ({ id: r.answerId, is_correct: r.is_correct, teacher_comment: r.teacher_comment }))
+    const payload = questions
+      .filter(q => answerMap[q.id]?.id)
+      .map(q => ({
+        id:              answerMap[q.id].id,
+        is_correct:      autoCorrect(q),
+        teacher_comment: comments[q.id] || null,
+      }))
     await saveAnswerReviews(payload)
     setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
@@ -3232,93 +3233,104 @@ function AdminExerciseReview({ details, onBack }) {
 
   const student  = details.profiles
   const exercise = details.exercises
+  const hasAnswers = details.studentAnswers.length > 0
+
+  const typeLabel = (t) =>
+    t === 'multiple_choice' ? 'Multiple choice'
+    : t === 'fill_blank'    ? 'Fill in the blank'
+    : t === 'true_false'    ? 'True / False'
+    : t === 'matching'      ? 'Matching'
+    : 'Written answer'
 
   return (
     <div className="admin-detail">
-      <button className="back-btn" onClick={onBack}>← Back to exercises</button>
+      <button className="back-btn" onClick={onBack}>← Back to assignments</button>
       <h2>{exercise?.title}</h2>
-      <p className="admin-email">{student?.name || student?.email}</p>
-      <p className="admin-date">
-        Submitted: {details.submitted_at ? new Date(details.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
-        &nbsp;·&nbsp;
-        <span style={{ color: details.mode === 'homework' ? 'var(--text-muted)' : 'var(--gold)' }}>
+      <div className="review-meta-row">
+        <span className="admin-email">{student?.name || student?.email}</span>
+        <span className="admin-date">
+          {details.status === 'submitted'
+            ? `Submitted ${new Date(details.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+            : '⏳ Not submitted yet'}
+          {' · '}
           {details.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
         </span>
-      </p>
+      </div>
+
+      {!hasAnswers && (
+        <div className="submission-pending-msg" style={{ margin: '0.75rem 0 1.25rem' }}>
+          The student hasn't answered this exercise yet. You can still open it to preview the questions.
+        </div>
+      )}
+
+      {/* Context images */}
+      {exercise?.context_images?.length > 0 && (
+        <div className="exercise-context-images" style={{ marginTop: '0.75rem' }}>
+          <p className="exercise-context-label">📖 Reference material</p>
+          {exercise.context_images.map((src, i) => (
+            <img key={i} src={src} alt={`Reference ${i+1}`} className="exercise-context-img" />
+          ))}
+        </div>
+      )}
 
       <div className="review-questions">
-        {questions.sort((a,b) => a.order_index - b.order_index).map((q, idx) => {
-          const sa     = answerMap[q.id]
-          const review = reviews[q.id] || {}
+        {questions.map((q, idx) => {
+          const sa        = answerMap[q.id]
           const hasAnswer = sa?.answer?.trim()
+          const correct   = autoCorrect(q)
 
           return (
             <div key={q.id} className="review-question">
               <div className="review-q-header">
                 <span className="eq-num">Q{idx + 1}</span>
-                <span className="eq-type">
-                  {q.type === 'multiple_choice' ? 'Multiple choice'
-                   : q.type === 'fill_blank'     ? 'Fill in the blank'
-                   : q.type === 'true_false'      ? 'True / False'
-                   : q.type === 'matching'        ? 'Matching'
-                   : 'Written answer'}
-                </span>
+                <span className="eq-type">{typeLabel(q.type)}</span>
+                {hasAnswer && correct === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
+                {hasAnswer && correct === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
               <p className="eq-prompt">{q.prompt}</p>
 
-              <div className="review-answer-row">
-                <div className="review-answer-left">
-                  <span className="review-label">Student answered:</span>
-                  {q.type === 'matching' && hasAnswer ? (
-                    <div className="review-matching-pairs">
-                      {(() => { try {
-                        const m = JSON.parse(sa.answer)
-                        return (q.options || []).map(p => (
-                          <div key={p.left} className={`review-match-row ${m[p.left] === p.right ? 'match-correct' : 'match-wrong'}`}>
-                            <span>{p.left}</span><span>→</span><span>{m[p.left] || <em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
-                          </div>
-                        ))
-                      } catch { return <em>Error reading answer</em> } })()}
-                    </div>
-                  ) : (
-                    <div className={`review-answer-box ${!hasAnswer ? 'review-answer-empty' : ''}`}>
-                      {hasAnswer || <em>No answer given</em>}
-                    </div>
-                  )}
-                  {q.correct_answer && (
-                    <div className="review-correct-answer">
-                      <span className="review-label">Correct answer:</span> {q.correct_answer}
-                    </div>
-                  )}
-                  {q.type === 'matching' && q.options && (
-                    <div className="review-correct-answer">
-                      <span className="review-label">Correct pairs:</span>{' '}
-                      {(q.options || []).map(p => `${p.left} → ${p.right}`).join(' · ')}
-                    </div>
-                  )}
-                </div>
-                <div className="review-answer-right">
-                  <span className="review-label">Mark:</span>
-                  <div className="review-mark-btns">
-                    <button
-                      className={`review-mark-btn review-mark-btn--correct ${review.is_correct === true ? 'active' : ''}`}
-                      onClick={() => setField(q.id, 'is_correct', true)}>✓ Correct</button>
-                    <button
-                      className={`review-mark-btn review-mark-btn--wrong ${review.is_correct === false ? 'active' : ''}`}
-                      onClick={() => setField(q.id, 'is_correct', false)}>✗ Incorrect</button>
-                    <button
-                      className={`review-mark-btn ${review.is_correct === null ? 'active' : ''}`}
-                      onClick={() => setField(q.id, 'is_correct', null)}>— Unset</button>
+              {/* Student's answer */}
+              <div className="review-answer-row" style={{ display: 'block' }}>
+                <span className="review-label">Student answered:</span>
+                {q.type === 'matching' && hasAnswer ? (
+                  <div className="review-matching-pairs">
+                    {(() => { try {
+                      const m = JSON.parse(sa.answer)
+                      return (q.options||[]).map(p => (
+                        <div key={p.left} className={`review-match-row ${m[p.left]===p.right?'match-correct':'match-wrong'}`}>
+                          <span>{p.left}</span><span>→</span>
+                          <span>{m[p.left]||<em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                        </div>
+                      ))
+                    } catch { return <em>Error reading answer</em> } })()}
                   </div>
-                </div>
+                ) : (
+                  <div className={`review-answer-box ${!hasAnswer?'review-answer-empty':''}`}>
+                    {hasAnswer || <em>No answer given</em>}
+                  </div>
+                )}
+                {q.correct_answer && q.type !== 'matching' && (
+                  <div className="review-correct-answer">
+                    <span className="review-label">Correct answer:</span> {q.correct_answer}
+                  </div>
+                )}
+                {q.type === 'matching' && q.options && (
+                  <div className="review-correct-answer">
+                    <span className="review-label">Correct pairs:</span>{' '}
+                    {(q.options||[]).map(p => `${p.left} → ${p.right}`).join(' · ')}
+                  </div>
+                )}
               </div>
 
+              {/* Comment box — always visible */}
               <div className="form-field" style={{ marginTop: '0.75rem' }}>
-                <label style={{ fontSize: '0.8rem' }}>Comment for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <label style={{ fontSize: '0.8rem' }}>
+                  Your comment <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>— visible to student</span>
+                </label>
                 <textarea className="writing-input" rows={2}
                   placeholder="e.g. Good try! Remember that 'he' uses 'is', not 'are'."
-                  value={review.teacher_comment || ''}
-                  onChange={e => setField(q.id, 'teacher_comment', e.target.value)}
+                  value={comments[q.id] || ''}
+                  onChange={e => setComments(prev => ({ ...prev, [q.id]: e.target.value }))}
                 />
               </div>
             </div>
@@ -3326,12 +3338,14 @@ function AdminExerciseReview({ details, onBack }) {
         })}
       </div>
 
-      <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        <button className="btn-gold" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save review →'}
-        </button>
-        {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
-      </div>
+      {hasAnswers && (
+        <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button className="btn-gold" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save comments →'}
+          </button>
+          {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved — student can now see your comments</span>}
+        </div>
+      )}
     </div>
   )
 }
