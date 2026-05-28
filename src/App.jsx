@@ -3863,6 +3863,20 @@ function AdminLessonPlans({ adminUserId }) {
     } else { setApError('Assignment failed — this plan may have no exercises, or student already has them.') }
   }
 
+  const handleBulkAssign = async (planId) => {
+    if (!apMultiIds.length) { setApError('Select at least one student.'); return }
+    setApSaving(true); setApError(null)
+    const results = await Promise.all(
+      apMultiIds.map(sid => assignLessonPlan({ planId, studentId: sid, assignedBy: adminUserId, mode: apMode, note: apNote || null }))
+    )
+    setApSaving(false)
+    const succeeded = apMultiIds.filter((_, i) => results[i])
+    setApBulkDone(succeeded)
+    if (succeeded.length === apMultiIds.length) {
+      setTimeout(() => { setAssigningPlanId(null); setApMultiIds([]); setApBulkDone([]); setApNote('') }, 2000)
+    }
+  }
+
   // Push a history entry when entering create/edit so the browser ← button
   // returns to the plan list rather than leaving the admin panel entirely.
   useEffect(() => {
@@ -3912,13 +3926,40 @@ function AdminLessonPlans({ adminUserId }) {
           <div className="admin-assign-form" style={{ marginBottom: '1rem' }}>
             <p style={{ margin: '0 0 0.75rem', fontWeight: 600 }}>Assign: {plan?.title}</p>
             <div className="form-field">
-              <label>Student</label>
-              <select value={apStudentId} onChange={e => setApStudentId(e.target.value)}>
-                <option value="">Select student…</option>
-                {authStudents.filter(s => s.access_level !== 'pending').map(s => (
-                  <option key={s.id} value={s.id}>{s.name || s.email}</option>
-                ))}
-              </select>
+              <label>Student(s)</label>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <button type="button" className={`radio-option ${!apMultiIds.length ? 'selected' : ''}`}
+                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.82rem' }}
+                  onClick={() => { setApMultiIds([]); setApStudentId('') }}>
+                  Single student
+                </button>
+                <button type="button" className={`radio-option ${apMultiIds.length > 0 ? 'selected' : ''}`}
+                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.82rem' }}
+                  onClick={() => { setApStudentId(''); setApMultiIds([]) }}>
+                  Multiple students
+                </button>
+              </div>
+              {apMultiIds.length === 0 ? (
+                <select value={apStudentId} onChange={e => setApStudentId(e.target.value)}>
+                  <option value="">Select student…</option>
+                  {authStudents.filter(s => s.access_level !== 'pending').map(s => (
+                    <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                  ))}
+                </select>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '180px', overflowY: 'auto', padding: '0.25rem 0' }}>
+                  {authStudents.filter(s => s.access_level !== 'pending').map(s => (
+                    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.87rem' }}>
+                      <input type="checkbox" checked={apMultiIds.includes(s.id)}
+                        onChange={e => setApMultiIds(prev =>
+                          e.target.checked ? [...prev, s.id] : prev.filter(x => x !== s.id)
+                        )} />
+                      {s.name || s.email}
+                      {apBulkDone.includes(s.id) && <span style={{ color: '#22c55e', fontSize: '0.75rem' }}>✓</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="form-field">
               <label>Mode</label>
@@ -3944,9 +3985,15 @@ function AdminLessonPlans({ adminUserId }) {
                 ✓ Plan assigned to student successfully
               </div>
             )}
-            <button className="btn-gold btn-full" disabled={apSaving || !apStudentId || apDone}
-              onClick={() => handleAssignPlan(assigningPlanId)}>
-              {apSaving ? 'Assigning…' : 'Assign all exercises to student →'}
+            <button className="btn-gold btn-full"
+              disabled={apSaving || (!apStudentId && apMultiIds.length === 0) || apDone}
+              onClick={() => apMultiIds.length > 0
+                ? handleBulkAssign(assigningPlanId)
+                : handleAssignPlan(assigningPlanId)}>
+              {apSaving ? 'Assigning…'
+                : apMultiIds.length > 0
+                  ? `Assign to ${apMultiIds.length} student${apMultiIds.length > 1 ? 's' : ''} →`
+                  : 'Assign all exercises to student →'}
             </button>
           </div>
         )
@@ -4004,7 +4051,7 @@ function AdminLessonPlans({ adminUserId }) {
                     style={{ fontSize: '0.85rem', color: assigningPlanId === p.id ? undefined : 'var(--gold)', borderColor: assigningPlanId === p.id ? undefined : 'var(--gold)' }}
                     onClick={() => {
                       setAssigningPlanId(p.id === assigningPlanId ? null : p.id)
-                      setApStudentId(''); setApMode('homework'); setApNote(''); setApError(null); setApDone(false)
+                      setApStudentId(''); setApMode('homework'); setApNote(''); setApError(null); setApDone(false); setApMultiIds([]); setApBulkDone([])
                     }}>
                     {assigningPlanId === p.id ? '✕ Cancel' : 'Assign →'}
                   </button>
