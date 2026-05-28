@@ -1805,50 +1805,78 @@ a { text-decoration: none; }
 }
 
 /* ─── Inline fill-blank ──────────────────────────────────────── */
+.inline-fill-wrap {
+  margin: 0.5rem 0;
+}
+.inline-fill-hint {
+  font-size: 0.82rem;
+  color: var(--gold);
+  margin-bottom: 0.6rem;
+  font-style: italic;
+}
 .inline-fill-text {
   font-size: 1rem;
-  line-height: 2.4;
+  line-height: 2.8;
   color: var(--text);
   padding: 0.25rem 0;
 }
 .inline-fill-input {
   display: inline-block;
-  min-width: 90px;
-  max-width: 180px;
-  padding: 0.1rem 0.35rem 0.15rem;
-  margin: 0 0.15rem;
-  border: none;
-  border-bottom: 2px solid var(--gold);
-  background: transparent;
-  color: var(--gold-light);
-  font-size: 1rem;
+  min-width: 100px;
+  max-width: 200px;
+  padding: 0.25rem 0.6rem;
+  margin: 0 0.2rem;
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+  background: rgba(212, 168, 83, 0.08);
+  color: var(--text);
+  font-size: 0.97rem;
   font-family: inherit;
   text-align: center;
   outline: none;
-  vertical-align: baseline;
-  transition: border-color 0.15s, background 0.15s;
+  vertical-align: middle;
+  cursor: text;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.inline-fill-input::placeholder {
+  color: rgba(212, 168, 83, 0.45);
+  font-style: italic;
 }
 .inline-fill-input:focus {
-  border-bottom-color: var(--gold-light);
-  background: rgba(212, 168, 83, 0.07);
-  border-radius: 3px 3px 0 0;
+  border-color: var(--gold-light);
+  background: rgba(212, 168, 83, 0.14);
+  box-shadow: 0 0 0 3px rgba(212, 168, 83, 0.15);
 }
-.inline-fill-input:disabled {
+.inline-fill-input:disabled,
+.inline-fill-input--readonly {
   cursor: default;
-  color: var(--text);
+  opacity: 0.85;
 }
 .inline-fill-input--correct {
-  border-bottom-color: #4ade80;
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
   color: #4ade80;
 }
 .inline-fill-input--wrong {
-  border-bottom-color: #f87171;
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
   color: #f87171;
+}
+.inline-fill-fallback {
+  margin: 0.75rem 0;
+}
+.inline-fill-fallback-note {
+  color: var(--text-muted); font-size: 0.88rem; font-style: italic;
 }
 
 /* Flat template wrapper for fill_blank builder (no card chrome) */
 .builder-flat-template {
   display: flex; flex-direction: column; gap: 0.1rem;
+}
+
+/* Fill-blank content block in player/demo (no card chrome, flows after image) */
+.exercise-fill-block {
+  padding: 0.5rem 0 1rem;
 }
 
 /* Per-blank answer rows in builder */

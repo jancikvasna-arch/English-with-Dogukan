@@ -2022,6 +2022,7 @@ function parseFillBlankCorrect(str) {
 // correctAnswers : string[] for colouring when checked=true
 function InlineFillBlank({ prompt, answer, onChange, disabled = false, checked = false, correctAnswers = null }) {
   const parts = (prompt || '').split('___')  // N+1 text segments, N blanks
+  const blankCount = parts.length - 1
 
   const current = parseFillBlankAnswer(answer || '')
 
@@ -2035,30 +2036,52 @@ function InlineFillBlank({ prompt, answer, onChange, disabled = false, checked =
       i === 0 ? [line] : [<br key={i} />, line]
     )
 
+  // Fallback: no template typed yet — show numbered input rows
+  if (blankCount === 0) {
+    if (!disabled) {
+      return (
+        <div className="inline-fill-fallback">
+          <p className="inline-fill-fallback-note">⚠️ The teacher hasn't added the text template yet. Your teacher will update this exercise.</p>
+        </div>
+      )
+    }
+    // In disabled/review mode with no template, just show the raw text if any
+    return prompt ? <div className="inline-fill-text">{renderText(prompt)}</div> : null
+  }
+
   return (
-    <div className="inline-fill-text">
-      {parts.map((part, i) => {
-        const isLast = i === parts.length - 1
-        let inputClass = 'inline-fill-input'
-        if (checked && correctAnswers && !isLast) {
-          const ok = (current[i] || '').trim().toLowerCase() === (correctAnswers[i] || '').trim().toLowerCase()
-          inputClass += ok ? ' inline-fill-input--correct' : ' inline-fill-input--wrong'
-        }
-        return (
-          <span key={i}>
-            {renderText(part)}
-            {!isLast && (
-              <input
-                type="text"
-                className={inputClass}
-                disabled={disabled}
-                value={current[i] || ''}
-                onChange={e => !disabled && setBlank(i, e.target.value)}
-              />
-            )}
-          </span>
-        )
-      })}
+    <div className="inline-fill-wrap">
+      {!disabled && (
+        <p className="inline-fill-hint">
+          ✏️ Type your answers directly into the blanks below:
+        </p>
+      )}
+      <div className="inline-fill-text">
+        {parts.map((part, i) => {
+          const isLast = i === parts.length - 1
+          let inputClass = 'inline-fill-input'
+          if (checked && correctAnswers && !isLast) {
+            const ok = (current[i] || '').trim().toLowerCase() === (correctAnswers[i] || '').trim().toLowerCase()
+            inputClass += ok ? ' inline-fill-input--correct' : ' inline-fill-input--wrong'
+          }
+          if (disabled && !checked) inputClass += ' inline-fill-input--readonly'
+          return (
+            <span key={i}>
+              {renderText(part)}
+              {!isLast && (
+                <input
+                  type="text"
+                  className={inputClass}
+                  disabled={disabled}
+                  placeholder="..."
+                  value={current[i] || ''}
+                  onChange={e => !disabled && setBlank(i, e.target.value)}
+                />
+              )}
+            </span>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -2165,20 +2188,34 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
       <div className="exercise-questions">
         {questions.map((q, idx) => {
           if (q.type === 'listening' || q.type === 'viewing') return null
+
+          // Fill-blank renders as a clean content block, no question-card chrome
+          if (q.type === 'fill_blank') {
+            return (
+              <div key={q.id} className="exercise-fill-block">
+                {q.hint && <p className="eq-hint" style={{ marginBottom: '0.5rem' }}>💡 Hint: {q.hint}</p>}
+                <InlineFillBlank
+                  prompt={q.prompt}
+                  answer={answers[q.id] || null}
+                  onChange={val => setAnswer(q.id, val)}
+                />
+              </div>
+            )
+          }
+
           return (
           <div key={q.id} className="exercise-question">
             <div className="eq-label">
               <span className="eq-num">Q{idx + 1}</span>
               <span className="eq-type">
                 {q.type === 'multiple_choice' ? 'Multiple choice'
-                 : q.type === 'fill_blank'     ? 'Fill in the blank'
-                 : q.type === 'true_false'      ? 'True / False'
-                 : q.type === 'matching'        ? 'Matching'
-                 : q.type === 'word_choice'     ? 'Word choice'
+                 : q.type === 'true_false'     ? 'True / False'
+                 : q.type === 'matching'       ? 'Matching'
+                 : q.type === 'word_choice'    ? 'Word choice'
                  : 'Written answer'}
               </span>
             </div>
-            {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
+            {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
             {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
             {q.type === 'multiple_choice' && (
@@ -2190,13 +2227,6 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
                   >{opt}</button>
                 ))}
               </div>
-            )}
-            {q.type === 'fill_blank' && (
-              <InlineFillBlank
-                prompt={q.prompt}
-                answer={answers[q.id] || null}
-                onChange={val => setAnswer(q.id, val)}
-              />
             )}
             {q.type === 'true_false' && (
               <div className="options-list" style={{ flexDirection: 'row', gap: '0.75rem' }}>
@@ -2421,6 +2451,35 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
         {questions.map((q, idx) => {
           if (q.type === 'listening' || q.type === 'viewing') return null
           const result = getResult(q)
+
+          // Fill-blank: clean content block, no card chrome, Dogukan can type during screen share
+          if (q.type === 'fill_blank') {
+            return (
+              <div key={q.id} className={`exercise-fill-block${checked && result === true ? ' eq--correct' : checked && result === false ? ' eq--wrong' : ''}`}>
+                {checked && result === true  && <span className="demo-mark demo-mark--correct" style={{ display:'inline-block', marginBottom:'0.4rem' }}>✓ All correct</span>}
+                {checked && result === false && <span className="demo-mark demo-mark--wrong"   style={{ display:'inline-block', marginBottom:'0.4rem' }}>✗ Some wrong</span>}
+                {q.hint && <p className="eq-hint" style={{ marginBottom: '0.5rem' }}>💡 Hint: {q.hint}</p>}
+                <InlineFillBlank
+                  prompt={q.prompt}
+                  answer={answers[q.id] || null}
+                  onChange={val => setAnswer(q.id, val)}
+                  checked={checked}
+                  correctAnswers={checked ? parseFillBlankCorrect(q.correct_answer ?? '') : null}
+                />
+                {checked && q.correct_answer && (() => {
+                  const correct = parseFillBlankCorrect(q.correct_answer)
+                  return (
+                    <div className="demo-correct-answer" style={{ marginTop: '0.5rem' }}>
+                      ✓ Answers: {correct.map((a, i) => (
+                        <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
+            )
+          }
+
           return (
             <div key={q.id} className={`exercise-question${checked && result === true ? ' eq--correct' : checked && result === false ? ' eq--wrong' : ''}`}>
               <div className="eq-label">
@@ -2439,15 +2498,6 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                       onClick={() => setAnswer(q.id, opt)}>{opt}</button>
                   ))}
                 </div>
-              )}
-              {q.type === 'fill_blank' && (
-                <InlineFillBlank
-                  prompt={q.prompt}
-                  answer={answers[q.id] || null}
-                  onChange={val => setAnswer(q.id, val)}
-                  checked={checked}
-                  correctAnswers={checked ? parseFillBlankCorrect(q.correct_answer ?? '') : null}
-                />
               )}
               {q.type === 'true_false' && (
                 <div className="options-list" style={{ flexDirection:'row', gap:'0.75rem' }}>
