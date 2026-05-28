@@ -6,7 +6,9 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
   fetchAllAssignmentsAdmin, fetchStudentAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
-  fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
+  fetchAllLabels, createLabel, deleteLabel, setExerciseLabels,
+  fetchAllLessonPlans, createLessonPlan, updateLessonPlan,
+  createLessonPlanWithStages, updateLessonPlanWithStages, assignLessonPlan,
   fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
 } from './lib/supabase'
@@ -16,6 +18,16 @@ import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER
 const CALENDLY_CONSULTATION = 'https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins'
 const CALENDLY_FIRST_LESSON = 'https://calendly.com/dogukan-cy/30min'
 const ADMIN_EMAIL           = 'dogukan.cy@gmail.com'
+
+// ─── Label colour swatches ────────────────────────────────────
+const LABEL_COLORS = [
+  { value: '#d4a853', label: 'Gold'   },
+  { value: '#60a5fa', label: 'Blue'   },
+  { value: '#4ade80', label: 'Green'  },
+  { value: '#f87171', label: 'Red'    },
+  { value: '#c084fc', label: 'Purple' },
+  { value: '#fb923c', label: 'Orange' },
+]
 
 // ─── Questionnaire questions ──────────────────────────────────
 const Q_QUESTIONS = [
@@ -1743,6 +1755,9 @@ function StudentLessonList({ lessons, onFeedbackSaved }) {
                     {new Date(l.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+                {l.duration_minutes && (
+                  <span className="lesson-duration-chip">⏱ {l.duration_minutes} min</span>
+                )}
               </div>
             </div>
             {l.notes_visible && l.teacher_notes && (
@@ -1879,6 +1894,90 @@ function AccountSettings({ user, onBack, onSignOut }) {
   )
 }
 
+// ─── parseWordChoiceTemplate ──────────────────────────────────
+// Converts "Maria [is/isn't] a [___] teacher." into a typed token array.
+// choice token : { type:'choice', options:['is',"isn't"], index:0 }
+// blank  token : { type:'blank',  index:1 }
+// text   token : { type:'text',   value:'Maria ' }
+function parseWordChoiceTemplate(template) {
+  const tokens = []
+  let idx = 0
+  const re = /\[([^\]]+)\]/g
+  let lastEnd = 0
+  let match
+  while ((match = re.exec(template)) !== null) {
+    if (match.index > lastEnd)
+      tokens.push({ type: 'text', value: template.slice(lastEnd, match.index) })
+    const inner = match[1]
+    if (inner === '___') {
+      tokens.push({ type: 'blank', index: idx++ })
+    } else if (inner.includes('/')) {
+      tokens.push({ type: 'choice', options: inner.split('/'), index: idx++ })
+    } else {
+      tokens.push({ type: 'text', value: match[0] })
+    }
+    lastEnd = match.index + match[0].length
+  }
+  if (lastEnd < template.length)
+    tokens.push({ type: 'text', value: template.slice(lastEnd) })
+  return tokens
+}
+
+// ─── WordChoiceQuestion ───────────────────────────────────────
+// Interactive sentence renderer used in ExercisePlayer, ExerciseDemoPlayer,
+// AdminExerciseReview (read-only) and StudentSubmissionReview (read-only).
+function WordChoiceQuestion({ template, answer, onChange, disabled = false }) {
+  const tokens  = parseWordChoiceTemplate(template || '')
+  const current = answer
+    ? (() => { try { return JSON.parse(answer) } catch { return {} } })()
+    : {}
+
+  const setChoice = (tokenIdx, val) => {
+    const next = { ...current }
+    if (next[tokenIdx] === val) delete next[tokenIdx] // toggle off
+    else next[tokenIdx] = val
+    onChange(JSON.stringify(next))
+  }
+
+  const setBlank = (tokenIdx, val) => {
+    onChange(JSON.stringify({ ...current, [tokenIdx]: val }))
+  }
+
+  return (
+    <div className="word-choice-sentence">
+      {tokens.map((tok, i) => {
+        if (tok.type === 'text')
+          return <span key={i} className="word-choice-text">{tok.value}</span>
+
+        if (tok.type === 'choice')
+          return (
+            <span key={i} className="word-choice-group">
+              {tok.options.map(opt => (
+                <button key={opt} type="button" disabled={disabled}
+                  className={`word-choice-btn ${current[tok.index] === opt ? 'word-choice-btn--selected' : ''}`}
+                  onClick={() => !disabled && setChoice(tok.index, opt)}>
+                  {opt}
+                </button>
+              ))}
+            </span>
+          )
+
+        if (tok.type === 'blank')
+          return (
+            <input key={i} type="text" className="word-choice-blank"
+              disabled={disabled}
+              placeholder="___"
+              value={current[tok.index] || ''}
+              onChange={e => !disabled && setBlank(tok.index, e.target.value)}
+            />
+          )
+
+        return null
+      })}
+    </div>
+  )
+}
+
 // ─── ExercisePlayer (student) ─────────────────────────────────
 function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted }) {
   const ex = assignment.exercises
@@ -1895,6 +1994,16 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
       try {
         const matched = JSON.parse(answers[q.id])
         return (q.options || []).length > 0 && (q.options || []).every(p => matched[p.left])
+      } catch { return false }
+    }
+    if (q.type === 'word_choice') {
+      if (!answers[q.id]) return false
+      try {
+        const ans      = JSON.parse(answers[q.id])
+        const tokens   = parseWordChoiceTemplate(q.prompt)
+        const interact = tokens.filter(t => t.type === 'choice' || t.type === 'blank')
+        if (!interact.length) return true
+        return interact.every(t => (ans[t.index] ?? '').toString().trim().length > 0)
       } catch { return false }
     }
     return (answers[q.id] ?? '').trim().length > 0
@@ -1934,7 +2043,24 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
         )}
       </div>
 
-      {/* ── Context images (reading / vocab photos from book) ── */}
+      {/* ── Audio link ── */}
+      {ex?.audio_url && (
+        <div className="exercise-audio-block">
+          <span className="exercise-context-label">🎧 Listen first</span>
+          <a href={ex.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
+            Open audio / video →
+          </a>
+          <p className="exercise-audio-hint">Click the link, listen, then come back to fill in the exercise.</p>
+        </div>
+      )}
+      {/* ── Context text (reading passage) ── */}
+      {ex?.context_text && (
+        <div className="exercise-context-text">
+          <p className="exercise-context-label">📖 Read this first</p>
+          <div className="exercise-context-passage">{ex.context_text}</div>
+        </div>
+      )}
+      {/* ── Context images ── */}
       {ex?.context_images?.length > 0 && (
         <div className="exercise-context-images">
           <p className="exercise-context-label">📖 Reference material</p>
@@ -1954,10 +2080,11 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
                  : q.type === 'fill_blank'     ? 'Fill in the blank'
                  : q.type === 'true_false'      ? 'True / False'
                  : q.type === 'matching'        ? 'Matching'
+                 : q.type === 'word_choice'     ? 'Word choice'
                  : 'Written answer'}
               </span>
             </div>
-            <p className="eq-prompt">{q.prompt}</p>
+            {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
             {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
             {q.type === 'multiple_choice' && (
@@ -2000,6 +2127,13 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
                 placeholder={q.hint || 'Write your answer here…'}
                 value={answers[q.id] || ''}
                 onChange={e => setAnswer(q.id, e.target.value)}
+              />
+            )}
+            {q.type === 'word_choice' && (
+              <WordChoiceQuestion
+                template={q.prompt}
+                answer={answers[q.id] || null}
+                onChange={val => setAnswer(q.id, val)}
               />
             )}
           </div>
@@ -2124,6 +2258,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
     : t === 'fill_blank'    ? 'Fill in the blank'
     : t === 'true_false'    ? 'True / False'
     : t === 'matching'      ? 'Matching'
+    : t === 'word_choice'   ? 'Word choice'
     : 'Written answer'
 
   return (
@@ -2135,6 +2270,20 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
         {exercise?.description && <p className="flow-sub">{exercise.description}</p>}
       </div>
 
+      {exercise?.audio_url && (
+        <div className="exercise-audio-block">
+          <span className="exercise-context-label">🎧 Listen first</span>
+          <a href={exercise.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
+            Open audio / video →
+          </a>
+        </div>
+      )}
+      {exercise?.context_text && (
+        <div className="exercise-context-text">
+          <p className="exercise-context-label">📖 Read this first</p>
+          <div className="exercise-context-passage">{exercise.context_text}</div>
+        </div>
+      )}
       {exercise?.context_images?.length > 0 && (
         <div className="exercise-context-images">
           <p className="exercise-context-label">📖 Reference material</p>
@@ -2155,7 +2304,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                 {checked && result === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
                 {checked && result === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
-              <p className="eq-prompt">{q.prompt}</p>
+              {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
               {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
               {q.type === 'multiple_choice' && (
@@ -2190,9 +2339,16 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                   placeholder={q.hint || 'Write your answer here…'}
                   value={answers[q.id]||''} onChange={e => setAnswer(q.id, e.target.value)} />
               )}
+              {q.type === 'word_choice' && (
+                <WordChoiceQuestion
+                  template={q.prompt}
+                  answer={answers[q.id] || null}
+                  onChange={val => setAnswer(q.id, val)}
+                />
+              )}
 
-              {/* Reveal correct answer after Check */}
-              {checked && q.correct_answer && q.type !== 'matching' && (
+              {/* Reveal correct answer after Check — word_choice has no auto-answer */}
+              {checked && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && (
                 <div className="demo-correct-answer">✓ Answer: <strong>{q.correct_answer}</strong></div>
               )}
               {checked && q.type === 'matching' && q.options && (
@@ -2231,6 +2387,7 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
     : t === 'fill_blank'    ? 'Fill in the blank'
     : t === 'true_false'    ? 'True / False'
     : t === 'matching'      ? 'Matching'
+    : t === 'word_choice'   ? 'Word choice'
     : 'Written answer'
 
   return (
@@ -2291,11 +2448,15 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
                   {isCorrect ? '✓ Correct' : '✗ Incorrect'}
                 </span>}
               </div>
-              <p className="eq-prompt">{q.prompt}</p>
+              {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
 
               <div className="submission-answer-block">
                 <span className="review-label">Your answer:</span>
-                {q.type === 'matching' && sa?.answer ? (
+                {q.type === 'word_choice' ? (
+                  sa?.answer
+                    ? <WordChoiceQuestion template={q.prompt} answer={sa.answer} onChange={() => {}} disabled={true} />
+                    : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                ) : q.type === 'matching' && sa?.answer ? (
                   <div className="review-matching-pairs">
                     {(() => { try {
                       const m = JSON.parse(sa.answer)
@@ -2312,8 +2473,8 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
                   </div>
                 )}
 
-                {/* Show correct answer when marked wrong */}
-                {hasReview && !isCorrect && q.correct_answer && q.type !== 'matching' && (
+                {/* Show correct answer when marked wrong (not for word_choice — no auto-answer) */}
+                {hasReview && !isCorrect && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && (
                   <div className="demo-correct-answer">✓ Correct answer: <strong>{q.correct_answer}</strong></div>
                 )}
                 {hasReview && !isCorrect && q.type === 'matching' && q.options && (
@@ -2344,14 +2505,19 @@ function AdminExercises({ adminUserId }) {
   const [students,    setStudents]    = useState([])
   const [assignments, setAssignments] = useState([])
   const [plans,       setPlans]       = useState([])
+  const [labels,      setLabels]      = useState([])
   const [loading,     setLoading]     = useState(true)
   const [exTab,          setExTab]          = useState('assignments')
-  const [view,           setView]           = useState('list') // 'list'|'review'|'create-exercise'|'edit-exercise'|'create-plan'
+  const [view,           setView]           = useState('list') // 'list'|'review'|'create-exercise'|'edit-exercise'|'create-plan'|'edit-plan'
   const [reviewing,      setReviewing]      = useState(null)
   const [editingExercise,setEditingExercise]= useState(null)
+  const [editingPlan,    setEditingPlan]    = useState(null)
   const [demoExercise,   setDemoExercise]   = useState(null) // {exercise, questions} for admin preview
   const [deletingId,     setDeletingId]     = useState(null) // exercise id pending delete confirm
   const [expandedPlanId, setExpandedPlanId] = useState(null) // plan id currently open in the Plans tab
+  const [filterLabelIds, setFilterLabelIds] = useState([])   // active label filter in library tab
+  const [showLabelMgr,   setShowLabelMgr]   = useState(false) // label management panel open
+  const [deletingLabelId,setDeletingLabelId]= useState(null)
 
   // assign form
   const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise' | 'plan'
@@ -2373,9 +2539,10 @@ function AdminExercises({ adminUserId }) {
       fetchStudentProfiles(),
       fetchAllAssignmentsAdmin(),
       fetchAllLessonPlans(),
-    ]).then(([exs, studs, asgns, pls]) => {
+      fetchAllLabels(),
+    ]).then(([exs, studs, asgns, pls, lbls]) => {
       setExercises(exs); setStudents(studs)
-      setAssignments(asgns); setPlans(pls)
+      setAssignments(asgns); setPlans(pls); setLabels(lbls)
       setLoading(false)
     })
   }
@@ -2443,16 +2610,38 @@ function AdminExercises({ adminUserId }) {
     }
   }
 
+  const handleLabelDeleted = async (id) => {
+    const ok = await deleteLabel(id)
+    if (ok) {
+      setLabels(p => p.filter(l => l.id !== id))
+      setExercises(p => p.map(ex => ({ ...ex, labels: (ex.labels||[]).filter(l => l.id !== id) })))
+      setFilterLabelIds(p => p.filter(x => x !== id))
+      setDeletingLabelId(null)
+    }
+  }
+
   if (view === 'create-exercise') {
     return <ExerciseBuilder
+      allLabels={labels}
+      onLabelCreated={lbl => setLabels(p => [...p, lbl])}
       onCancel={() => setView('list')}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library') }} />
   }
   if (view === 'edit-exercise' && editingExercise) {
     return <ExerciseBuilder
       initialExercise={editingExercise}
+      allLabels={labels}
+      onLabelCreated={lbl => setLabels(p => [...p, lbl])}
       onCancel={() => { setView('list'); setEditingExercise(null) }}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }} />
+  }
+  if (view === 'edit-plan' && editingPlan) {
+    return <LessonStageBuilder
+      exercises={exercises}
+      adminUserId={adminUserId}
+      initialPlan={editingPlan}
+      onCancel={() => { setView('list'); setEditingPlan(null) }}
+      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setExTab('plans'); setEditingPlan(null) }} />
   }
   if (view === 'demo-exercise' && demoExercise) {
     return <ExerciseDemoPlayer
@@ -2461,7 +2650,7 @@ function AdminExercises({ adminUserId }) {
       onBack={() => { setView('list'); setDemoExercise(null) }} />
   }
   if (view === 'create-plan') {
-    return <LessonPlanBuilder exercises={exercises} adminUserId={adminUserId}
+    return <LessonStageBuilder exercises={exercises} adminUserId={adminUserId}
       onCancel={() => setView('list')}
       onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setExTab('plans') }} />
   }
@@ -2613,63 +2802,131 @@ function AdminExercises({ adminUserId }) {
       )}
 
       {/* ── Library tab ── */}
-      {exTab === 'library' && (
-        <div>
-          <div className="admin-exercises-toolbar">
-            <h3 style={{ margin: 0 }}>Exercise Library ({exercises.length})</h3>
-            <button className="btn-gold" onClick={() => setView('create-exercise')}>+ Create exercise</button>
-          </div>
-          {loading ? <div className="dashboard-loading">Loading…</div>
-          : exercises.length === 0 ? (
-            <div className="dashboard-empty">
-              <p>No exercises yet.</p>
-              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "Create exercise" to build your first one — or upload a textbook photo.</p>
+      {exTab === 'library' && (() => {
+        const filteredExercises = filterLabelIds.length === 0
+          ? exercises
+          : exercises.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
+        return (
+          <div>
+            <div className="admin-exercises-toolbar">
+              <h3 style={{ margin: 0 }}>Exercise Library ({filteredExercises.length}{filterLabelIds.length > 0 ? ` / ${exercises.length}` : ''})</h3>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                  onClick={() => setShowLabelMgr(p => !p)}>🏷 Labels</button>
+                <button className="btn-gold" onClick={() => setView('create-exercise')}>+ Create exercise</button>
+              </div>
             </div>
-          ) : (
-            <div className="library-list">
-              {exercises.map(ex => (
-                <div key={ex.id} className="library-row">
-                  <div className="library-row-main">
-                    <div className="library-row-info">
-                      <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
-                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
-                        {ex.course && <span className="admin-level-chip">{ex.course}</span>}
-                        {ex.context_images?.length > 0 && (
-                          <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>
-                            📖 {ex.context_images.length} context photo{ex.context_images.length !== 1 ? 's' : ''}
-                          </span>
+
+            {/* ── Label manager ── */}
+            {showLabelMgr && (
+              <div className="label-mgr-panel">
+                <p className="label-mgr-title">Manage labels</p>
+                {labels.length === 0 ? (
+                  <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0 }}>
+                    No labels yet. Create them from inside any exercise.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {labels.map(lbl => (
+                      <div key={lbl.id} className="label-mgr-row">
+                        <span className="label-chip label-chip--selected" style={{ '--lbl-color': lbl.color }}>{lbl.name}</span>
+                        {deletingLabelId === lbl.id ? (
+                          <>
+                            <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                              onClick={() => handleLabelDeleted(lbl.id)}>Confirm</button>
+                            <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                              onClick={() => setDeletingLabelId(null)}>✕</button>
+                          </>
+                        ) : (
+                          <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', color: '#e05c5c' }}
+                            onClick={() => setDeletingLabelId(lbl.id)}>Delete</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Label filter ── */}
+            {labels.length > 0 && (
+              <div className="library-filter-row">
+                <span className="library-filter-label">Filter:</span>
+                <button className={`filter-chip ${filterLabelIds.length === 0 ? 'filter-chip--active' : ''}`}
+                  onClick={() => setFilterLabelIds([])}>All</button>
+                {labels.map(lbl => (
+                  <button key={lbl.id}
+                    className={`filter-chip ${filterLabelIds.includes(lbl.id) ? 'filter-chip--active' : ''}`}
+                    style={{ '--lbl-color': lbl.color }}
+                    onClick={() => setFilterLabelIds(p =>
+                      p.includes(lbl.id) ? p.filter(x => x !== lbl.id) : [...p, lbl.id]
+                    )}>
+                    {lbl.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {loading ? <div className="dashboard-loading">Loading…</div>
+            : exercises.length === 0 ? (
+              <div className="dashboard-empty">
+                <p>No exercises yet.</p>
+                <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "Create exercise" to build your first one — or upload a textbook photo.</p>
+              </div>
+            ) : filteredExercises.length === 0 ? (
+              <div className="dashboard-empty">
+                <p>No exercises match the selected labels.</p>
+                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => setFilterLabelIds([])}>Clear filter</button>
+              </div>
+            ) : (
+              <div className="library-list">
+                {filteredExercises.map(ex => (
+                  <div key={ex.id} className="library-row">
+                    <div className="library-row-main">
+                      <div className="library-row-info">
+                        <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.25rem', alignItems: 'center' }}>
+                          {ex.course && <span className="admin-level-chip">{ex.course}</span>}
+                          {ex.estimated_minutes && (
+                            <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>⏱ {ex.estimated_minutes} min</span>
+                          )}
+                          {ex.audio_url && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>🎧 Audio</span>}
+                          {ex.context_text && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>📖 Text</span>}
+                          {(ex.labels || []).map(lbl => (
+                            <span key={lbl.id} className="label-chip" style={{ '--lbl-color': lbl.color }}>{lbl.name}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                        <button className="btn-ghost"
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                          onClick={() => openDemo(ex)}>View</button>
+                        <button className="btn-ghost"
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                          onClick={() => openEdit(ex)}>Edit</button>
+                        {deletingId === ex.id ? (
+                          <>
+                            <button className="btn-ghost"
+                              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                              onClick={() => handleDeleteExercise(ex.id)}>Confirm delete</button>
+                            <button className="btn-ghost"
+                              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                              onClick={() => setDeletingId(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <button className="btn-ghost"
+                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
+                            onClick={() => setDeletingId(ex.id)}>Delete</button>
                         )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                      <button className="btn-ghost"
-                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                        onClick={() => openDemo(ex)}>View</button>
-                      <button className="btn-ghost"
-                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                        onClick={() => openEdit(ex)}>Edit</button>
-                      {deletingId === ex.id ? (
-                        <>
-                          <button className="btn-ghost"
-                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
-                            onClick={() => handleDeleteExercise(ex.id)}>Confirm delete</button>
-                          <button className="btn-ghost"
-                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                            onClick={() => setDeletingId(null)}>Cancel</button>
-                        </>
-                      ) : (
-                        <button className="btn-ghost"
-                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
-                          onClick={() => setDeletingId(ex.id)}>Delete</button>
-                      )}
-                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Lesson Plans tab ── */}
       {exTab === 'plans' && (
@@ -2689,7 +2946,11 @@ function AdminExercises({ adminUserId }) {
               {plans.map(p => {
                 const planExercises = (p.lesson_plan_exercises ?? [])
                   .slice().sort((a, b) => a.order_index - b.order_index)
-                const count = planExercises.length
+                const stageCount = (p.lesson_stages ?? []).length
+                const count = stageCount > 0 ? stageCount : planExercises.length
+                const countLabel = stageCount > 0
+                  ? `${count} stage${count !== 1 ? 's' : ''}`
+                  : `${count} exercise${count !== 1 ? 's' : ''}`
                 const isOpen = expandedPlanId === p.id
                 return (
                   <div key={p.id} className="library-row">
@@ -2697,33 +2958,75 @@ function AdminExercises({ adminUserId }) {
                       <div className="library-row-info">
                         <strong style={{ fontSize: '0.95rem' }}>{p.title}</strong>
                         <div style={{ marginTop: '0.2rem' }}>
-                          <span className="admin-level-chip">{count} exercise{count !== 1 ? 's' : ''}</span>
+                          <span className="admin-level-chip">{countLabel}</span>
                         </div>
                         {p.description && <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>{p.description}</p>}
                       </div>
-                      <button className="btn-ghost"
-                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', flexShrink: 0 }}
-                        onClick={() => setExpandedPlanId(isOpen ? null : p.id)}>
-                        {isOpen ? '▲ Close' : '▼ Open'}
-                      </button>
-                    </div>
-                    {isOpen && (
-                      <div className="plan-exercise-list">
-                        {planExercises.length === 0 ? (
-                          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No exercises in this plan yet.</p>
-                        ) : planExercises.map((pe, i) => (
-                          <div key={pe.exercises?.id || i} className="plan-exercise-item">
-                            <span className="plan-exercise-index">{i + 1}</span>
-                            <div>
-                              <span style={{ fontSize: '0.9rem' }}>{pe.exercises?.title}</span>
-                              {pe.exercises?.course && (
-                                <span className="admin-level-chip" style={{ marginLeft: '0.4rem' }}>{pe.exercises.course}</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                      <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                        <button className="btn-ghost"
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                          onClick={() => { setEditingPlan(p); setView('edit-plan') }}>Edit</button>
+                        <button className="btn-ghost"
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                          onClick={() => setExpandedPlanId(isOpen ? null : p.id)}>
+                          {isOpen ? '▲ Close' : '▼ Open'}
+                        </button>
                       </div>
-                    )}
+                    </div>
+                    {isOpen && (() => {
+                      // Prefer lesson_stages (new builder), fall back to lesson_plan_exercises
+                      const planStages = (p.lesson_stages ?? []).slice().sort((a, b) => a.order_index - b.order_index)
+                      const hasStages  = planStages.length > 0
+                      const items      = hasStages ? planStages : planExercises
+                      const stageTotalMins = hasStages
+                        ? planStages.reduce((sum, s) => sum + (s.duration_minutes || 0), 0)
+                        : 0
+                      return (
+                        <div className="plan-exercise-list">
+                          {items.length === 0 ? (
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No stages yet.</p>
+                          ) : items.map((item, i) => {
+                            if (hasStages) {
+                              const def = STAGE_TYPES.find(t => t.value === item.stage_type) || {}
+                              return (
+                                <div key={item.id || i} className="plan-exercise-item">
+                                  <span className="plan-exercise-index">{i + 1}</span>
+                                  <span style={{ fontSize: '1rem', marginRight: '0.2rem' }}>{def.icon}</span>
+                                  <div style={{ flex: 1 }}>
+                                    <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>
+                                      {item.title || def.label}
+                                    </span>
+                                    {item.exercises?.title && (
+                                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginLeft: '0.4rem' }}>
+                                        — {item.exercises.title}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.duration_minutes > 0 && (
+                                    <span className="lesson-duration-chip">⏱ {item.duration_minutes}m</span>
+                                  )}
+                                </div>
+                              )
+                            }
+                            // Legacy fallback
+                            return (
+                              <div key={item.exercises?.id || i} className="plan-exercise-item">
+                                <span className="plan-exercise-index">{i + 1}</span>
+                                <div>
+                                  <span style={{ fontSize: '0.9rem' }}>{item.exercises?.title}</span>
+                                  {item.exercises?.course && (
+                                    <span className="admin-level-chip" style={{ marginLeft: '0.4rem' }}>{item.exercises.course}</span>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                          {stageTotalMins > 0 && (
+                            <div className="plan-stage-total">Total: {stageTotalMins} min</div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })}
@@ -2741,7 +3044,70 @@ const BUILDER_TYPES = [
   { value: 'fill_blank',      label: 'Fill in the Blank', icon: '✏️' },
   { value: 'true_false',      label: 'True / False', icon: '✓✗' },
   { value: 'matching',        label: 'Matching', icon: '↔️' },
+  { value: 'word_choice',     label: 'Word Choice', icon: '↕️' },
 ]
+
+// ─── Lesson stage types ───────────────────────────────────────
+const STAGE_TYPES = [
+  { value: 'controlled_exercise', label: 'Controlled Exercise', icon: '✏️',  hasExercise: true  },
+  { value: 'free_exercise',       label: 'Free Exercise',       icon: '🗣️', hasExercise: true  },
+  { value: 'lead_in',             label: 'Lead-in / Input',     icon: '📥', hasExercise: false },
+  { value: 'feedback',            label: 'Feedback',            icon: '💬', hasExercise: false },
+  { value: 'instruction',         label: 'Instruction',         icon: '📋', hasExercise: false },
+  { value: 'clarification',       label: 'Clarification',       icon: '❓', hasExercise: false },
+]
+
+function newStage(type) {
+  return {
+    id:             crypto.randomUUID(),
+    type,
+    title:          '',
+    durationMinutes: null,
+    customDuration:  '',
+    exerciseId:      null,
+    contentText:     '',
+    audioUrl:        '',
+    contentImages:   [],
+  }
+}
+
+function initStagesFromPlan(plan) {
+  if (!plan) return []
+  // Use lesson_stages if they exist (new builder)
+  const stages = (plan.lesson_stages ?? []).slice().sort((a, b) => a.order_index - b.order_index)
+  if (stages.length > 0) {
+    return stages.map(s => ({
+      id:             s.id,
+      type:           s.stage_type,
+      title:          s.title         || '',
+      durationMinutes: [5, 10, 15].includes(s.duration_minutes) ? s.duration_minutes
+                     : s.duration_minutes ? 'other' : null,
+      customDuration:  ![5, 10, 15].includes(s.duration_minutes) && s.duration_minutes
+                       ? String(s.duration_minutes) : '',
+      exerciseId:      s.exercise_id  || null,
+      exerciseTitle:   s.exercises?.title || '',
+      contentText:     s.content_text || '',
+      audioUrl:        s.audio_url    || '',
+      contentImages:   s.content_images || [],
+    }))
+  }
+  // Fallback: convert legacy lesson_plan_exercises to controlled_exercise stages
+  return (plan.lesson_plan_exercises ?? [])
+    .slice().sort((a, b) => a.order_index - b.order_index)
+    .filter(lpe => lpe.exercises?.id)
+    .map(lpe => ({
+      id:             crypto.randomUUID(),
+      type:           'controlled_exercise',
+      title:          '',
+      durationMinutes: null,
+      customDuration:  '',
+      exerciseId:      lpe.exercises.id,
+      exerciseTitle:   lpe.exercises.title || '',
+      contentText:     '',
+      audioUrl:        '',
+      contentImages:   [],
+    }))
+}
 
 function newQ(type) {
   return {
@@ -2757,13 +3123,28 @@ function newQ(type) {
   }
 }
 
-function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
+function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], onLabelCreated = null }) {
   const isEdit = !!initialExercise
 
   const [title,          setTitle]          = useState(initialExercise?.title        ?? '')
   const [description,    setDescription]    = useState(initialExercise?.description  ?? '')
   const [selType,        setSelType]        = useState(initialExercise?.questions?.[0]?.type ?? null)
   const [contextImages,  setContextImages]  = useState(initialExercise?.context_images ?? [])
+  const [contextText,    setContextText]    = useState(initialExercise?.context_text  ?? '')
+  const [audioUrl,       setAudioUrl]       = useState(initialExercise?.audio_url     ?? '')
+  const [estimatedMins,  setEstimatedMins]  = useState(initialExercise?.estimated_minutes ?? null)
+  const [customMins,     setCustomMins]     = useState(
+    initialExercise?.estimated_minutes && ![5,10,15].includes(initialExercise.estimated_minutes)
+      ? String(initialExercise.estimated_minutes) : ''
+  )
+  const [labelIds,       setLabelIds]       = useState(
+    (initialExercise?.exercise_labels || []).map(el => el.label_id)
+  )
+  const [localLabels,    setLocalLabels]    = useState(allLabels)
+  const [newLabelName,   setNewLabelName]   = useState('')
+  const [newLabelColor,  setNewLabelColor]  = useState('#d4a853')
+  const [savingLabel,    setSavingLabel]    = useState(false)
+  const [showLabelForm,  setShowLabelForm]  = useState(false)
   const [questions,      setQuestions]      = useState(
     (initialExercise?.questions ?? []).map(q => ({ ...q, tempId: crypto.randomUUID() }))
   )
@@ -2826,17 +3207,40 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
   const removeQ = (id)           => setQuestions(p => p.filter(q => q.tempId !== id))
   const updateQ = (id, fld, val) => setQuestions(p => p.map(q => q.tempId === id ? { ...q, [fld]: val } : q))
 
+  // ── Label helpers ────────────────────────────────────────────
+  const handleCreateLabel = async () => {
+    if (!newLabelName.trim()) return
+    setSavingLabel(true)
+    const label = await createLabel(newLabelName.trim(), newLabelColor)
+    setSavingLabel(false)
+    if (label) {
+      setLocalLabels(p => [...p, label])
+      setLabelIds(p => [...p, label.id])
+      setNewLabelName(''); setShowLabelForm(false)
+      onLabelCreated?.(label)
+    }
+  }
+  const toggleLabel = (id) => setLabelIds(p =>
+    p.includes(id) ? p.filter(x => x !== id) : [...p, id]
+  )
+
   // ── Save ────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim() || !questions.length) return
     setSaving(true); setSaveError(null)
-    const meta = { title, description, contextImages }
+    const finalMins = estimatedMins === 'other' ? (parseInt(customMins) || null) : estimatedMins
+    const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins }
     const id = isEdit
       ? await updateExerciseWithQuestions(initialExercise.id, meta, questions)
       : await createExerciseWithQuestions(meta, questions)
-    setSaving(false)
-    if (id) onSaved(id)
-    else setSaveError('Something went wrong saving. Check your connection and try again.')
+    if (id) {
+      await setExerciseLabels(id, labelIds)
+      setSaving(false)
+      onSaved(id)
+    } else {
+      setSaving(false)
+      setSaveError('Something went wrong saving. Check your connection and try again.')
+    }
   }
 
   return (
@@ -2887,6 +3291,22 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
             ))}
           </div>
         )}
+        {/* ── Audio link ── */}
+        <div className="form-field" style={{ marginTop: '1rem' }}>
+          <label>🎧 Audio / video link <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — YouTube, SoundCloud, etc.)</span></label>
+          <input type="url" placeholder="https://youtube.com/…"
+            value={audioUrl} onChange={e => setAudioUrl(e.target.value)} />
+          <p className="builder-section-sub" style={{ marginTop: '0.25rem' }}>
+            Students see a "Listen first" link above the exercise.
+          </p>
+        </div>
+        {/* ── Reading text ── */}
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>📖 Reading text <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — shown above exercise)</span></label>
+          <textarea className="writing-input" rows={5}
+            placeholder="Paste or type a reading passage here. Students read it before answering the questions."
+            value={contextText} onChange={e => setContextText(e.target.value)} />
+        </div>
       </div>
 
       {/* ── Exercise type ── */}
@@ -2954,6 +3374,89 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null }) {
         </div>
       )}
 
+      {/* ── Estimated time (admin-only) ── */}
+      {selType && (
+        <div className="builder-section">
+          <h4 className="builder-section-title">⏱ Estimated time <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}>(only you can see this)</span></h4>
+          <div className="builder-time-pills">
+            {[5, 10, 15].map(m => (
+              <button key={m} type="button"
+                className={`builder-type-pill ${estimatedMins === m ? 'active' : ''}`}
+                onClick={() => { setEstimatedMins(estimatedMins === m ? null : m); setCustomMins('') }}>
+                {m} min
+              </button>
+            ))}
+            <button type="button"
+              className={`builder-type-pill ${estimatedMins === 'other' ? 'active' : ''}`}
+              onClick={() => setEstimatedMins(estimatedMins === 'other' ? null : 'other')}>
+              Other
+            </button>
+          </div>
+          {estimatedMins === 'other' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <input type="number" min="1" max="120" style={{ width: '6rem' }}
+                placeholder="e.g. 20" value={customMins}
+                onChange={e => setCustomMins(e.target.value)} />
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>minutes</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Labels ── */}
+      <div className="builder-section">
+        <div className="builder-section-header">
+          <div>
+            <h4 className="builder-section-title">🏷 Labels</h4>
+            <p className="builder-section-sub">Tag this exercise so you can filter later (e.g. Elementary, Jason – Week 3).</p>
+          </div>
+          <button type="button" className="btn-ghost"
+            style={{ fontSize: '0.78rem', padding: '0.28rem 0.65rem', flexShrink: 0 }}
+            onClick={() => setShowLabelForm(p => !p)}>
+            {showLabelForm ? 'Cancel' : '+ New label'}
+          </button>
+        </div>
+
+        {showLabelForm && (
+          <div className="builder-label-form">
+            <input type="text" placeholder="Label name (e.g. Elementary)"
+              value={newLabelName} onChange={e => setNewLabelName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateLabel()} />
+            <div className="builder-color-swatches">
+              {LABEL_COLORS.map(c => (
+                <button key={c.value} type="button"
+                  title={c.label}
+                  className={`builder-color-swatch ${newLabelColor === c.value ? 'active' : ''}`}
+                  style={{ '--swatch-color': c.value }}
+                  onClick={() => setNewLabelColor(c.value)} />
+              ))}
+            </div>
+            <button className="btn-gold" style={{ fontSize: '0.8rem', padding: '0.35rem 0.8rem' }}
+              disabled={savingLabel || !newLabelName.trim()} onClick={handleCreateLabel}>
+              {savingLabel ? 'Creating…' : 'Create label'}
+            </button>
+          </div>
+        )}
+
+        {localLabels.length > 0 && (
+          <div className="builder-label-chips">
+            {localLabels.map(lbl => (
+              <button key={lbl.id} type="button"
+                className={`label-chip ${labelIds.includes(lbl.id) ? 'label-chip--selected' : ''}`}
+                style={{ '--lbl-color': lbl.color }}
+                onClick={() => toggleLabel(lbl.id)}>
+                {lbl.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {localLabels.length === 0 && !showLabelForm && (
+          <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>
+            No labels yet — create one to start organising.
+          </p>
+        )}
+      </div>
+
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
@@ -2982,28 +3485,68 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
           {type === 'multiple_choice' ? 'Multiple choice'
            : type === 'fill_blank'    ? 'Fill in the blank'
            : type === 'true_false'    ? 'True / False'
-           : 'Matching'}
+           : type === 'matching'      ? 'Matching'
+           : type === 'word_choice'   ? 'Word choice'
+           : 'Written answer'}
         </span>
         {canRemove && <button className="builder-q-remove" onClick={onRemove}>✕</button>}
       </div>
 
-      <div className="form-field">
-        <label>
-          {type === 'fill_blank' ? 'Sentence (use ___ for each blank)'
-           : type === 'matching' ? 'Instruction (e.g. "Match the words to their meanings")'
-           : 'Question'}
-        </label>
-        <input type="text"
-          placeholder={
-            type === 'fill_blank'      ? 'e.g. She ___ from Spain.'
-            : type === 'multiple_choice' ? 'e.g. Which sentence is correct?'
-            : type === 'true_false'      ? 'e.g. "Good morning" is used in the evening.'
-            : 'e.g. Match the words to their definitions.'
-          }
-          value={prompt}
-          onChange={e => onChange('prompt', e.target.value)}
-        />
-      </div>
+      {type !== 'word_choice' && (
+        <div className="form-field">
+          <label>
+            {type === 'fill_blank' ? 'Sentence (use ___ for each blank)'
+             : type === 'matching' ? 'Instruction (e.g. "Match the words to their meanings")'
+             : 'Question'}
+          </label>
+          <input type="text"
+            placeholder={
+              type === 'fill_blank'        ? 'e.g. She ___ from Spain.'
+              : type === 'multiple_choice' ? 'e.g. Which sentence is correct?'
+              : type === 'true_false'      ? 'e.g. "Good morning" is used in the evening.'
+              : 'e.g. Match the words to their definitions.'
+            }
+            value={prompt}
+            onChange={e => onChange('prompt', e.target.value)}
+          />
+        </div>
+      )}
+
+      {type === 'word_choice' && (
+        <div className="form-field">
+          <label>Sentence template</label>
+          <p className="builder-section-sub" style={{ marginBottom: '0.5rem' }}>
+            Write the sentence. Use <code>[word1/word2]</code> for a two-option choice and <code>[___]</code> for a fill-in blank.
+          </p>
+          <div className="wc-toolbar">
+            <button type="button" className="btn-ghost"
+              style={{ fontSize: '0.78rem', padding: '0.28rem 0.65rem' }}
+              onClick={() => onChange('prompt', (prompt || '') + '[option1/option2]')}>
+              + Insert choice [A/B]
+            </button>
+            <button type="button" className="btn-ghost"
+              style={{ fontSize: '0.78rem', padding: '0.28rem 0.65rem' }}
+              onClick={() => onChange('prompt', (prompt || '') + '[___]')}>
+              + Insert blank [___]
+            </button>
+          </div>
+          <textarea className="writing-input" rows={3}
+            placeholder="e.g. Maria [is/isn't] a good teacher. She [goes/go] to work every day."
+            value={prompt || ''}
+            onChange={e => onChange('prompt', e.target.value)}
+          />
+          {prompt?.includes('[') && (
+            <div style={{ marginTop: '0.6rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Preview:
+              </label>
+              <div className="word-choice-preview">
+                <WordChoiceQuestion template={prompt} answer={null} onChange={() => {}} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {type === 'multiple_choice' && (
         <div className="form-field">
@@ -3093,10 +3636,17 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
 }
 
 // ─── LessonPlanBuilder ────────────────────────────────────────
-function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel }) {
-  const [title,    setTitle]    = useState('')
-  const [desc,     setDesc]     = useState('')
-  const [selected, setSelected] = useState([]) // [{id, title}] ordered
+function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel, initialPlan = null }) {
+  const isEdit = !!initialPlan
+  const [title,    setTitle]    = useState(initialPlan?.title ?? '')
+  const [desc,     setDesc]     = useState(initialPlan?.description ?? '')
+  const [selected, setSelected] = useState(() => {
+    if (!initialPlan) return []
+    return (initialPlan.lesson_plan_exercises ?? [])
+      .slice().sort((a, b) => a.order_index - b.order_index)
+      .map(lpe => ({ id: lpe.exercises?.id, title: lpe.exercises?.title }))
+      .filter(ex => ex.id)
+  })
   const [saving,   setSaving]   = useState(false)
   const [err,      setErr]      = useState(null)
 
@@ -3111,7 +3661,9 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel }) {
   const handleSave = async () => {
     if (!title.trim() || !selected.length) return
     setSaving(true); setErr(null)
-    const id = await createLessonPlan(title, desc, adminUserId, selected.map(e => e.id))
+    const id = isEdit
+      ? await updateLessonPlan(initialPlan.id, title, desc, selected.map(e => e.id))
+      : await createLessonPlan(title, desc, adminUserId, selected.map(e => e.id))
     setSaving(false)
     if (id) onSaved(id)
     else setErr('Something went wrong. Please try again.')
@@ -3120,7 +3672,7 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel }) {
   return (
     <div>
       <div className="admin-exercises-toolbar">
-        <h3 style={{ margin: 0 }}>Create Lesson Plan</h3>
+        <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Lesson Plan' : 'Create Lesson Plan'}</h3>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
 
@@ -3179,7 +3731,221 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel }) {
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
           disabled={saving || !title.trim() || !selected.length}>
-          {saving ? 'Saving…' : `Save plan (${selected.length} exercise${selected.length !== 1 ? 's' : ''})`}
+          {saving ? 'Saving…'
+            : isEdit
+              ? `Save changes (${selected.length} exercise${selected.length !== 1 ? 's' : ''})`
+              : `Save plan (${selected.length} exercise${selected.length !== 1 ? 's' : ''})`}
+        </button>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── StageCard (one block in the lesson plan builder) ─────────
+function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMoveDown, canMoveUp, canMoveDown }) {
+  const def         = STAGE_TYPES.find(t => t.value === stage.type)
+  const stageImgRef = useRef(null)
+  const [imgLoading, setImgLoading] = useState(false)
+
+  const handleImages = async (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 2 - stage.contentImages.length)
+    if (!files.length) return
+    setImgLoading(true)
+    const compressed = await Promise.all(files.map(f => compressImage(f)))
+    onChange('contentImages', [...stage.contentImages, ...compressed].slice(0, 2))
+    setImgLoading(false)
+    e.target.value = ''
+  }
+
+  return (
+    <div className="stage-card">
+      <div className="stage-card-header">
+        <span className="stage-index">{idx + 1}</span>
+        <span className="stage-type-badge">{def.icon} {def.label}</span>
+
+        {/* Duration picker */}
+        <div className="stage-dur-row">
+          {[5, 10, 15, 'other'].map(m => (
+            <button key={m} type="button"
+              className={`stage-dur-btn ${stage.durationMinutes === m ? 'active' : ''}`}
+              onClick={() => onChange('durationMinutes', stage.durationMinutes === m ? null : m)}>
+              {m === 'other' ? '…' : `${m}m`}
+            </button>
+          ))}
+          {stage.durationMinutes === 'other' && (
+            <input type="number" min="1" max="180" className="stage-dur-input"
+              placeholder="min" value={stage.customDuration}
+              onChange={e => onChange('customDuration', e.target.value)} />
+          )}
+        </div>
+
+        <div className="stage-card-actions">
+          <button type="button" className="stage-move-btn" onClick={onMoveUp}  disabled={!canMoveUp}>▲</button>
+          <button type="button" className="stage-move-btn" onClick={onMoveDown} disabled={!canMoveDown}>▼</button>
+          <button type="button" className="stage-remove-btn" onClick={onRemove}>✕</button>
+        </div>
+      </div>
+
+      {/* Optional label */}
+      <div className="form-field" style={{ marginBottom: '0.5rem' }}>
+        <input type="text" placeholder={`Label (optional) — e.g. "${def.label} 1"`}
+          value={stage.title}
+          onChange={e => onChange('title', e.target.value)} />
+      </div>
+
+      {/* Exercise picker (exercise stages) */}
+      {def.hasExercise && (
+        <div className="form-field" style={{ marginBottom: 0 }}>
+          <select value={stage.exerciseId || ''}
+            onChange={e => onChange('exerciseId', e.target.value || null)}>
+            <option value="">— Choose exercise from library —</option>
+            {exercises.map(ex => (
+              <option key={ex.id} value={ex.id}>{ex.title}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Content fields (non-exercise stages) */}
+      {!def.hasExercise && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <input type="url" placeholder="🎧 Audio / video link (optional)"
+            value={stage.audioUrl}
+            onChange={e => onChange('audioUrl', e.target.value)} />
+          <textarea className="writing-input" rows={3}
+            placeholder="📖 Notes, text or instructions (optional)"
+            value={stage.contentText}
+            onChange={e => onChange('contentText', e.target.value)} />
+          {stage.contentImages.length < 2 && (
+            <button type="button" className="builder-upload-btn"
+              onClick={() => stageImgRef.current?.click()}>
+              {imgLoading ? '⏳ Uploading…' : `+ Add image (${stage.contentImages.length}/2)`}
+            </button>
+          )}
+          <input ref={stageImgRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={handleImages} />
+          {stage.contentImages.length > 0 && (
+            <div className="builder-thumbs">
+              {stage.contentImages.map((src, i) => (
+                <div key={i} className="builder-thumb">
+                  <img src={src} alt={`Stage img ${i + 1}`} />
+                  <button className="builder-thumb-remove"
+                    onClick={() => onChange('contentImages', stage.contentImages.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── LessonStageBuilder ───────────────────────────────────────
+function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initialPlan = null }) {
+  const isEdit = !!initialPlan
+  const [title,  setTitle]  = useState(initialPlan?.title ?? '')
+  const [desc,   setDesc]   = useState(initialPlan?.description ?? '')
+  const [stages, setStages] = useState(() => initStagesFromPlan(initialPlan))
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState(null)
+
+  const totalMins = stages.reduce((sum, s) => {
+    const m = s.durationMinutes === 'other' ? (parseInt(s.customDuration) || 0) : (s.durationMinutes || 0)
+    return sum + m
+  }, 0)
+
+  const addStage   = (type) => setStages(p => [...p, newStage(type)])
+  const removeStage = (id)  => setStages(p => p.filter(s => s.id !== id))
+  const moveStage  = (i, dir) => setStages(p => {
+    const a = [...p]; [a[i], a[i + dir]] = [a[i + dir], a[i]]; return a
+  })
+  const updateStage = (id, field, val) =>
+    setStages(p => p.map(s => s.id === id ? { ...s, [field]: val } : s))
+
+  const handleSave = async () => {
+    if (!title.trim()) return
+    setSaving(true); setErr(null)
+    const id = isEdit
+      ? await updateLessonPlanWithStages(initialPlan.id, title, desc, stages)
+      : await createLessonPlanWithStages(title, desc, adminUserId, stages)
+    setSaving(false)
+    if (id) onSaved(id)
+    else setErr('Something went wrong. Please try again.')
+  }
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Lesson Plan' : 'Create Lesson Plan'}</h3>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+
+      <div className="admin-assign-form" style={{ marginBottom: '1.25rem' }}>
+        <div className="form-field">
+          <label>Plan title *</label>
+          <input type="text" placeholder="e.g. Beginner — Lesson 3: Present Simple"
+            value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="form-field">
+          <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+          <input type="text" placeholder="Brief description"
+            value={desc} onChange={e => setDesc(e.target.value)} />
+        </div>
+      </div>
+
+      {/* Total time */}
+      {totalMins > 0 && (
+        <div className="stage-total-row">
+          <span className="stage-total-label">Total planned time:</span>
+          <span className="stage-total-mins">{totalMins} min</span>
+        </div>
+      )}
+
+      {/* Stage list */}
+      {stages.length > 0 && (
+        <div className="stage-list">
+          {stages.map((s, i) => (
+            <StageCard key={s.id} stage={s} idx={i} exercises={exercises}
+              onChange={(field, val) => updateStage(s.id, field, val)}
+              onRemove={() => removeStage(s.id)}
+              onMoveUp={() => moveStage(i, -1)}
+              onMoveDown={() => moveStage(i, 1)}
+              canMoveUp={i > 0}
+              canMoveDown={i < stages.length - 1}
+            />
+          ))}
+        </div>
+      )}
+
+      {stages.length === 0 && (
+        <div className="dashboard-empty" style={{ margin: '1rem 0' }}>
+          <p style={{ margin: 0 }}>No stages yet — add one below.</p>
+        </div>
+      )}
+
+      {/* Add stage buttons */}
+      <div className="stage-add-section">
+        <p className="stage-add-label">Add a stage:</p>
+        <div className="stage-add-row">
+          {STAGE_TYPES.map(t => (
+            <button key={t.value} type="button" className="stage-add-btn"
+              onClick={() => addStage(t.value)}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {err && <div className="auth-error" style={{ marginTop: '0.75rem' }}>{err}</div>}
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', alignItems: 'center' }}>
+        <button className="btn-gold" onClick={handleSave}
+          disabled={saving || !title.trim()}>
+          {saving ? 'Saving…'
+            : isEdit
+              ? `Save changes (${stages.length} stage${stages.length !== 1 ? 's' : ''})`
+              : `Save plan (${stages.length} stage${stages.length !== 1 ? 's' : ''})`}
         </button>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
@@ -3214,7 +3980,7 @@ function AdminExerciseReview({ details, onBack }) {
       try { const m = JSON.parse(sa.answer); return (q.options||[]).every(p => m[p.left] === p.right) }
       catch { return null }
     }
-    return null // free_text — no auto-grade
+    return null // free_text / word_choice — no auto-grade
   }
 
   const handleSave = async () => {
@@ -3240,6 +4006,7 @@ function AdminExerciseReview({ details, onBack }) {
     : t === 'fill_blank'    ? 'Fill in the blank'
     : t === 'true_false'    ? 'True / False'
     : t === 'matching'      ? 'Matching'
+    : t === 'word_choice'   ? 'Word choice'
     : 'Written answer'
 
   return (
@@ -3263,6 +4030,28 @@ function AdminExerciseReview({ details, onBack }) {
         </div>
       )}
 
+      {/* Admin-only timing */}
+      {exercise?.estimated_minutes && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0.4rem 0 0.75rem' }}>
+          <span className="admin-level-chip">⏱ ~{exercise.estimated_minutes} min</span>
+        </div>
+      )}
+      {/* Audio link */}
+      {exercise?.audio_url && (
+        <div className="exercise-audio-block" style={{ marginTop: '0.5rem' }}>
+          <span className="exercise-context-label">🎧 Audio</span>
+          <a href={exercise.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
+            Open audio / video →
+          </a>
+        </div>
+      )}
+      {/* Reading text */}
+      {exercise?.context_text && (
+        <div className="exercise-context-text" style={{ marginTop: '0.5rem' }}>
+          <p className="exercise-context-label">📖 Reading text</p>
+          <div className="exercise-context-passage">{exercise.context_text}</div>
+        </div>
+      )}
       {/* Context images */}
       {exercise?.context_images?.length > 0 && (
         <div className="exercise-context-images" style={{ marginTop: '0.75rem' }}>
@@ -3287,12 +4076,16 @@ function AdminExerciseReview({ details, onBack }) {
                 {hasAnswer && correct === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
                 {hasAnswer && correct === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
-              <p className="eq-prompt">{q.prompt}</p>
+              {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
 
               {/* Student's answer */}
               <div className="review-answer-row" style={{ display: 'block' }}>
                 <span className="review-label">Student answered:</span>
-                {q.type === 'matching' && hasAnswer ? (
+                {q.type === 'word_choice' ? (
+                  hasAnswer
+                    ? <WordChoiceQuestion template={q.prompt} answer={sa.answer} onChange={() => {}} disabled={true} />
+                    : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                ) : q.type === 'matching' && hasAnswer ? (
                   <div className="review-matching-pairs">
                     {(() => { try {
                       const m = JSON.parse(sa.answer)
@@ -3309,7 +4102,7 @@ function AdminExerciseReview({ details, onBack }) {
                     {hasAnswer || <em>No answer given</em>}
                   </div>
                 )}
-                {q.correct_answer && q.type !== 'matching' && (
+                {q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && (
                   <div className="review-correct-answer">
                     <span className="review-label">Correct answer:</span> {q.correct_answer}
                   </div>
@@ -3361,15 +4154,16 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
   const handleSave = async () => {
     setSaving(true)
     const updates = {
-      title:         lesson.title         || null,
-      lesson_no:     lesson.lesson_no     || null,
-      scheduled_at:  lesson.scheduled_at  || null,
-      status:        lesson.status,
-      teacher_notes: lesson.teacher_notes || null,
-      notes_visible: lesson.notes_visible,
-      completed_at:  lesson.status === 'completed' && !lesson.completed_at
-                       ? new Date().toISOString()
-                       : lesson.completed_at,
+      title:            lesson.title            || null,
+      lesson_no:        lesson.lesson_no        || null,
+      scheduled_at:     lesson.scheduled_at     || null,
+      status:           lesson.status,
+      teacher_notes:    lesson.teacher_notes    || null,
+      notes_visible:    lesson.notes_visible,
+      duration_minutes: lesson.duration_minutes || null,
+      completed_at:     lesson.status === 'completed' && !lesson.completed_at
+                          ? new Date().toISOString()
+                          : lesson.completed_at,
     }
     const ok = await onUpdate(lesson.id, updates)
     setSaving(false)
@@ -3404,6 +4198,16 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
               <option value="scheduled">Scheduled</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Duration</label>
+            <select value={lesson.duration_minutes || ''}
+              onChange={e => setLesson(p => ({ ...p, duration_minutes: e.target.value ? parseInt(e.target.value) : null }))}>
+              <option value="">Not set</option>
+              <option value="45">45 minutes</option>
+              <option value="60">60 minutes</option>
+              <option value="90">90 minutes</option>
             </select>
           </div>
         </div>
@@ -3443,6 +4247,9 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
           <span className="lesson-date">
             {new Date(lesson.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
+        )}
+        {lesson.duration_minutes && (
+          <span className="lesson-duration-chip">⏱ {lesson.duration_minutes} min</span>
         )}
         {lesson.teacher_notes && (
           <span className="admin-lesson-notes-indicator">
@@ -3511,10 +4318,11 @@ function AdminStudentLessons({ student, adminUserId }) {
   const [lessons,     setLessons]     = useState([])
   const [loading,     setLoading]     = useState(true)
   const [adding,      setAdding]      = useState(false)
-  const [newLessonNo, setNewLessonNo] = useState('')
-  const [newTitle,    setNewTitle]    = useState('')
-  const [newDate,     setNewDate]     = useState('')
-  const [saving,      setSaving]      = useState(false)
+  const [newLessonNo,   setNewLessonNo]   = useState('')
+  const [newTitle,      setNewTitle]      = useState('')
+  const [newDate,       setNewDate]       = useState('')
+  const [newDuration,   setNewDuration]   = useState('')
+  const [saving,        setSaving]        = useState(false)
 
   useEffect(() => {
     fetchStudentLessons(student.id).then(data => {
@@ -3527,11 +4335,12 @@ function AdminStudentLessons({ student, adminUserId }) {
     setSaving(true)
     const scheduledIso = newDate ? new Date(newDate).toISOString() : null
     const id = await createLesson({
-      studentId:   student.id,
-      lessonNo:    newLessonNo ? parseInt(newLessonNo) : null,
-      title:       newTitle   || null,
-      scheduledAt: scheduledIso,
-      createdBy:   adminUserId,
+      studentId:       student.id,
+      lessonNo:        newLessonNo ? parseInt(newLessonNo) : null,
+      title:           newTitle   || null,
+      scheduledAt:     scheduledIso,
+      createdBy:       adminUserId,
+      durationMinutes: newDuration ? parseInt(newDuration) : null,
     })
     setSaving(false)
     if (id) {
@@ -3544,7 +4353,7 @@ function AdminStudentLessons({ student, adminUserId }) {
         completed_at: null, created_at: new Date().toISOString(),
       }
       setLessons(prev => [...prev, newL].sort((a, b) => (a.lesson_no ?? 999) - (b.lesson_no ?? 999)))
-      setAdding(false); setNewLessonNo(''); setNewTitle(''); setNewDate('')
+      setAdding(false); setNewLessonNo(''); setNewTitle(''); setNewDate(''); setNewDuration('')
     }
   }
 
@@ -3578,6 +4387,15 @@ function AdminStudentLessons({ student, adminUserId }) {
             <div className="form-field">
               <label>Date &amp; time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
               <input type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label>Duration <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <select value={newDuration} onChange={e => setNewDuration(e.target.value)}>
+                <option value="">Not set</option>
+                <option value="45">45 minutes</option>
+                <option value="60">60 minutes</option>
+                <option value="90">90 minutes</option>
+              </select>
             </div>
           </div>
           <button className="btn-gold" style={{ marginTop: '0.5rem', fontSize: '0.85rem', padding: '0.5rem 1rem' }}

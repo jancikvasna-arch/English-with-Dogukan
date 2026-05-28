@@ -198,15 +198,19 @@ export async function submitExerciseAnswers(assignmentId, answersMap, studentId)
 
 // ─── Exercise helpers (admin) ─────────────────────────────────
 
-/** Fetch all exercises (for the assign dropdown). */
+/** Fetch all exercises with labels + new fields (library + assign dropdown). */
 export async function fetchAllExercises() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, title, course, lesson_no')
+    .select('id, title, course, lesson_no, context_text, audio_url, estimated_minutes, exercise_labels ( label_id, labels ( id, name, color ) )')
     .order('course').order('lesson_no')
   if (error) { console.error('[supabase] fetchAllExercises:', error); return [] }
-  return data ?? []
+  // Flatten exercise_labels → labels array for convenience
+  return (data ?? []).map(ex => ({
+    ...ex,
+    labels: (ex.exercise_labels || []).map(el => el.labels).filter(Boolean),
+  }))
 }
 
 /** Fetch all student profiles for the assign dropdown (excludes admin). */
@@ -316,16 +320,19 @@ export async function reviewWriting(resultId, notes) {
 // ─── Exercise Builder ─────────────────────────────────────────
 
 /** Create a new exercise with all its questions in one shot. */
-export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages }, questions) {
+export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes }, questions) {
   if (!supabase) return null
   const exerciseId = crypto.randomUUID()
   const { error: exErr } = await supabase.from('exercises').insert({
-    id:             exerciseId,
+    id:                exerciseId,
     title,
-    description:    description || null,
-    course:         course      || null,
-    lesson_no:      lessonNo    || null,
-    context_images: contextImages?.length ? contextImages : null,
+    description:       description    || null,
+    course:            course         || null,
+    lesson_no:         lessonNo       || null,
+    context_images:    contextImages?.length ? contextImages : null,
+    context_text:      contextText    || null,
+    audio_url:         audioUrl       || null,
+    estimated_minutes: estimatedMinutes || null,
   })
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
@@ -351,26 +358,30 @@ export async function deleteExercise(exerciseId) {
   return true
 }
 
-/** Fetch a single exercise with all its questions (admin, for editing). */
+/** Fetch a single exercise with all its questions + labels (admin, for editing / preview). */
 export async function fetchExerciseWithQuestions(exerciseId) {
   if (!supabase) return null
   const { data, error } = await supabase
     .from('exercises')
-    .select('*, questions(*)')
+    .select('*, questions(*), exercise_labels ( label_id, labels ( id, name, color ) )')
     .eq('id', exerciseId)
     .single()
   if (error) { console.error('[supabase] fetchExerciseWithQuestions:', error); return null }
   if (data?.questions) data.questions.sort((a, b) => a.order_index - b.order_index)
+  if (data) data.labels = (data.exercise_labels || []).map(el => el.labels).filter(Boolean)
   return data
 }
 
 /** Update an existing exercise and replace all its questions. */
-export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages }, questions) {
+export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes }, questions) {
   if (!supabase) return null
   const { error: exErr } = await supabase.from('exercises').update({
     title,
-    description:    description    || null,
-    context_images: contextImages?.length ? contextImages : null,
+    description:       description    || null,
+    context_images:    contextImages?.length ? contextImages : null,
+    context_text:      contextText    || null,
+    audio_url:         audioUrl       || null,
+    estimated_minutes: estimatedMinutes || null,
   }).eq('id', exerciseId)
   if (exErr) { console.error('[supabase] updateExercise:', exErr); return null }
 
@@ -395,12 +406,16 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
 
 // ─── Lesson Plans ─────────────────────────────────────────────
 
-/** Fetch all lesson plans (admin). */
+/** Fetch all lesson plans with stages + legacy exercises (admin). */
 export async function fetchAllLessonPlans() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('lesson_plans')
-    .select('id, title, description, created_at, lesson_plan_exercises ( order_index, exercises ( id, title, course ) )')
+    .select(`
+      id, title, description, created_at,
+      lesson_stages ( id, order_index, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, exercises ( id, title, course ) ),
+      lesson_plan_exercises ( order_index, exercises ( id, title, course ) )
+    `)
     .order('created_at', { ascending: false })
   if (error) { console.error('[supabase] fetchAllLessonPlans:', error); return [] }
   return data ?? []
@@ -497,17 +512,18 @@ export async function fetchStudentLessons(studentId) {
 }
 
 /** Admin: create a new lesson record for a student. */
-export async function createLesson({ studentId, lessonNo, title, scheduledAt, createdBy }) {
+export async function createLesson({ studentId, lessonNo, title, scheduledAt, createdBy, durationMinutes }) {
   if (!supabase) return null
   const id = crypto.randomUUID()
   const { error } = await supabase.from('lessons').insert({
     id,
-    student_id:   studentId,
-    lesson_no:    lessonNo   || null,
-    title:        title      || null,
-    scheduled_at: scheduledAt || null,
-    created_by:   createdBy,
-    status:       'scheduled',
+    student_id:       studentId,
+    lesson_no:        lessonNo        || null,
+    title:            title           || null,
+    scheduled_at:     scheduledAt     || null,
+    created_by:       createdBy,
+    status:           'scheduled',
+    duration_minutes: durationMinutes || null,
   })
   if (error) { console.error('[supabase] createLesson:', error); return null }
   return id
@@ -547,17 +563,170 @@ export async function submitLessonFeedback(lessonId, feedback) {
   return true
 }
 
-/** Assign all exercises in a lesson plan to a student at once. */
+// ─── Labels ───────────────────────────────────────────────────
+
+/** Fetch all labels (admin). */
+export async function fetchAllLabels() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('labels')
+    .select('id, name, color')
+    .order('name')
+  if (error) { console.error('[supabase] fetchAllLabels:', error); return [] }
+  return data ?? []
+}
+
+/** Create a new label. Returns the created label object or null. */
+export async function createLabel(name, color) {
+  if (!supabase) return null
+  const id = crypto.randomUUID()
+  const { data, error } = await supabase
+    .from('labels')
+    .insert({ id, name: name.trim(), color })
+    .select()
+    .single()
+  if (error) { console.error('[supabase] createLabel:', error); return null }
+  return data
+}
+
+/** Delete a label (cascades to exercise_labels). */
+export async function deleteLabel(labelId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('labels').delete().eq('id', labelId)
+  if (error) { console.error('[supabase] deleteLabel:', error); return false }
+  return true
+}
+
+/** Sync labels for an exercise — replaces the full set. */
+export async function setExerciseLabels(exerciseId, labelIds) {
+  if (!supabase) return true
+  const { error: delErr } = await supabase
+    .from('exercise_labels')
+    .delete()
+    .eq('exercise_id', exerciseId)
+  if (delErr) { console.error('[supabase] setExerciseLabels delete:', delErr); return false }
+  if (labelIds.length > 0) {
+    const rows = labelIds.map(lid => ({ exercise_id: exerciseId, label_id: lid }))
+    const { error: insErr } = await supabase.from('exercise_labels').insert(rows)
+    if (insErr) { console.error('[supabase] setExerciseLabels insert:', insErr); return false }
+  }
+  return true
+}
+
+// ─── Lesson Plan with Stages ──────────────────────────────────
+
+/** Shared helper: upsert stages for a plan (delete-then-insert). */
+async function _saveStages(planId, stages) {
+  const { error: delErr } = await supabase
+    .from('lesson_stages').delete().eq('lesson_plan_id', planId)
+  if (delErr) { console.error('[supabase] _saveStages delete:', delErr); return false }
+  if (!stages.length) return true
+  const rows = stages.map((s, i) => {
+    const dur = s.durationMinutes === 'other'
+      ? (parseInt(s.customDuration) || null)
+      : (s.durationMinutes || null)
+    return {
+      lesson_plan_id:   planId,
+      order_index:      i + 1,
+      stage_type:       s.type,
+      title:            s.title    || null,
+      duration_minutes: dur,
+      exercise_id:      s.exerciseId   || null,
+      content_text:     s.contentText  || null,
+      content_images:   s.contentImages?.length ? s.contentImages : null,
+      audio_url:        s.audioUrl     || null,
+    }
+  })
+  const { error } = await supabase.from('lesson_stages').insert(rows)
+  if (error) { console.error('[supabase] _saveStages insert:', error); return false }
+  return true
+}
+
+/** Create a lesson plan with stage blocks. */
+export async function createLessonPlanWithStages(title, desc, createdBy, stages) {
+  if (!supabase) return null
+  const planId = crypto.randomUUID()
+  const { error: planErr } = await supabase.from('lesson_plans').insert({
+    id: planId, title, description: desc || null, created_by: createdBy,
+  })
+  if (planErr) { console.error('[supabase] createLessonPlanWithStages:', planErr); return null }
+  if (stages.length > 0) {
+    const ok = await _saveStages(planId, stages)
+    if (!ok) return null
+  }
+  return planId
+}
+
+/** Update a lesson plan's metadata + replace all stages. */
+export async function updateLessonPlanWithStages(planId, title, desc, stages) {
+  if (!supabase) return null
+  const { error: planErr } = await supabase
+    .from('lesson_plans').update({ title, description: desc || null }).eq('id', planId)
+  if (planErr) { console.error('[supabase] updateLessonPlanWithStages:', planErr); return null }
+  const ok = await _saveStages(planId, stages)
+  return ok ? planId : null
+}
+
+// ─── Lesson Plan (edit — legacy exercise list) ────────────────
+
+/** Update an existing lesson plan (title, description, exercise list). */
+export async function updateLessonPlan(planId, title, desc, exerciseIds) {
+  if (!supabase) return null
+  const { error: planErr } = await supabase
+    .from('lesson_plans')
+    .update({ title, description: desc || null })
+    .eq('id', planId)
+  if (planErr) { console.error('[supabase] updateLessonPlan:', planErr); return null }
+
+  const { error: delErr } = await supabase
+    .from('lesson_plan_exercises')
+    .delete()
+    .eq('lesson_plan_id', planId)
+  if (delErr) { console.error('[supabase] updateLessonPlan delete exercises:', delErr); return null }
+
+  if (exerciseIds.length > 0) {
+    const rows = exerciseIds.map((exId, i) => ({
+      lesson_plan_id: planId,
+      exercise_id:    exId,
+      order_index:    i + 1,
+    }))
+    const { error: insErr } = await supabase.from('lesson_plan_exercises').insert(rows)
+    if (insErr) { console.error('[supabase] updateLessonPlan insert exercises:', insErr); return null }
+  }
+  return planId
+}
+
+/** Assign all exercise stages in a lesson plan to a student.
+ *  Uses lesson_stages (new builder) if present; falls back to lesson_plan_exercises. */
 export async function assignLessonPlan({ planId, studentId, assignedBy, mode, note }) {
   if (!supabase) return false
-  const { data: planExs, error: peErr } = await supabase
-    .from('lesson_plan_exercises')
+
+  // Try new stage-based exercises first
+  const { data: stages } = await supabase
+    .from('lesson_stages')
     .select('exercise_id, order_index')
     .eq('lesson_plan_id', planId)
+    .in('stage_type', ['controlled_exercise', 'free_exercise'])
+    .not('exercise_id', 'is', null)
     .order('order_index')
-  if (peErr || !planExs?.length) { console.error('[supabase] assignLessonPlan fetch:', peErr); return false }
 
-  const rows = planExs.map(pe => ({
+  let exerciseList = stages?.length ? stages : null
+
+  if (!exerciseList) {
+    // Fall back to legacy lesson_plan_exercises
+    const { data: planExs, error: peErr } = await supabase
+      .from('lesson_plan_exercises')
+      .select('exercise_id, order_index')
+      .eq('lesson_plan_id', planId)
+      .order('order_index')
+    if (peErr || !planExs?.length) {
+      console.error('[supabase] assignLessonPlan: no exercises found', peErr)
+      return false
+    }
+    exerciseList = planExs
+  }
+
+  const rows = exerciseList.map(pe => ({
     exercise_id:    pe.exercise_id,
     student_id:     studentId,
     assigned_by:    assignedBy,
