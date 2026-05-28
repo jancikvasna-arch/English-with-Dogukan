@@ -476,6 +476,19 @@ async function ocrImage(file) {
   return text
 }
 
+// Extract fill-blank template from an exercise image.
+// Runs OCR, then normalises blank indicators (underlines/dashes) to ___.
+async function extractFillBlankTemplate(file) {
+  const raw = await ocrImage(file)
+  return raw
+    .replace(/_{2,}/g,  '___')   // 2+ underscores
+    .replace(/—{2,}/g,  '___')   // em-dashes
+    .replace(/-{3,}/g,  '___')   // 3+ hyphens
+    .replace(/={3,}/g,  '___')   // 3+ equals
+    .replace(/\n{3,}/g, '\n\n')  // collapse blank lines
+    .trim()
+}
+
 /**
  * Parse raw OCR text into question objects for ExerciseBuilder.
  * Looks for numbered lines like "1 I ___ to school." or "1. She ___ happy."
@@ -3434,8 +3447,12 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   const [photoError,     setPhotoError]     = useState(null)
   // OCR review state: null = not in review, string = raw text to review
   const [ocrDraft,       setOcrDraft]       = useState(null)
+  // fill_blank picture upload state
+  const [fbPicLoading,   setFbPicLoading]   = useState(false)
+  const [fbPicError,     setFbPicError]     = useState(null)
   const contextFileRef  = useRef(null)
   const exerciseFileRef = useRef(null)
+  const fbPicFileRef    = useRef(null)
 
   // ── Context images ──────────────────────────────────────────
   const handleContextImages = async (e) => {
@@ -3444,6 +3461,30 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     const compressed = await Promise.all(files.map(f => compressImage(f)))
     setContextImages(prev => [...prev, ...compressed].slice(0, 3))
     e.target.value = ''
+  }
+
+  // ── Fill-blank: upload picture + auto-extract blanks ────────
+  const handleFbPicUpload = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    e.target.value = ''
+    setFbPicLoading(true); setFbPicError(null)
+    try {
+      // 1. Add the image as context so student sees it
+      const compressed = await compressImage(file)
+      setContextImages([compressed])   // replace, don't stack
+      // 2. OCR → extract text with ___ markers
+      const template = await extractFillBlankTemplate(file)
+      if (!template) throw new Error('Could not read any text from the image.')
+      // 3. Auto-fill the single fill_blank question's prompt
+      setQuestions(prev => {
+        const q = prev[0] ?? newQ('fill_blank')
+        return [{ ...q, type: 'fill_blank', prompt: template }]
+      })
+    } catch (err) {
+      setFbPicError(err.message ?? 'Failed to read the picture. Please try again.')
+    } finally {
+      setFbPicLoading(false)
+    }
   }
 
   // ── Exercise type ───────────────────────────────────────────
@@ -3745,8 +3786,8 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
         </div>
       </div>
 
-      {/* ── 5. Context material ── */}
-      <div className="builder-section">
+      {/* ── 5. Context material (hidden for fill_blank — image is managed in the template section) ── */}
+      {selType !== 'fill_blank' && <div className="builder-section">
         <div className="builder-section-header">
           <div>
             <h4 className="builder-section-title">📖 Context material</h4>
@@ -3786,7 +3827,17 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
             placeholder="Paste or type a reading passage here. Students read it before answering the questions."
             value={contextText} onChange={e => setContextText(e.target.value)} />
         </div>
-      </div>
+      </div>}
+      {/* fill_blank audio link (shown separately since context material section is hidden) */}
+      {selType === 'fill_blank' && (
+        <div className="builder-section">
+          <div className="form-field">
+            <label>🎧 Audio / video link <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input type="url" placeholder="https://youtube.com/…"
+              value={audioUrl} onChange={e => setAudioUrl(e.target.value)} />
+          </div>
+        </div>
+      )}
 
       {/* ── 6. Verbal activity note or Questions ── */}
       {(!stageType || stageTypeDef.hasQuestions) && (
@@ -3807,13 +3858,48 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
           {selType && selType !== 'listening' && selType !== 'viewing' && (
             <div className="builder-section">
               {selType === 'fill_blank' ? (
-                /* ── Fill-in-the-blank: flat single template, no question cards ── */
+                /* ── Fill-in-the-blank: upload picture → auto-extract blanks ── */
                 <>
-                  <h4 className="builder-section-title">✏️ Dialogue / text template</h4>
-                  <p className="builder-section-sub">
-                    Upload the picture above, then type the full conversation or sentences below.
-                    Use <code>___</code> for each blank — students will type directly into those blanks.
-                  </p>
+                  <div className="fb-upload-area">
+                    <input ref={fbPicFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={handleFbPicUpload} />
+
+                    {contextImages.length === 0 ? (
+                      /* No picture yet — big prominent upload CTA */
+                      <button
+                        type="button"
+                        className="fb-upload-cta"
+                        disabled={fbPicLoading}
+                        onClick={() => fbPicFileRef.current?.click()}>
+                        {fbPicLoading
+                          ? <><span className="fb-spinner">⏳</span> Reading picture…</>
+                          : <><span style={{ fontSize: '2rem' }}>📸</span><br />Upload exercise picture<br /><small>Blanks are detected automatically</small></>
+                        }
+                      </button>
+                    ) : (
+                      /* Picture uploaded — show thumbnail + re-upload option */
+                      <div className="fb-pic-row">
+                        <img src={contextImages[0]} alt="Exercise" className="fb-pic-thumb" />
+                        <div className="fb-pic-actions">
+                          <button type="button" className="btn-ghost"
+                            style={{ fontSize: '0.82rem' }}
+                            disabled={fbPicLoading}
+                            onClick={() => fbPicFileRef.current?.click()}>
+                            {fbPicLoading ? '⏳ Reading…' : '🔄 Replace picture'}
+                          </button>
+                          <button type="button" className="btn-ghost"
+                            style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}
+                            onClick={() => { setContextImages([]); setQuestions([newQ('fill_blank')]) }}>
+                            ✕ Remove
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {fbPicError && <div className="auth-error" style={{ marginTop: '0.5rem' }}>{fbPicError}</div>}
+                  </div>
+
+                  {/* Auto-extracted template — editable if OCR isn't perfect */}
                   {questions[0] && (
                     <BuilderQuestion
                       key={questions[0].tempId}

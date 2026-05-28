@@ -1879,6 +1879,35 @@ a { text-decoration: none; }
   padding: 0.5rem 0 1rem;
 }
 
+/* Fill-blank builder: picture upload area */
+.fb-upload-area { margin-bottom: 1rem; }
+
+.fb-upload-cta {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.4rem; width: 100%; padding: 2rem 1rem;
+  border: 2px dashed var(--gold); border-radius: 12px;
+  background: rgba(212, 168, 83, 0.05);
+  color: var(--gold); font-size: 1rem; font-family: inherit;
+  cursor: pointer; text-align: center; line-height: 1.5;
+  transition: background 0.15s;
+}
+.fb-upload-cta:hover:not(:disabled) { background: rgba(212, 168, 83, 0.1); }
+.fb-upload-cta:disabled { opacity: 0.6; cursor: default; }
+.fb-upload-cta small { font-size: 0.78rem; color: var(--text-muted); }
+.fb-spinner { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.fb-pic-row {
+  display: flex; align-items: flex-start; gap: 1rem;
+}
+.fb-pic-thumb {
+  width: 120px; height: auto; border-radius: 8px; flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.fb-pic-actions {
+  display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.25rem;
+}
+
 /* Per-blank answer rows in builder */
 .fill-blank-answer-row {
   display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem;
