@@ -4,7 +4,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, submitExerciseAnswers,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
   fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
-  createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions,
+  createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
   fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
@@ -1666,7 +1666,7 @@ function StudentLessonList({ lessons, onFeedbackSaved }) {
                 </span>
                 {l.scheduled_at && (
                   <span className="lesson-date">
-                    {new Date(l.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {new Date(l.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </div>
@@ -2034,6 +2034,7 @@ function AdminExercises({ adminUserId }) {
   const [view,           setView]           = useState('list') // 'list'|'review'|'create-exercise'|'edit-exercise'|'create-plan'
   const [reviewing,      setReviewing]      = useState(null)
   const [editingExercise,setEditingExercise]= useState(null)
+  const [deletingId,     setDeletingId]     = useState(null) // exercise id pending delete confirm
 
   // assign form
   const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise' | 'plan'
@@ -2045,6 +2046,8 @@ function AdminExercises({ adminUserId }) {
   const [assigning,   setAssigning]   = useState(false)
   const [assignError, setAssignError] = useState(null)
   const [showAssign,  setShowAssign]  = useState(false)
+
+  const [refreshing, setRefreshing] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -2059,6 +2062,21 @@ function AdminExercises({ adminUserId }) {
       setLoading(false)
     })
   }
+
+  const refreshAssignments = async () => {
+    setRefreshing(true)
+    const asgns = await fetchAllAssignmentsAdmin()
+    setAssignments(asgns)
+    setRefreshing(false)
+  }
+
+  // Auto-refresh assignments when admin returns to this browser tab
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshAssignments() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   useEffect(load, [])
 
   const openReview = async (asgn) => {
@@ -2093,6 +2111,14 @@ function AdminExercises({ adminUserId }) {
   const openEdit = async (ex) => {
     const full = await fetchExerciseWithQuestions(ex.id)
     if (full) { setEditingExercise(full); setView('edit-exercise') }
+  }
+
+  const handleDeleteExercise = async (id) => {
+    const ok = await deleteExercise(id)
+    if (ok) {
+      setExercises(prev => prev.filter(e => e.id !== id))
+      setDeletingId(null)
+    }
   }
 
   if (view === 'create-exercise') {
@@ -2280,9 +2306,25 @@ function AdminExercises({ adminUserId }) {
                         )}
                       </div>
                     </div>
-                    <button className="btn-ghost"
-                      style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', flexShrink: 0 }}
-                      onClick={() => openEdit(ex)}>Edit</button>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => openEdit(ex)}>Edit</button>
+                      {deletingId === ex.id ? (
+                        <>
+                          <button className="btn-ghost"
+                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                            onClick={() => handleDeleteExercise(ex.id)}>Confirm delete</button>
+                          <button className="btn-ghost"
+                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                            onClick={() => setDeletingId(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="btn-ghost"
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
+                          onClick={() => setDeletingId(ex.id)}>Delete</button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -2977,10 +3019,10 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
               onChange={e => setLesson(p => ({ ...p, title: e.target.value || null }))} />
           </div>
           <div className="form-field">
-            <label>Date</label>
-            <input type="date"
-              value={lesson.scheduled_at ? lesson.scheduled_at.slice(0, 10) : ''}
-              onChange={e => setLesson(p => ({ ...p, scheduled_at: e.target.value || null }))} />
+            <label>Date &amp; time</label>
+            <input type="datetime-local"
+              value={lesson.scheduled_at ? (() => { const d = new Date(lesson.scheduled_at); const pad = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}` })() : ''}
+              onChange={e => setLesson(p => ({ ...p, scheduled_at: e.target.value ? new Date(e.target.value).toISOString() : null }))} />
           </div>
           <div className="form-field">
             <label>Status</label>
@@ -3025,7 +3067,7 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
         </span>
         {lesson.scheduled_at && (
           <span className="lesson-date">
-            {new Date(lesson.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {new Date(lesson.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
         {lesson.teacher_notes && (
@@ -3059,11 +3101,12 @@ function AdminStudentLessons({ student, adminUserId }) {
 
   const handleAdd = async () => {
     setSaving(true)
+    const scheduledIso = newDate ? new Date(newDate).toISOString() : null
     const id = await createLesson({
       studentId:   student.id,
       lessonNo:    newLessonNo ? parseInt(newLessonNo) : null,
       title:       newTitle   || null,
-      scheduledAt: newDate    || null,
+      scheduledAt: scheduledIso,
       createdBy:   adminUserId,
     })
     setSaving(false)
@@ -3071,7 +3114,7 @@ function AdminStudentLessons({ student, adminUserId }) {
       const newL = {
         id, student_id: student.id,
         lesson_no: newLessonNo ? parseInt(newLessonNo) : null,
-        title: newTitle || null, scheduled_at: newDate || null,
+        title: newTitle || null, scheduled_at: scheduledIso,
         status: 'scheduled', teacher_notes: null,
         notes_visible: false, student_feedback: null,
         completed_at: null, created_at: new Date().toISOString(),
@@ -3109,8 +3152,8 @@ function AdminStudentLessons({ student, adminUserId }) {
                 value={newTitle} onChange={e => setNewTitle(e.target.value)} />
             </div>
             <div className="form-field">
-              <label>Date <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
+              <label>Date &amp; time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} />
             </div>
           </div>
           <button className="btn-gold" style={{ marginTop: '0.5rem', fontSize: '0.85rem', padding: '0.5rem 1rem' }}

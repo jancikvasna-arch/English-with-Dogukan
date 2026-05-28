@@ -308,6 +308,14 @@ export async function createExerciseWithQuestions({ title, description, course, 
   return exerciseId
 }
 
+/** Admin: permanently delete an exercise and its questions. */
+export async function deleteExercise(exerciseId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('exercises').delete().eq('id', exerciseId)
+  if (error) { console.error('[supabase] deleteExercise:', error); return false }
+  return true
+}
+
 /** Fetch a single exercise with all its questions (admin, for editing). */
 export async function fetchExerciseWithQuestions(exerciseId) {
   if (!supabase) return null
