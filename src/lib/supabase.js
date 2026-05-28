@@ -203,7 +203,7 @@ export async function fetchAllExercises() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, title, course, lesson_no, context_text, audio_url, estimated_minutes, exercise_labels ( label_id, labels ( id, name, color ) )')
+    .select('id, title, course, lesson_no, context_text, audio_url, estimated_minutes, stage_type, exercise_labels ( label_id, labels ( id, name, color ) )')
     .order('course').order('lesson_no')
   if (error) { console.error('[supabase] fetchAllExercises:', error); return [] }
   // Flatten exercise_labels → labels array for convenience
@@ -320,7 +320,7 @@ export async function reviewWriting(resultId, notes) {
 // ─── Exercise Builder ─────────────────────────────────────────
 
 /** Create a new exercise with all its questions in one shot. */
-export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes }, questions) {
+export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType }, questions) {
   if (!supabase) return null
   const exerciseId = crypto.randomUUID()
   const { error: exErr } = await supabase.from('exercises').insert({
@@ -333,6 +333,7 @@ export async function createExerciseWithQuestions({ title, description, course, 
     context_text:      contextText    || null,
     audio_url:         audioUrl       || null,
     estimated_minutes: estimatedMinutes || null,
+    stage_type:        stageType ?? 'controlled_exercise',
   })
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
@@ -363,7 +364,7 @@ export async function fetchExerciseWithQuestions(exerciseId) {
   if (!supabase) return null
   const { data, error } = await supabase
     .from('exercises')
-    .select('*, questions(*), exercise_labels ( label_id, labels ( id, name, color ) )')
+    .select('*, stage_type, questions(*), exercise_labels ( label_id, labels ( id, name, color ) )')
     .eq('id', exerciseId)
     .single()
   if (error) { console.error('[supabase] fetchExerciseWithQuestions:', error); return null }
@@ -373,7 +374,7 @@ export async function fetchExerciseWithQuestions(exerciseId) {
 }
 
 /** Update an existing exercise and replace all its questions. */
-export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes }, questions) {
+export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType }, questions) {
   if (!supabase) return null
   const { error: exErr } = await supabase.from('exercises').update({
     title,
@@ -382,6 +383,7 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
     context_text:      contextText    || null,
     audio_url:         audioUrl       || null,
     estimated_minutes: estimatedMinutes || null,
+    stage_type:        stageType ?? 'controlled_exercise',
   }).eq('id', exerciseId)
   if (exErr) { console.error('[supabase] updateExercise:', exErr); return null }
 

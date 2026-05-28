@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
 import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
@@ -2499,31 +2499,28 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
   )
 }
 
-// ─── AdminExercises tab ───────────────────────────────────────
-function AdminExercises({ adminUserId }) {
+// ─── AdminLessonStages tab ────────────────────────────────────
+function AdminLessonStages({ adminUserId }) {
   const [exercises,   setExercises]   = useState([])
   const [students,    setStudents]    = useState([])
   const [assignments, setAssignments] = useState([])
-  const [plans,       setPlans]       = useState([])
   const [labels,      setLabels]      = useState([])
   const [loading,     setLoading]     = useState(true)
   const [exTab,          setExTab]          = useState('assignments')
-  const [view,           setView]           = useState('list') // 'list'|'review'|'create-exercise'|'edit-exercise'|'create-plan'|'edit-plan'
+  const [view,           setView]           = useState('list') // 'list'|'review'|'create-stage'|'edit-exercise'
   const [reviewing,      setReviewing]      = useState(null)
   const [editingExercise,setEditingExercise]= useState(null)
-  const [editingPlan,    setEditingPlan]    = useState(null)
   const [demoExercise,   setDemoExercise]   = useState(null) // {exercise, questions} for admin preview
   const [deletingId,     setDeletingId]     = useState(null) // exercise id pending delete confirm
-  const [expandedPlanId, setExpandedPlanId] = useState(null) // plan id currently open in the Plans tab
   const [filterLabelIds, setFilterLabelIds] = useState([])   // active label filter in library tab
+  const [filterStageType,setFilterStageType]= useState(null) // active stage type filter in library tab
   const [showLabelMgr,   setShowLabelMgr]   = useState(false) // label management panel open
   const [deletingLabelId,setDeletingLabelId]= useState(null)
 
   // assign form
-  const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise' | 'plan'
+  const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise'
   const [aStudentId,  setAStudentId]  = useState('')
   const [aExerciseId, setAExerciseId] = useState('')
-  const [aPlanId,     setAPlanId]     = useState('')
   const [aMode,       setAMode]       = useState('homework')
   const [aNote,       setANote]       = useState('')
   const [assigning,   setAssigning]   = useState(false)
@@ -2538,11 +2535,10 @@ function AdminExercises({ adminUserId }) {
       fetchAllExercises(),
       fetchStudentProfiles(),
       fetchAllAssignmentsAdmin(),
-      fetchAllLessonPlans(),
       fetchAllLabels(),
-    ]).then(([exs, studs, asgns, pls, lbls]) => {
+    ]).then(([exs, studs, asgns, lbls]) => {
       setExercises(exs); setStudents(studs)
-      setAssignments(asgns); setPlans(pls); setLabels(lbls)
+      setAssignments(asgns); setLabels(lbls)
       setLoading(false)
     })
   }
@@ -2571,20 +2567,14 @@ function AdminExercises({ adminUserId }) {
   const handleAssign = async (e) => {
     e.preventDefault()
     if (!aStudentId) { setAssignError('Please select a student.'); return }
-    if (assignMode === 'exercise' && !aExerciseId) { setAssignError('Please select an exercise.'); return }
-    if (assignMode === 'plan'     && !aPlanId)     { setAssignError('Please select a lesson plan.'); return }
+    if (!aExerciseId) { setAssignError('Please select an exercise.'); return }
     setAssigning(true); setAssignError(null)
 
-    let ok
-    if (assignMode === 'exercise') {
-      ok = await assignExercise({ exerciseId: aExerciseId, studentId: aStudentId, assignedBy: adminUserId, mode: aMode, note: aNote || null })
-    } else {
-      ok = await assignLessonPlan({ planId: aPlanId, studentId: aStudentId, assignedBy: adminUserId, mode: aMode, note: aNote || null })
-    }
+    const ok = await assignExercise({ exerciseId: aExerciseId, studentId: aStudentId, assignedBy: adminUserId, mode: aMode, note: aNote || null })
     setAssigning(false)
     if (ok) {
       fetchAllAssignmentsAdmin().then(setAssignments)
-      setShowAssign(false); setAStudentId(''); setAExerciseId(''); setAPlanId(''); setANote('')
+      setShowAssign(false); setAStudentId(''); setAExerciseId(''); setANote('')
     } else { setAssignError('Something went wrong. Please try again.') }
   }
 
@@ -2620,7 +2610,7 @@ function AdminExercises({ adminUserId }) {
     }
   }
 
-  if (view === 'create-exercise') {
+  if (view === 'create-stage') {
     return <ExerciseBuilder
       allLabels={labels}
       onLabelCreated={lbl => setLabels(p => [...p, lbl])}
@@ -2635,24 +2625,11 @@ function AdminExercises({ adminUserId }) {
       onCancel={() => { setView('list'); setEditingExercise(null) }}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }} />
   }
-  if (view === 'edit-plan' && editingPlan) {
-    return <LessonStageBuilder
-      exercises={exercises}
-      adminUserId={adminUserId}
-      initialPlan={editingPlan}
-      onCancel={() => { setView('list'); setEditingPlan(null) }}
-      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setExTab('plans'); setEditingPlan(null) }} />
-  }
   if (view === 'demo-exercise' && demoExercise) {
     return <ExerciseDemoPlayer
       exercise={demoExercise}
       questions={demoExercise.questions ?? []}
       onBack={() => { setView('list'); setDemoExercise(null) }} />
-  }
-  if (view === 'create-plan') {
-    return <LessonStageBuilder exercises={exercises} adminUserId={adminUserId}
-      onCancel={() => setView('list')}
-      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setExTab('plans') }} />
   }
 
   const submitted = assignments.filter(a => a.status === 'submitted')
@@ -2662,7 +2639,7 @@ function AdminExercises({ adminUserId }) {
     <div>
       {/* Sub-tabs */}
       <div className="admin-tabs" style={{ marginTop: 0 }}>
-        {[['assignments','📋 Assignments'],['library','📚 Library'],['plans','🗂 Lesson Plans']].map(([k, label]) => (
+        {[['assignments','📋 Assignments'],['library','📚 Library']].map(([k, label]) => (
           <button key={k} className={`admin-tab ${exTab === k ? 'active' : ''}`} onClick={() => setExTab(k)}>{label}</button>
         ))}
       </div>
@@ -2685,18 +2662,6 @@ function AdminExercises({ adminUserId }) {
 
           {showAssign && (
             <form className="admin-assign-form" onSubmit={handleAssign}>
-              {/* Assign type toggle */}
-              <div className="form-field">
-                <label>Assign</label>
-                <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
-                  {[['exercise','Single exercise'],['plan','Lesson plan']].map(([val, lbl]) => (
-                    <button key={val} type="button"
-                      className={`radio-option ${assignMode === val ? 'selected' : ''}`}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                      onClick={() => setAssignMode(val)}>{lbl}</button>
-                  ))}
-                </div>
-              </div>
               <div className="form-field">
                 <label>Student</label>
                 <select value={aStudentId} onChange={e => setAStudentId(e.target.value)} required>
@@ -2704,23 +2669,13 @@ function AdminExercises({ adminUserId }) {
                   {students.map(s => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
                 </select>
               </div>
-              {assignMode === 'exercise' ? (
-                <div className="form-field">
-                  <label>Exercise</label>
-                  <select value={aExerciseId} onChange={e => setAExerciseId(e.target.value)} required>
-                    <option value="">Select an exercise…</option>
-                    {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
-                  </select>
-                </div>
-              ) : (
-                <div className="form-field">
-                  <label>Lesson plan</label>
-                  <select value={aPlanId} onChange={e => setAPlanId(e.target.value)} required>
-                    <option value="">Select a lesson plan…</option>
-                    {plans.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                  </select>
-                </div>
-              )}
+              <div className="form-field">
+                <label>Exercise</label>
+                <select value={aExerciseId} onChange={e => setAExerciseId(e.target.value)} required>
+                  <option value="">Select an exercise…</option>
+                  {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+                </select>
+              </div>
               <div className="form-field">
                 <label>Type</label>
                 <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
@@ -2741,7 +2696,7 @@ function AdminExercises({ adminUserId }) {
               </div>
               {assignError && <div className="auth-error">{assignError}</div>}
               <button type="submit" className="btn-gold btn-full" disabled={assigning}>
-                {assigning ? 'Assigning…' : assignMode === 'plan' ? 'Assign all exercises in plan →' : 'Assign exercise →'}
+                {assigning ? 'Assigning…' : 'Assign exercise →'}
               </button>
             </form>
           )}
@@ -2803,18 +2758,34 @@ function AdminExercises({ adminUserId }) {
 
       {/* ── Library tab ── */}
       {exTab === 'library' && (() => {
+        const typeFiltered = filterStageType
+          ? exercises.filter(ex => ex.stage_type === filterStageType)
+          : exercises
         const filteredExercises = filterLabelIds.length === 0
-          ? exercises
-          : exercises.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
+          ? typeFiltered
+          : typeFiltered.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
         return (
           <div>
             <div className="admin-exercises-toolbar">
-              <h3 style={{ margin: 0 }}>Exercise Library ({filteredExercises.length}{filterLabelIds.length > 0 ? ` / ${exercises.length}` : ''})</h3>
+              <h3 style={{ margin: 0 }}>Stage Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0) ? ` / ${exercises.length}` : ''})</h3>
               <div style={{ display: 'flex', gap: '0.4rem' }}>
                 <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
                   onClick={() => setShowLabelMgr(p => !p)}>🏷 Labels</button>
-                <button className="btn-gold" onClick={() => setView('create-exercise')}>+ Create exercise</button>
+                <button className="btn-gold" onClick={() => setView('create-stage')}>+ Create lesson stage</button>
               </div>
+            </div>
+
+            {/* ── Stage type filter ── */}
+            <div className="stage-type-filter">
+              <button className={`stage-type-chip ${!filterStageType ? 'active' : ''}`}
+                onClick={() => setFilterStageType(null)}>All</button>
+              {STAGE_TYPES.map(t => (
+                <button key={t.value}
+                  className={`stage-type-chip ${filterStageType === t.value ? 'active' : ''}`}
+                  onClick={() => setFilterStageType(filterStageType === t.value ? null : t.value)}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
             </div>
 
             {/* ── Label manager ── */}
@@ -2870,22 +2841,25 @@ function AdminExercises({ adminUserId }) {
             {loading ? <div className="dashboard-loading">Loading…</div>
             : exercises.length === 0 ? (
               <div className="dashboard-empty">
-                <p>No exercises yet.</p>
-                <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "Create exercise" to build your first one — or upload a textbook photo.</p>
+                <p>No lesson stages yet.</p>
+                <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "Create lesson stage" to build your first one — or upload a textbook photo.</p>
               </div>
             ) : filteredExercises.length === 0 ? (
               <div className="dashboard-empty">
-                <p>No exercises match the selected labels.</p>
-                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => setFilterLabelIds([])}>Clear filter</button>
+                <p>No stages match the selected filter.</p>
+                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => { setFilterLabelIds([]); setFilterStageType(null) }}>Clear filter</button>
               </div>
             ) : (
               <div className="library-list">
-                {filteredExercises.map(ex => (
+                {filteredExercises.map(ex => {
+                  const stDef = STAGE_TYPES.find(t => t.value === ex.stage_type) || { icon: '✏️', label: 'Exercise' }
+                  return (
                   <div key={ex.id} className="library-row">
                     <div className="library-row-main">
                       <div className="library-row-info">
                         <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
                         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.25rem', alignItems: 'center' }}>
+                          <span className="stage-type-badge-sm" style={{ fontSize: '0.75rem', padding: '0.18rem 0.5rem' }}>{stDef.icon} {stDef.label}</span>
                           {ex.course && <span className="admin-level-chip">{ex.course}</span>}
                           {ex.estimated_minutes && (
                             <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>⏱ {ex.estimated_minutes} min</span>
@@ -2921,117 +2895,92 @@ function AdminExercises({ adminUserId }) {
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>
         )
       })()}
+    </div>
+  )
+}
 
-      {/* ── Lesson Plans tab ── */}
-      {exTab === 'plans' && (
-        <div>
-          <div className="admin-exercises-toolbar">
-            <h3 style={{ margin: 0 }}>Lesson Plans ({plans.length})</h3>
-            <button className="btn-gold" onClick={() => setView('create-plan')}>+ Create plan</button>
-          </div>
-          {loading ? <div className="dashboard-loading">Loading…</div>
-          : plans.length === 0 ? (
-            <div className="dashboard-empty">
-              <p>No lesson plans yet.</p>
-              <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Bundle exercises into a lesson plan, then assign the whole plan to a student at once.</p>
-            </div>
-          ) : (
-            <div className="library-list">
-              {plans.map(p => {
-                const planExercises = (p.lesson_plan_exercises ?? [])
-                  .slice().sort((a, b) => a.order_index - b.order_index)
-                const stageCount = (p.lesson_stages ?? []).length
-                const count = stageCount > 0 ? stageCount : planExercises.length
-                const countLabel = stageCount > 0
-                  ? `${count} stage${count !== 1 ? 's' : ''}`
-                  : `${count} exercise${count !== 1 ? 's' : ''}`
-                const isOpen = expandedPlanId === p.id
-                return (
-                  <div key={p.id} className="library-row">
-                    <div className="library-row-main">
-                      <div className="library-row-info">
-                        <strong style={{ fontSize: '0.95rem' }}>{p.title}</strong>
-                        <div style={{ marginTop: '0.2rem' }}>
-                          <span className="admin-level-chip">{countLabel}</span>
-                        </div>
-                        {p.description && <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>{p.description}</p>}
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                        <button className="btn-ghost"
-                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                          onClick={() => { setEditingPlan(p); setView('edit-plan') }}>Edit</button>
-                        <button className="btn-ghost"
-                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                          onClick={() => setExpandedPlanId(isOpen ? null : p.id)}>
-                          {isOpen ? '▲ Close' : '▼ Open'}
-                        </button>
-                      </div>
-                    </div>
-                    {isOpen && (() => {
-                      // Prefer lesson_stages (new builder), fall back to lesson_plan_exercises
-                      const planStages = (p.lesson_stages ?? []).slice().sort((a, b) => a.order_index - b.order_index)
-                      const hasStages  = planStages.length > 0
-                      const items      = hasStages ? planStages : planExercises
-                      const stageTotalMins = hasStages
-                        ? planStages.reduce((sum, s) => sum + (s.duration_minutes || 0), 0)
-                        : 0
-                      return (
-                        <div className="plan-exercise-list">
-                          {items.length === 0 ? (
-                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No stages yet.</p>
-                          ) : items.map((item, i) => {
-                            if (hasStages) {
-                              const def = STAGE_TYPES.find(t => t.value === item.stage_type) || {}
-                              return (
-                                <div key={item.id || i} className="plan-exercise-item">
-                                  <span className="plan-exercise-index">{i + 1}</span>
-                                  <span style={{ fontSize: '1rem', marginRight: '0.2rem' }}>{def.icon}</span>
-                                  <div style={{ flex: 1 }}>
-                                    <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>
-                                      {item.title || def.label}
-                                    </span>
-                                    {item.exercises?.title && (
-                                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginLeft: '0.4rem' }}>
-                                        — {item.exercises.title}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {item.duration_minutes > 0 && (
-                                    <span className="lesson-duration-chip">⏱ {item.duration_minutes}m</span>
-                                  )}
-                                </div>
-                              )
-                            }
-                            // Legacy fallback
-                            return (
-                              <div key={item.exercises?.id || i} className="plan-exercise-item">
-                                <span className="plan-exercise-index">{i + 1}</span>
-                                <div>
-                                  <span style={{ fontSize: '0.9rem' }}>{item.exercises?.title}</span>
-                                  {item.exercises?.course && (
-                                    <span className="admin-level-chip" style={{ marginLeft: '0.4rem' }}>{item.exercises.course}</span>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
-                          {stageTotalMins > 0 && (
-                            <div className="plan-stage-total">Total: {stageTotalMins} min</div>
-                          )}
-                        </div>
-                      )
-                    })()}
+// ─── AdminLessonPlans ─────────────────────────────────────────
+function AdminLessonPlans({ adminUserId }) {
+  const [exercises, setExercises] = useState([])
+  const [plans,     setPlans]     = useState([])
+  const [labels,    setLabels]    = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [view,      setView]      = useState('list') // 'list' | 'create' | 'edit'
+  const [editingPlan, setEditingPlan] = useState(null)
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      fetchAllExercises(),
+      fetchAllLessonPlans(),
+      fetchAllLabels(),
+    ]).then(([exs, pls, lbls]) => {
+      setExercises(exs); setPlans(pls); setLabels(lbls)
+      setLoading(false)
+    })
+  }, [])
+
+  if (view === 'create') {
+    return <LessonStageBuilder exercises={exercises} adminUserId={adminUserId}
+      onCancel={() => setView('list')}
+      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list') }} />
+  }
+  if (view === 'edit' && editingPlan) {
+    return <LessonStageBuilder exercises={exercises} adminUserId={adminUserId}
+      initialPlan={editingPlan}
+      onCancel={() => { setView('list'); setEditingPlan(null) }}
+      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setEditingPlan(null) }} />
+  }
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>Lesson Plans ({plans.length})</h3>
+        <button className="btn-gold" onClick={() => setView('create')}>+ Create plan</button>
+      </div>
+      {loading ? <p>Loading…</p> : plans.length === 0 ? (
+        <div className="dashboard-empty"><p>No lesson plans yet.</p></div>
+      ) : (
+        <div className="plan-list">
+          {plans.map(p => {
+            const stageCount  = (p.lesson_stages ?? []).length
+            const legacyCount = (p.lesson_plan_exercises ?? []).length
+            const count       = stageCount > 0 ? stageCount : legacyCount
+            const totalMins   = (p.lesson_stages ?? []).reduce((s, st) => s + (st.duration_minutes || 0), 0)
+            return (
+              <div key={p.id} className="plan-row">
+                <div>
+                  <strong>{p.title}</strong>
+                  {p.description && <span className="plan-desc"> — {p.description}</span>}
+                  <div style={{ marginTop: '0.25rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <span className="admin-level-chip">{count} stage{count !== 1 ? 's' : ''}</span>
+                    {totalMins > 0 && <span className="admin-level-chip">⏱ {totalMins} min</span>}
                   </div>
-                )
-              })}
-            </div>
-          )}
+                  {/* Stage summary */}
+                  {stageCount > 0 && (
+                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {(p.lesson_stages ?? []).slice().sort((a,b)=>a.order_index-b.order_index).map(st => {
+                        const def = STAGE_TYPES.find(t => t.value === st.stage_type) || {}
+                        return (
+                          <span key={st.id} className="admin-level-chip" style={{ fontSize: '0.78rem' }}>
+                            {def.icon} {st.title || def.label}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
+                  onClick={() => { setEditingPlan(p); setView('edit') }}>Edit</button>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -3049,12 +2998,12 @@ const BUILDER_TYPES = [
 
 // ─── Lesson stage types ───────────────────────────────────────
 const STAGE_TYPES = [
-  { value: 'controlled_exercise', label: 'Controlled Exercise', icon: '✏️',  hasExercise: true  },
-  { value: 'free_exercise',       label: 'Free Exercise',       icon: '🗣️', hasExercise: true  },
-  { value: 'lead_in',             label: 'Lead-in / Input',     icon: '📥', hasExercise: false },
-  { value: 'feedback',            label: 'Feedback',            icon: '💬', hasExercise: false },
-  { value: 'instruction',         label: 'Instruction',         icon: '📋', hasExercise: false },
-  { value: 'clarification',       label: 'Clarification',       icon: '❓', hasExercise: false },
+  { value: 'controlled_exercise', label: 'Controlled Exercise', icon: '✏️',  hasExercise: true,  hasQuestions: true  },
+  { value: 'free_exercise',       label: 'Free Exercise',       icon: '🗣️', hasExercise: true,  hasQuestions: true  },
+  { value: 'lead_in',             label: 'Lead-in / Input',     icon: '📥', hasExercise: false, hasQuestions: false },
+  { value: 'feedback',            label: 'Feedback',            icon: '💬', hasExercise: false, hasQuestions: false },
+  { value: 'instruction',         label: 'Instruction',         icon: '📋', hasExercise: false, hasQuestions: false },
+  { value: 'clarification',       label: 'Clarification',       icon: '❓', hasExercise: false, hasQuestions: false },
 ]
 
 function newStage(type) {
@@ -3123,9 +3072,10 @@ function newQ(type) {
   }
 }
 
-function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], onLabelCreated = null }) {
+function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], onLabelCreated = null, initialStageType = null }) {
   const isEdit = !!initialExercise
 
+  const [stageType,      setStageType]      = useState(initialExercise?.stage_type ?? initialStageType ?? null)
   const [title,          setTitle]          = useState(initialExercise?.title        ?? '')
   const [description,    setDescription]    = useState(initialExercise?.description  ?? '')
   const [selType,        setSelType]        = useState(initialExercise?.questions?.[0]?.type ?? null)
@@ -3226,10 +3176,10 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
 
   // ── Save ────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!title.trim() || !questions.length) return
+    if (!title.trim() || (STAGE_TYPES.find(t => t.value === stageType)?.hasQuestions && !questions.length)) return
     setSaving(true); setSaveError(null)
     const finalMins = estimatedMins === 'other' ? (parseInt(customMins) || null) : estimatedMins
-    const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins }
+    const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins, stageType: stageType ?? 'controlled_exercise' }
     const id = isEdit
       ? await updateExerciseWithQuestions(initialExercise.id, meta, questions)
       : await createExerciseWithQuestions(meta, questions)
@@ -3243,11 +3193,45 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     }
   }
 
+  // ── Stage type picker (shown before builder when no type chosen) ─
+  if (!stageType) {
+    return (
+      <div>
+        <div className="admin-exercises-toolbar">
+          <h3 style={{ margin: 0 }}>Create Lesson Stage</h3>
+          <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', margin: '0.5rem 0 0.25rem' }}>
+          What type of lesson stage are you creating?
+        </p>
+        <div className="stage-type-picker">
+          {STAGE_TYPES.map(t => (
+            <button key={t.value} className="stage-type-card" onClick={() => setStageType(t.value)}>
+              <div className="stc-icon">{t.icon}</div>
+              <div className="stc-label">{t.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const stageTypeDef = STAGE_TYPES.find(t => t.value === stageType) || {}
+
   return (
     <div>
       <div className="admin-exercises-toolbar">
-        <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Exercise' : 'Create Exercise'}</h3>
+        <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Lesson Stage' : 'Create Lesson Stage'}</h3>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+
+      {/* ── Stage type badge ── */}
+      <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <span className="stage-type-badge-sm">{stageTypeDef.icon} {stageTypeDef.label}</span>
+        {!isEdit && (
+          <button type="button" style={{ fontSize: '0.78rem', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+            onClick={() => setStageType(null)}>Change</button>
+        )}
       </div>
 
       {/* ── Title + instruction ── */}
@@ -3309,73 +3293,77 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
         </div>
       </div>
 
-      {/* ── Exercise type ── */}
-      <div className="builder-section">
-        <h4 className="builder-section-title">✏️ Exercise type</h4>
-        <div className="builder-type-pills">
-          {BUILDER_TYPES.map(t => (
-            <button key={t.value}
-              className={`builder-type-pill ${selType === t.value ? 'active' : ''}`}
-              onClick={() => selectType(t.value)}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Questions ── */}
-      {selType && (
-        <div className="builder-section">
-          <div className="builder-section-header">
-            <h4 className="builder-section-title">❓ Questions</h4>
-            <button className="builder-ai-btn"
-              onClick={() => exerciseFileRef.current?.click()}
-              disabled={photoLoading}>
-              {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
-            </button>
-          </div>
-          <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={handleExercisePhoto} />
-          {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
-
-          {/* ── OCR review: edit raw text before converting ── */}
-          {ocrDraft !== null && (
-            <div className="ocr-review-box">
-              <p className="ocr-review-label">
-                📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
-              </p>
-              <textarea
-                className="ocr-review-textarea"
-                rows={10}
-                value={ocrDraft}
-                onChange={e => setOcrDraft(e.target.value)}
-                spellCheck={false}
-              />
-              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
-                <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
-                  onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
-                  ✓ Create questions from this text
+      {/* ── Exercise type + Questions (only for stages with questions) ── */}
+      {(!stageType || stageTypeDef.hasQuestions) && (
+        <>
+          <div className="builder-section">
+            <h4 className="builder-section-title">✏️ Exercise type</h4>
+            <div className="builder-type-pills">
+              {BUILDER_TYPES.map(t => (
+                <button key={t.value}
+                  className={`builder-type-pill ${selType === t.value ? 'active' : ''}`}
+                  onClick={() => selectType(t.value)}>
+                  {t.icon} {t.label}
                 </button>
-                <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
-                  onClick={() => setOcrDraft(null)}>Discard</button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Questions ── */}
+          {selType && (
+            <div className="builder-section">
+              <div className="builder-section-header">
+                <h4 className="builder-section-title">❓ Questions</h4>
+                <button className="builder-ai-btn"
+                  onClick={() => exerciseFileRef.current?.click()}
+                  disabled={photoLoading}>
+                  {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
+                </button>
               </div>
+              <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={handleExercisePhoto} />
+              {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
+
+              {/* ── OCR review: edit raw text before converting ── */}
+              {ocrDraft !== null && (
+                <div className="ocr-review-box">
+                  <p className="ocr-review-label">
+                    📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
+                  </p>
+                  <textarea
+                    className="ocr-review-textarea"
+                    rows={10}
+                    value={ocrDraft}
+                    onChange={e => setOcrDraft(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
+                    <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                      onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
+                      ✓ Create questions from this text
+                    </button>
+                    <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                      onClick={() => setOcrDraft(null)}>Discard</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="builder-questions">
+                {questions.map((q, idx) => (
+                  <BuilderQuestion key={q.tempId} idx={idx} question={q}
+                    onChange={(fld, val) => updateQ(q.tempId, fld, val)}
+                    onRemove={() => removeQ(q.tempId)}
+                    canRemove={questions.length > 1} />
+                ))}
+              </div>
+              <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
             </div>
           )}
-
-          <div className="builder-questions">
-            {questions.map((q, idx) => (
-              <BuilderQuestion key={q.tempId} idx={idx} question={q}
-                onChange={(fld, val) => updateQ(q.tempId, fld, val)}
-                onRemove={() => removeQ(q.tempId)}
-                canRemove={questions.length > 1} />
-            ))}
-          </div>
-          <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
-        </div>
+        </>
       )}
 
       {/* ── Estimated time (admin-only) ── */}
-      {selType && (
+      {(stageTypeDef.hasQuestions ? selType : true) && (
         <div className="builder-section">
           <h4 className="builder-section-title">⏱ Estimated time <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}>(only you can see this)</span></h4>
           <div className="builder-time-pills">
@@ -3460,12 +3448,14 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
-          disabled={saving || !title.trim() || !questions.length || !selType}>
+          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!questions.length || !selType))}>
           {saving
             ? 'Saving…'
             : isEdit
-              ? `Update exercise (${questions.length} Q)`
-              : `Save exercise (${questions.length} question${questions.length !== 1 ? 's' : ''})`}
+              ? (stageTypeDef.hasQuestions ? `Update stage (${questions.length} Q)` : 'Update stage')
+              : (stageTypeDef.hasQuestions
+                  ? `Save stage (${questions.length} question${questions.length !== 1 ? 's' : ''})`
+                  : 'Save stage')}
         </button>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
@@ -3742,8 +3732,69 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel, initialP
   )
 }
 
+// ─── StagePicker ─────────────────────────────────────────────
+function StagePicker({ type, allStages, onSelect, onCancel }) {
+  const def = STAGE_TYPES.find(t => t.value === type) || {}
+  const stagesOfType = allStages.filter(s => s.stage_type === type)
+  const [search, setSearch] = useState('')
+  const [filterLabels, setFilterLabels] = useState([])
+
+  const allLabels = useMemo(() => {
+    const map = {}
+    stagesOfType.forEach(s => (s.labels || []).forEach(l => { map[l.id] = l }))
+    return Object.values(map)
+  }, [stagesOfType])
+
+  const filtered = stagesOfType.filter(s => {
+    const matchSearch = !search || s.title.toLowerCase().includes(search.toLowerCase())
+    const matchLabels = filterLabels.length === 0 || (s.labels||[]).some(l => filterLabels.includes(l.id))
+    return matchSearch && matchLabels
+  })
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>{def.icon} Select {def.label}</h3>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+      <div className="library-filter-row" style={{ marginBottom: '0.75rem' }}>
+        <input type="text" placeholder="Search by title…" value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.9rem', minWidth: '220px' }} />
+        {allLabels.map(l => (
+          <button key={l.id} onClick={() => setFilterLabels(p => p.includes(l.id) ? p.filter(x=>x!==l.id) : [...p, l.id])}
+            className={`filter-chip ${filterLabels.includes(l.id) ? 'filter-chip--active' : ''}`}
+            style={{ '--lbl-color': l.color }}>{l.name}</button>
+        ))}
+      </div>
+      {filtered.length === 0 ? (
+        <div className="dashboard-empty">
+          <p>No {def.label ? def.label.toLowerCase() : ''} stages found. Create one in the Lesson Stages tab first.</p>
+        </div>
+      ) : (
+        <div className="stage-picker-grid">
+          {filtered.map(s => (
+            <button key={s.id} className="stage-picker-card" onClick={() => onSelect(s)}>
+              <div className="stage-picker-title">{s.title}</div>
+              {s.description && <div className="stage-picker-desc">{s.description}</div>}
+              <div className="stage-picker-meta">
+                {s.estimated_minutes && <span className="admin-level-chip">⏱ {s.estimated_minutes} min</span>}
+                {s.audio_url && <span className="admin-level-chip">🎧 Audio</span>}
+                {s.context_text && <span className="admin-level-chip">📖 Text</span>}
+                {(s.labels||[]).map(l => (
+                  <span key={l.id} className="label-chip" style={{ '--lbl-color': l.color }}>{l.name}</span>
+                ))}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── StageCard (one block in the lesson plan builder) ─────────
-function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMoveDown, canMoveUp, canMoveDown }) {
+function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onPickerOpen }) {
   const def         = STAGE_TYPES.find(t => t.value === stage.type)
   const stageImgRef = useRef(null)
   const [imgLoading, setImgLoading] = useState(false)
@@ -3797,13 +3848,18 @@ function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMove
       {/* Exercise picker (exercise stages) */}
       {def.hasExercise && (
         <div className="form-field" style={{ marginBottom: 0 }}>
-          <select value={stage.exerciseId || ''}
-            onChange={e => onChange('exerciseId', e.target.value || null)}>
-            <option value="">— Choose exercise from library —</option>
-            {exercises.map(ex => (
-              <option key={ex.id} value={ex.id}>{ex.title}</option>
-            ))}
-          </select>
+          {stage.exerciseId ? (
+            <div className="stage-selected-row">
+              <span className="stage-selected-name">
+                {exercises.find(ex => ex.id === stage.exerciseId)?.title || 'Selected exercise'}
+              </span>
+              <button type="button" className="stage-change-btn" onClick={onPickerOpen}>Change</button>
+            </div>
+          ) : (
+            <button type="button" className="stage-select-btn" onClick={onPickerOpen}>
+              Select stage →
+            </button>
+          )}
         </div>
       )}
 
@@ -3845,24 +3901,44 @@ function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMove
 // ─── LessonStageBuilder ───────────────────────────────────────
 function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initialPlan = null }) {
   const isEdit = !!initialPlan
-  const [title,  setTitle]  = useState(initialPlan?.title ?? '')
-  const [desc,   setDesc]   = useState(initialPlan?.description ?? '')
-  const [stages, setStages] = useState(() => initStagesFromPlan(initialPlan))
-  const [saving, setSaving] = useState(false)
-  const [err,    setErr]    = useState(null)
+  const [title,     setTitle]     = useState(initialPlan?.title ?? '')
+  const [desc,      setDesc]      = useState(initialPlan?.description ?? '')
+  const [stages,    setStages]    = useState(() => initStagesFromPlan(initialPlan))
+  const [saving,    setSaving]    = useState(false)
+  const [err,       setErr]       = useState(null)
+  const [pickerFor, setPickerFor] = useState(null) // { type, stageId } | null
 
   const totalMins = stages.reduce((sum, s) => {
     const m = s.durationMinutes === 'other' ? (parseInt(s.customDuration) || 0) : (s.durationMinutes || 0)
     return sum + m
   }, 0)
 
-  const addStage   = (type) => setStages(p => [...p, newStage(type)])
+  const openPickerForType = (type)    => setPickerFor({ type, stageId: null })
+  const openPickerForStage = (stageId, type) => setPickerFor({ type, stageId })
+
   const removeStage = (id)  => setStages(p => p.filter(s => s.id !== id))
   const moveStage  = (i, dir) => setStages(p => {
     const a = [...p]; [a[i], a[i + dir]] = [a[i + dir], a[i]]; return a
   })
   const updateStage = (id, field, val) =>
     setStages(p => p.map(s => s.id === id ? { ...s, [field]: val } : s))
+
+  const handlePickerSelect = (exercise) => {
+    if (!pickerFor) return
+    if (pickerFor.stageId === null) {
+      // Add new stage with the selected exercise
+      const stage = newStage(pickerFor.type)
+      stage.exerciseId    = exercise.id
+      stage.exerciseTitle = exercise.title
+      setStages(p => [...p, stage])
+    } else {
+      // Update existing stage's exercise
+      setStages(p => p.map(s => s.id === pickerFor.stageId
+        ? { ...s, exerciseId: exercise.id, exerciseTitle: exercise.title }
+        : s))
+    }
+    setPickerFor(null)
+  }
 
   const handleSave = async () => {
     if (!title.trim()) return
@@ -3873,6 +3949,15 @@ function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initial
     setSaving(false)
     if (id) onSaved(id)
     else setErr('Something went wrong. Please try again.')
+  }
+
+  // Show stage picker overlay
+  if (pickerFor) {
+    return <StagePicker
+      type={pickerFor.type}
+      allStages={exercises}
+      onSelect={handlePickerSelect}
+      onCancel={() => setPickerFor(null)} />
   }
 
   return (
@@ -3914,6 +3999,7 @@ function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initial
               onMoveDown={() => moveStage(i, 1)}
               canMoveUp={i > 0}
               canMoveDown={i < stages.length - 1}
+              onPickerOpen={() => openPickerForStage(s.id, s.type)}
             />
           ))}
         </div>
@@ -3931,7 +4017,7 @@ function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initial
         <div className="stage-add-row">
           {STAGE_TYPES.map(t => (
             <button key={t.value} type="button" className="stage-add-btn"
-              onClick={() => addStage(t.value)}>
+              onClick={() => t.hasExercise ? openPickerForType(t.value) : setStages(p => [...p, newStage(t.value)])}>
               {t.icon} {t.label}
             </button>
           ))}
@@ -4428,7 +4514,7 @@ function AdminPanel({ user, onSignOut }) {
   const [dataLoading,   setDataLoading]   = useState(false)
   const [selected,               setSelected]               = useState(null)
   const [reviewingFromStudent,   setReviewingFromStudent]   = useState(null) // assignment details for inline review
-  const [adminTab,               setAdminTab]               = useState('students')
+  const [adminTab,               setAdminTab]               = useState('stages')
   const [accessLevel,   setAccessLevel]   = useState('pending')
   const [accessSaving,  setAccessSaving]  = useState(false)
   const [accessSaved,   setAccessSaved]   = useState(false)
@@ -4627,14 +4713,21 @@ function AdminPanel({ user, onSignOut }) {
           👥 Students
           {pendingCount > 0 && <span className="admin-tab-badge">{pendingCount}</span>}
         </button>
-        <button className={`admin-tab ${adminTab === 'exercises' ? 'active' : ''}`}
-          onClick={() => setAdminTab('exercises')}>
-          📝 Exercises
+        <button className={`admin-tab ${adminTab === 'stages' ? 'active' : ''}`}
+          onClick={() => setAdminTab('stages')}>
+          📚 Lesson Stages
+        </button>
+        <button className={`admin-tab ${adminTab === 'plans' ? 'active' : ''}`}
+          onClick={() => setAdminTab('plans')}>
+          🗂 Lesson Plans
         </button>
       </div>
 
-      {/* Exercises tab */}
-      {adminTab === 'exercises' && <AdminExercises adminUserId={user?.id} />}
+      {/* Lesson Stages tab */}
+      {adminTab === 'stages' && <AdminLessonStages adminUserId={user?.id} />}
+
+      {/* Lesson Plans tab */}
+      {adminTab === 'plans' && <AdminLessonPlans adminUserId={user?.id} />}
 
       {/* Students tab */}
       {adminTab === 'students' && (
