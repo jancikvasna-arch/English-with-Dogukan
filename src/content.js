@@ -41,18 +41,18 @@ export const ABOUT = {
 export const HOW_IT_WORKS_STEPS = [
   {
     num: '1',
-    title: 'Tell me about your learning needs',
-    desc: 'Please answer a few quick questions or book a free 15-minute consultation call. I will use your answers to understand your exact needs and design your trial lesson, should you request one.',
+    title: 'Book a free consultation',
+    desc: 'Schedule a short call with Dogukan. He\'ll learn about your goals, your current level, and design your first lesson around you.',
   },
   {
     num: '2',
-    title: 'Free Level Test',
-    desc: '12 questions, about 10 minutes. Helps pinpoint your exact level. Completely optional.',
+    title: 'Optional placement test',
+    desc: 'A 12-question test covering grammar, vocabulary and reading. Takes about 10 minutes and helps Dogukan plan your lessons even better.',
   },
   {
     num: '3',
     title: 'Your first lesson is free',
-    desc: 'A 60-minute lesson built specifically around what you told me. No payment, no commitment — just good teaching.',
+    desc: 'A 60-minute lesson built specifically for you. No payment, no commitment — just good teaching from day one.',
   },
   {
     num: '4',

@@ -271,10 +271,14 @@ export default function App() {
     return (
       <div className="flow-wrapper">
         <div className="flow-header">
-          <button className="back-link" onClick={goBack}>
-            ← English with Dogukan
-          </button>
-          {user && (
+          {page === 'admin' ? (
+            <span className="flow-header-logo">Admin Panel — English with Dogukan</span>
+          ) : (
+            <button className="back-link" onClick={goBack}>
+              ← English with Dogukan
+            </button>
+          )}
+          {user && page !== 'admin' && (
             <button className="back-link"
               onClick={() => goTo(user.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}>
               My account →
@@ -304,7 +308,7 @@ export default function App() {
           {page === 'consultation' && (
             <ConsultationScreen
               onContinue={() => { setCompletedPath('consultation'); goTo('pretest') }}
-              onBack={() => goTo('start')}
+              onBack={() => goTo('landing')}
             />
           )}
           {page === 'pretest' && (
@@ -393,16 +397,16 @@ export default function App() {
 
   return (
     <div className="site">
-      <Navbar onBook={() => goTo('start')} user={user}
+      <Navbar onBook={() => goTo('consultation')} user={user}
         onAccount={() => goTo(user?.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}
         onSignIn={() => goTo('signin')} />
-      <Hero onBook={() => goTo('start')} />
+      <Hero onBook={() => goTo('consultation')} />
       <HowItWorks />
       <Courses />
       <Testimonials />
-      <Pricing onBook={() => goTo('start')} />
+      <Pricing onBook={() => goTo('consultation')} />
       <AboutMe />
-      <BookingCTA onBook={() => goTo('start')} />
+      <BookingCTA onBook={() => goTo('consultation')} />
       <Footer />
       {WHATSAPP_NUMBER && <WhatsAppButton number={WHATSAPP_NUMBER} />}
     </div>
@@ -1050,13 +1054,13 @@ function ConsultationScreen({ onContinue, onBack }) {
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>Book your free consultation</h2>
       <p className="flow-sub">
-        Pick a time that works for you. Dogukan will ask you a few questions about your goals
-        and design your first lesson from there.
+        Pick a time that works for you — it's completely free. Dogukan will ask you about your goals
+        and design your first lesson around you.
       </p>
 
       {!opened ? (
         <button className="btn-gold btn-full btn-lg" onClick={handleOpen}>
-          Open scheduling page →
+          Choose a time →
         </button>
       ) : (
         <div className="consultation-booked">
@@ -3427,6 +3431,25 @@ function AdminLessonPlans({ adminUserId }) {
   const reloadAll = () => Promise.all([fetchAllExercises(), fetchAllLessonPlans()])
     .then(([exs, pls]) => { setExercises(exs); setPlans(pls) })
 
+  // Push a history entry when entering create/edit so the browser ← button
+  // returns to the plan list rather than leaving the admin panel entirely.
+  useEffect(() => {
+    if (view !== 'list') {
+      window.history.pushState({ adminPlanEdit: true }, '', '/admin')
+    }
+  }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handlePop = () => {
+      if (view !== 'list') {
+        setView('list')
+        setEditingPlan(null)
+      }
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
+  }, [view])
+
   const builderProps = {
     exercises, labels, books, authStudents, manualStudents, adminUserId,
   }
@@ -4998,6 +5021,45 @@ function LessonStageBuilder({
   // All exercises including ones created inline during this session
   const [exercises,    setExercises]    = useState(allExercises)
 
+  // ── Auto-save draft to localStorage ──────────────────────────
+  // Only active for new plans (not edits of saved plans).
+  const DRAFT_KEY = adminUserId ? `lessonPlanDraft_${adminUserId}` : null
+
+  // On mount: restore a previously unsaved draft for new plans
+  const [draftRestored, setDraftRestored] = useState(false)
+  useEffect(() => {
+    if (isEdit || !DRAFT_KEY) return
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft.title)         setTitle(draft.title)
+      if (draft.lessonAim)     setLessonAim(draft.lessonAim)
+      if (draft.teachingPoint) setTeachingPoint(draft.teachingPoint)
+      if (draft.langAnalysis)  setLangAnalysis(draft.langAnalysis)
+      if (draft.scheduledAt)   setScheduledAt(draft.scheduledAt)
+      if (draft.studentType)   setStudentType(draft.studentType)
+      if (draft.studentId)     setStudentId(draft.studentId)
+      if (draft.stageGroups && draft.stageGroups.length > 0) setStageGroups(draft.stageGroups)
+      setDraftRestored(true)
+    } catch { /* corrupt draft — ignore */ }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced save on every change (300 ms after last keystroke)
+  useEffect(() => {
+    if (isEdit || !DRAFT_KEY) return
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          title, lessonAim, teachingPoint, langAnalysis,
+          scheduledAt, studentType, studentId, stageGroups,
+          savedAt: Date.now(),
+        }))
+      } catch { /* storage full — ignore */ }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [title, lessonAim, teachingPoint, langAnalysis, scheduledAt, studentType, studentId, stageGroups]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Browser back-button support: push a history entry when picker opens,
   // and close it when the user presses ← browser back.
   useEffect(() => {
@@ -5094,8 +5156,13 @@ function LessonStageBuilder({
       ? await updateLessonPlanWithStages(initialPlan.id, title, null, flatItems, meta)
       : await createLessonPlanWithStages(title, null, adminUserId, flatItems, meta)
     setSaving(false)
-    if (id) onSaved(id)
-    else setErr('Something went wrong. Please try again.')
+    if (id) {
+      // Clear the auto-saved draft now that it's been saved to the DB
+      if (!isEdit && DRAFT_KEY) { try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ } }
+      onSaved(id)
+    } else {
+      setErr('Something went wrong. Please try again.')
+    }
   }
 
   const totalItems = stageGroups.reduce((sum, g) => sum + g.items.length, 0)
@@ -5122,6 +5189,21 @@ function LessonStageBuilder({
         <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Lesson Plan' : 'Create Lesson Plan'}</h3>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
+
+      {/* Draft restored banner */}
+      {draftRestored && (
+        <div style={{
+          background: 'var(--gold)', color: '#fff', padding: '0.5rem 1rem',
+          borderRadius: '6px', marginBottom: '1rem', fontSize: '0.875rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span>📋 Draft restored from your last session.</span>
+          <button style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '1rem' }}
+            onClick={() => { setDraftRestored(false); if (DRAFT_KEY) localStorage.removeItem(DRAFT_KEY); }}>
+            ✕ Discard
+          </button>
+        </div>
+      )}
 
       {/* ── Student ── */}
       <div className="builder-section">
@@ -5819,6 +5901,18 @@ function AdminPanel({ user, onSignOut }) {
       setManualStudents(manualData)
       setDataLoading(false)
     })
+  }, [isAdmin])
+
+  // Lock the browser back button while inside the admin panel so the admin
+  // never accidentally navigates away from /admin.
+  useEffect(() => {
+    if (!isAdmin) return
+    window.history.replaceState({ adminPage: true }, '', '/admin')
+    const handlePop = () => {
+      window.history.pushState({ adminPage: true }, '', '/admin')
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
   }, [isAdmin])
 
   const handleAdminLogin = async (e) => {
