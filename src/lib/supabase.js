@@ -725,6 +725,57 @@ export async function updateBook(bookId, title) {
   return data
 }
 
+/** Duplicate a lesson plan (copies metadata + all stages) as a new draft. */
+export async function duplicateLessonPlan(planId, createdBy) {
+  if (!supabase) return null
+
+  // 1. Fetch the source plan + its stages
+  const { data: src, error: fetchErr } = await supabase
+    .from('lesson_plans')
+    .select('title, description, lesson_aim, teaching_point, language_analysis, lesson_stages(*)')
+    .eq('id', planId)
+    .single()
+  if (fetchErr || !src) { console.error('[supabase] duplicateLessonPlan fetch:', fetchErr); return null }
+
+  // 2. Insert the new plan (no student assignment — starts as a draft)
+  const { data: newPlan, error: planErr } = await supabase
+    .from('lesson_plans')
+    .insert({
+      title:             `${src.title} (copy)`,
+      description:       src.description       || null,
+      lesson_aim:        src.lesson_aim        || null,
+      teaching_point:    src.teaching_point    || null,
+      language_analysis: src.language_analysis || null,
+      created_by:        createdBy             || null,
+    })
+    .select('id')
+    .single()
+  if (planErr || !newPlan) { console.error('[supabase] duplicateLessonPlan insert plan:', planErr); return null }
+
+  // 3. Copy stages
+  if (src.lesson_stages?.length) {
+    const stageRows = src.lesson_stages
+      .sort((a, b) => a.order_index - b.order_index)
+      .map(s => ({
+        lesson_plan_id:   newPlan.id,
+        order_index:      s.order_index,
+        stage_number:     s.stage_number,
+        stage_name:       s.stage_name,
+        stage_type:       s.stage_type,
+        title:            s.title,
+        duration_minutes: s.duration_minutes,
+        exercise_id:      s.exercise_id,
+        content_text:     s.content_text,
+        content_images:   s.content_images,
+        audio_url:        s.audio_url,
+      }))
+    const { error: stageErr } = await supabase.from('lesson_stages').insert(stageRows)
+    if (stageErr) { console.error('[supabase] duplicateLessonPlan stages:', stageErr); return null }
+  }
+
+  return newPlan.id
+}
+
 /** Permanently delete a lesson plan (cascades to lesson_stages via FK). */
 export async function deleteLessonPlan(planId) {
   if (!supabase) return false
@@ -877,4 +928,141 @@ export async function assignLessonPlan({ planId, studentId, assignedBy, mode, no
   const { error } = await supabase.from('exercise_assignments').insert(rows)
   if (error) { console.error('[supabase] assignLessonPlan insert:', error); return false }
   return true
+}
+
+// ─── Badges ───────────────────────────────────────────────────
+
+/** Fetch all badge definitions (the full catalogue). */
+export async function fetchBadgeDefinitions() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('badge_definitions')
+    .select('*')
+    .order('sort_order')
+  if (error) { console.error('[supabase] fetchBadgeDefinitions:', error); return [] }
+  return data ?? []
+}
+
+/** Fetch all badges a specific student has earned. */
+export async function fetchStudentBadges(studentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('student_badges')
+    .select('badge_key, earned_at')
+    .eq('student_id', studentId)
+  if (error) { console.error('[supabase] fetchStudentBadges:', error); return [] }
+  return data ?? []
+}
+
+/**
+ * Award a badge to a student (no-op if already earned — unique constraint).
+ * Called from the frontend after the triggering action completes.
+ */
+export async function awardBadge(studentId, badgeKey) {
+  if (!supabase || !studentId || !badgeKey) return false
+  const { error } = await supabase
+    .from('student_badges')
+    .insert({ student_id: studentId, badge_key: badgeKey })
+  // ignore unique-violation (23505) — badge already earned is not an error
+  if (error && error.code !== '23505') {
+    console.error('[supabase] awardBadge:', error)
+    return false
+  }
+  return true
+}
+
+// ─── Teacher lesson notes ─────────────────────────────────────
+
+/** Update post-lesson notes on a lesson record (admin only). */
+export async function updateLessonNotes(lessonId, { teacherNotes, teacherNotesPublic }) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('lessons')
+    .update({
+      teacher_notes:        teacherNotes        ?? null,
+      teacher_notes_public: teacherNotesPublic  ?? null,
+    })
+    .eq('id', lessonId)
+  if (error) { console.error('[supabase] updateLessonNotes:', error); return false }
+  return true
+}
+
+/** Fetch the student's next upcoming lesson (first future lesson by scheduled_at). */
+export async function fetchNextLesson(studentId) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('lessons')
+    .select('id, title, scheduled_at, duration_minutes, teacher_notes_public')
+    .eq('student_id', studentId)
+    .gte('scheduled_at', new Date().toISOString())
+    .order('scheduled_at', { ascending: true })
+    .limit(1)
+    .single()
+  if (error && error.code !== 'PGRST116') {
+    console.error('[supabase] fetchNextLesson:', error)
+  }
+  return data ?? null
+}
+
+/** Fetch all lessons for admin student detail view (includes new note fields). */
+export async function fetchStudentLessonsAdmin(studentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('lessons')
+    .select('id, lesson_no, title, scheduled_at, status, duration_minutes, student_feedback, teacher_notes, teacher_notes_public, created_at')
+    .eq('student_id', studentId)
+    .order('created_at', { ascending: false })
+  if (error) { console.error('[supabase] fetchStudentLessonsAdmin:', error); return [] }
+  return data ?? []
+}
+
+/**
+ * Check which badges a student has newly earned after an action and award them.
+ * Returns array of newly-awarded badge keys (can be used to show toast/confetti).
+ * Safe to call any time — already-earned badges are skipped (unique constraint).
+ */
+export async function checkAndAwardBadges(studentId) {
+  if (!supabase || !studentId) return []
+
+  const [earned, assignmentsRes, lessonsRes] = await Promise.all([
+    fetchStudentBadges(studentId),
+    supabase
+      .from('exercise_assignments')
+      .select('id, exercises(stage_type)')
+      .eq('student_id', studentId)
+      .eq('status', 'submitted'),
+    supabase
+      .from('lessons')
+      .select('id')
+      .eq('student_id', studentId)
+      .in('status', ['completed', 'confirmed']),
+  ])
+
+  const earnedKeys    = new Set(earned.map(b => b.badge_key))
+  const assignments   = assignmentsRes.data ?? []
+  const completedCount = assignments.length
+  const stageTypes    = assignments.map(a => a.exercises?.stage_type).filter(Boolean)
+  const lessonCount   = lessonsRes.data?.length ?? 0
+
+  const candidates = []
+
+  // Exercise count milestones
+  if (completedCount >= 1  && !earnedKeys.has('first_exercise'))  candidates.push('first_exercise')
+  if (completedCount >= 10 && !earnedKeys.has('exercises_10'))    candidates.push('exercises_10')
+  if (completedCount >= 25 && !earnedKeys.has('exercises_25'))    candidates.push('exercises_25')
+  if (completedCount >= 50 && !earnedKeys.has('exercises_50'))    candidates.push('exercises_50')
+
+  // Stage-type badges
+  if (stageTypes.includes('free_exercise') && !earnedKeys.has('first_writing'))
+    candidates.push('first_writing')
+  if ((stageTypes.includes('listening') || stageTypes.includes('viewing')) && !earnedKeys.has('first_listening'))
+    candidates.push('first_listening')
+
+  // Lesson attendance milestones
+  if (lessonCount >= 5  && !earnedKeys.has('lessons_5'))  candidates.push('lessons_5')
+  if (lessonCount >= 10 && !earnedKeys.has('lessons_10')) candidates.push('lessons_10')
+
+  if (!candidates.length) return []
+  await Promise.all(candidates.map(key => awardBadge(studentId, key)))
+  return candidates
 }
