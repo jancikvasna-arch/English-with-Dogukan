@@ -132,7 +132,7 @@ export async function fetchMyExercises(studentId) {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('exercise_assignments')
-    .select('*, exercises ( id, title, description, course, lesson_no, context_images )')
+    .select('*, exercises ( id, title, description, course, lesson_no, context_images ), lesson_plans ( id, title, description )')
     .eq('student_id', studentId)
     .order('assigned_at', { ascending: false })
   if (error) { console.error('[supabase] fetchMyExercises:', error); return [] }
@@ -365,7 +365,7 @@ export async function fetchAllLessonPlans() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('lesson_plans')
-    .select('id, title, description, created_at, lesson_plan_exercises(count)')
+    .select('id, title, description, created_at, lesson_plan_exercises ( order_index, exercises ( id, title, course ) )')
     .order('created_at', { ascending: false })
   if (error) { console.error('[supabase] fetchAllLessonPlans:', error); return [] }
   return data ?? []

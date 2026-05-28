@@ -1589,43 +1589,94 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
               <StudentLessonList lessons={lessons} onFeedbackSaved={(id, fb) =>
                 setLessons(prev => prev.map(l => l.id === id ? { ...l, student_feedback: fb } : l))} />
 
-              {/* ── Exercises ── */}
-              <div className="dashboard-exercises">
-                <h3 className="dashboard-section-title">📝 My Exercises</h3>
-                {assignments.length === 0 ? (
-                  <p className="dashboard-empty-small">No exercises assigned yet.</p>
-                ) : (
-                  <div className="exercise-list">
-                    {assignments.map((a) => {
-                      const ex = a.exercises
-                      const submitted = a.status === 'submitted'
-                      return (
-                        <div key={a.id} className={`exercise-row ${submitted ? 'exercise-row--done' : ''}`}>
-                          <div className="exercise-row-left">
-                            <span className="exercise-mode-chip">
-                              {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
-                            </span>
-                            <strong className="exercise-title">{ex?.title}</strong>
-                            {a.note && <p className="exercise-note">💬 {a.note}</p>}
-                            <span className="exercise-date">
-                              {submitted
-                                ? `Submitted ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                                : `Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
-                            </span>
-                          </div>
-                          <div className="exercise-row-right">
-                            {submitted ? (
-                              <span className="exercise-submitted-badge">✓ Submitted</span>
-                            ) : (
-                              <button className="btn-gold" onClick={() => openExercise(a)}>Start →</button>
-                            )}
-                          </div>
+              {/* ── Exercises (grouped by lesson plan, then solo) ── */}
+              {(() => {
+                const planAsgns = assignments.filter(a => a.lesson_plan_id)
+                const soloAsgns = assignments.filter(a => !a.lesson_plan_id)
+                // Group plan assignments by plan id, preserving insertion order
+                const planMap = {}
+                planAsgns.forEach(a => {
+                  if (!planMap[a.lesson_plan_id]) planMap[a.lesson_plan_id] = { plan: a.lesson_plans, items: [] }
+                  planMap[a.lesson_plan_id].items.push(a)
+                })
+                const planGroups = Object.entries(planMap)
+
+                const renderExerciseRow = (a) => {
+                  const ex = a.exercises
+                  const submitted = a.status === 'submitted'
+                  return (
+                    <div key={a.id} className={`exercise-row ${submitted ? 'exercise-row--done' : ''}`}>
+                      <div className="exercise-row-left">
+                        <span className="exercise-mode-chip">
+                          {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                        </span>
+                        <strong className="exercise-title">{ex?.title}</strong>
+                        {a.note && <p className="exercise-note">💬 {a.note}</p>}
+                        {!a.lesson_plan_id && (
+                          <span className="exercise-date">
+                            {submitted
+                              ? `Submitted ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                              : `Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+                          </span>
+                        )}
+                      </div>
+                      <div className="exercise-row-right">
+                        {submitted ? (
+                          <span className="exercise-submitted-badge">✓ Submitted</span>
+                        ) : (
+                          <button className="btn-gold" onClick={() => openExercise(a)}>Start →</button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <>
+                    {planGroups.length > 0 && (
+                      <div className="dashboard-exercises">
+                        <h3 className="dashboard-section-title">📚 My Lesson Plans</h3>
+                        <div className="plan-card-list">
+                          {planGroups.map(([planId, { plan, items }]) => {
+                            const doneCount = items.filter(a => a.status === 'submitted').length
+                            return (
+                              <div key={planId} className="plan-card">
+                                <div className="plan-card-header">
+                                  <div>
+                                    <strong className="plan-card-title">{plan?.title || 'Lesson Plan'}</strong>
+                                    <span className="plan-card-progress">
+                                      {doneCount}/{items.length} done
+                                    </span>
+                                  </div>
+                                </div>
+                                {plan?.description && (
+                                  <p className="plan-card-desc">{plan.description}</p>
+                                )}
+                                <div className="plan-exercises">
+                                  {items.map(a => renderExerciseRow(a))}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
+                      </div>
+                    )}
+                    {assignments.length === 0 ? (
+                      <div className="dashboard-exercises">
+                        <h3 className="dashboard-section-title">📝 My Exercises</h3>
+                        <p className="dashboard-empty-small">No exercises assigned yet.</p>
+                      </div>
+                    ) : soloAsgns.length > 0 && (
+                      <div className="dashboard-exercises">
+                        <h3 className="dashboard-section-title">📝 My Exercises</h3>
+                        <div className="exercise-list">
+                          {soloAsgns.map(a => renderExerciseRow(a))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </>
           )}
         </>
@@ -2035,6 +2086,7 @@ function AdminExercises({ adminUserId }) {
   const [reviewing,      setReviewing]      = useState(null)
   const [editingExercise,setEditingExercise]= useState(null)
   const [deletingId,     setDeletingId]     = useState(null) // exercise id pending delete confirm
+  const [expandedPlanId, setExpandedPlanId] = useState(null) // plan id currently open in the Plans tab
 
   // assign form
   const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise' | 'plan'
@@ -2349,14 +2401,43 @@ function AdminExercises({ adminUserId }) {
           ) : (
             <div className="library-list">
               {plans.map(p => {
-                const count = p.lesson_plan_exercises?.[0]?.count ?? 0
+                const planExercises = (p.lesson_plan_exercises ?? [])
+                  .slice().sort((a, b) => a.order_index - b.order_index)
+                const count = planExercises.length
+                const isOpen = expandedPlanId === p.id
                 return (
                   <div key={p.id} className="library-row">
-                    <div>
-                      <strong style={{ fontSize: '0.95rem' }}>{p.title}</strong>
-                      <span className="admin-level-chip" style={{ marginLeft: '0.5rem' }}>{count} exercise{count !== 1 ? 's' : ''}</span>
+                    <div className="library-row-main">
+                      <div className="library-row-info">
+                        <strong style={{ fontSize: '0.95rem' }}>{p.title}</strong>
+                        <div style={{ marginTop: '0.2rem' }}>
+                          <span className="admin-level-chip">{count} exercise{count !== 1 ? 's' : ''}</span>
+                        </div>
+                        {p.description && <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>{p.description}</p>}
+                      </div>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', flexShrink: 0 }}
+                        onClick={() => setExpandedPlanId(isOpen ? null : p.id)}>
+                        {isOpen ? '▲ Close' : '▼ Open'}
+                      </button>
                     </div>
-                    {p.description && <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{p.description}</p>}
+                    {isOpen && (
+                      <div className="plan-exercise-list">
+                        {planExercises.length === 0 ? (
+                          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>No exercises in this plan yet.</p>
+                        ) : planExercises.map((pe, i) => (
+                          <div key={pe.exercises?.id || i} className="plan-exercise-item">
+                            <span className="plan-exercise-index">{i + 1}</span>
+                            <div>
+                              <span style={{ fontSize: '0.9rem' }}>{pe.exercises?.title}</span>
+                              {pe.exercises?.course && (
+                                <span className="admin-level-chip" style={{ marginLeft: '0.4rem' }}>{pe.exercises.course}</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
