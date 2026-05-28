@@ -1066,3 +1066,39 @@ export async function checkAndAwardBadges(studentId) {
   await Promise.all(candidates.map(key => awardBadge(studentId, key)))
   return candidates
 }
+
+// ─── Student vocabulary log ───────────────────────────────────
+
+export async function fetchMyVocabulary(studentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('student_vocabulary')
+    .select('id, word, definition, exercise_id, added_at, exercises(title)')
+    .eq('student_id', studentId)
+    .order('added_at', { ascending: false })
+  if (error) { console.error('[supabase] fetchMyVocabulary:', error); return [] }
+  return data ?? []
+}
+
+export async function addVocabularyWord({ studentId, word, definition, exerciseId }) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('student_vocabulary')
+    .insert({
+      student_id:  studentId,
+      word:        word.trim(),
+      definition:  definition?.trim() || null,
+      exercise_id: exerciseId || null,
+    })
+    .select()
+    .single()
+  if (error) { console.error('[supabase] addVocabularyWord:', error); return null }
+  return data
+}
+
+export async function deleteVocabularyWord(wordId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('student_vocabulary').delete().eq('id', wordId)
+  if (error) { console.error('[supabase] deleteVocabularyWord:', error); return false }
+  return true
+}
