@@ -7,6 +7,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchAllAssignmentsAdmin, fetchStudentAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLabels, createLabel, deleteLabel, setExerciseLabels,
+  fetchAllBooks, createBook, deleteBook,
   fetchAllLessonPlans, createLessonPlan, updateLessonPlan,
   createLessonPlanWithStages, updateLessonPlanWithStages, assignLessonPlan,
   fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
@@ -2546,6 +2547,7 @@ function AdminLessonStages({ adminUserId }) {
   const [students,    setStudents]    = useState([])
   const [assignments, setAssignments] = useState([])
   const [labels,      setLabels]      = useState([])
+  const [books,       setBooks]       = useState([])
   const [loading,     setLoading]     = useState(true)
   const [exTab,          setExTab]          = useState('assignments')
   const [view,           setView]           = useState('list') // 'list'|'review'|'create-stage'|'edit-exercise'
@@ -2555,8 +2557,13 @@ function AdminLessonStages({ adminUserId }) {
   const [deletingId,     setDeletingId]     = useState(null) // exercise id pending delete confirm
   const [filterLabelIds, setFilterLabelIds] = useState([])   // active label filter in library tab
   const [filterStageType,setFilterStageType]= useState(null) // active stage type filter in library tab
+  const [filterBookId,   setFilterBookId]   = useState(null) // active book filter in library tab
   const [showLabelMgr,   setShowLabelMgr]   = useState(false) // label management panel open
   const [deletingLabelId,setDeletingLabelId]= useState(null)
+  const [showBookMgr,    setShowBookMgr]    = useState(false) // book management panel open
+  const [newBookTitle,   setNewBookTitle]   = useState('')
+  const [savingBook,     setSavingBook]     = useState(false)
+  const [deletingBookId, setDeletingBookId] = useState(null)
 
   // assign form
   const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise'
@@ -2577,9 +2584,10 @@ function AdminLessonStages({ adminUserId }) {
       fetchStudentProfiles(),
       fetchAllAssignmentsAdmin(),
       fetchAllLabels(),
-    ]).then(([exs, studs, asgns, lbls]) => {
+      fetchAllBooks(),
+    ]).then(([exs, studs, asgns, lbls, bks]) => {
       setExercises(exs); setStudents(studs)
-      setAssignments(asgns); setLabels(lbls)
+      setAssignments(asgns); setLabels(lbls); setBooks(bks)
       setLoading(false)
     })
   }
@@ -2651,10 +2659,30 @@ function AdminLessonStages({ adminUserId }) {
     }
   }
 
+  const handleCreateBook = async () => {
+    if (!newBookTitle.trim()) return
+    setSavingBook(true)
+    const bk = await createBook(newBookTitle.trim(), adminUserId)
+    setSavingBook(false)
+    if (bk) { setBooks(p => [...p, bk].sort((a,b) => a.title.localeCompare(b.title))); setNewBookTitle('') }
+  }
+
+  const handleDeleteBook = async (id) => {
+    const ok = await deleteBook(id)
+    if (ok) {
+      setBooks(p => p.filter(b => b.id !== id))
+      setExercises(p => p.map(ex => ex.book_id === id ? { ...ex, book_id: null, books: null } : ex))
+      if (filterBookId === id) setFilterBookId(null)
+      setDeletingBookId(null)
+    }
+  }
+
   if (view === 'create-stage') {
     return <ExerciseBuilder
       allLabels={labels}
+      allBooks={books}
       onLabelCreated={lbl => setLabels(p => [...p, lbl])}
+      onBookCreated={bk => setBooks(p => [...p, bk].sort((a,b) => a.title.localeCompare(b.title)))}
       onCancel={() => setView('list')}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library') }} />
   }
@@ -2662,7 +2690,9 @@ function AdminLessonStages({ adminUserId }) {
     return <ExerciseBuilder
       initialExercise={editingExercise}
       allLabels={labels}
+      allBooks={books}
       onLabelCreated={lbl => setLabels(p => [...p, lbl])}
+      onBookCreated={bk => setBooks(p => [...p, bk].sort((a,b) => a.title.localeCompare(b.title)))}
       onCancel={() => { setView('list'); setEditingExercise(null) }}
       onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }} />
   }
@@ -2802,16 +2832,21 @@ function AdminLessonStages({ adminUserId }) {
         const typeFiltered = filterStageType
           ? exercises.filter(ex => ex.stage_type === filterStageType)
           : exercises
-        const filteredExercises = filterLabelIds.length === 0
+        const labelFiltered = filterLabelIds.length === 0
           ? typeFiltered
           : typeFiltered.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
+        const filteredExercises = filterBookId
+          ? labelFiltered.filter(ex => ex.book_id === filterBookId)
+          : labelFiltered
         return (
           <div>
             <div className="admin-exercises-toolbar">
-              <h3 style={{ margin: 0 }}>Stage Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0) ? ` / ${exercises.length}` : ''})</h3>
+              <h3 style={{ margin: 0 }}>Stage Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0 || filterBookId) ? ` / ${exercises.length}` : ''})</h3>
               <div style={{ display: 'flex', gap: '0.4rem' }}>
                 <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                  onClick={() => setShowLabelMgr(p => !p)}>🏷 Labels</button>
+                  onClick={() => { setShowBookMgr(false); setShowLabelMgr(p => !p) }}>🏷 Labels</button>
+                <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                  onClick={() => { setShowLabelMgr(false); setShowBookMgr(p => !p) }}>📚 Books</button>
                 <button className="btn-gold" onClick={() => setView('create-stage')}>+ Create lesson stage</button>
               </div>
             </div>
@@ -2860,6 +2895,61 @@ function AdminLessonStages({ adminUserId }) {
               </div>
             )}
 
+            {/* ── Book manager ── */}
+            {showBookMgr && (
+              <div className="label-mgr-panel">
+                <p className="label-mgr-title">Manage books</p>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <input type="text" placeholder="Book title (e.g. English File B1)"
+                    value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleCreateBook()}
+                    style={{ flex: 1, padding: '0.35rem 0.65rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '0.88rem' }} />
+                  <button className="btn-gold" style={{ fontSize: '0.8rem', padding: '0.35rem 0.9rem' }}
+                    disabled={savingBook || !newBookTitle.trim()} onClick={handleCreateBook}>
+                    {savingBook ? '…' : '+ Add'}
+                  </button>
+                </div>
+                {books.length === 0 ? (
+                  <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0 }}>No books yet — add one above.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {books.map(bk => (
+                      <div key={bk.id} className="label-mgr-row">
+                        <span className="admin-level-chip">📚 {bk.title}</span>
+                        {deletingBookId === bk.id ? (
+                          <>
+                            <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                              onClick={() => handleDeleteBook(bk.id)}>Confirm</button>
+                            <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                              onClick={() => setDeletingBookId(null)}>✕</button>
+                          </>
+                        ) : (
+                          <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', color: '#e05c5c' }}
+                            onClick={() => setDeletingBookId(bk.id)}>Delete</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Book filter ── */}
+            {books.length > 0 && (
+              <div className="library-filter-row">
+                <span className="library-filter-label">📚 Book:</span>
+                <button className={`filter-chip ${!filterBookId ? 'filter-chip--active' : ''}`}
+                  onClick={() => setFilterBookId(null)}>All</button>
+                {books.map(bk => (
+                  <button key={bk.id}
+                    className={`filter-chip ${filterBookId === bk.id ? 'filter-chip--active' : ''}`}
+                    onClick={() => setFilterBookId(filterBookId === bk.id ? null : bk.id)}>
+                    {bk.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* ── Label filter ── */}
             {labels.length > 0 && (
               <div className="library-filter-row">
@@ -2902,6 +2992,7 @@ function AdminLessonStages({ adminUserId }) {
                         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.25rem', alignItems: 'center' }}>
                           <span className="stage-type-badge-sm" style={{ fontSize: '0.75rem', padding: '0.18rem 0.5rem' }}>{stDef.icon} {stDef.label}</span>
                           {ex.course && <span className="admin-level-chip">{ex.course}</span>}
+                          {ex.books?.title && <span className="admin-level-chip">📚 {ex.books.title}</span>}
                           {ex.estimated_minutes && (
                             <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>⏱ {ex.estimated_minutes} min</span>
                           )}
@@ -3115,7 +3206,7 @@ function newQ(type) {
   }
 }
 
-function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], onLabelCreated = null, initialStageType = null }) {
+function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], allBooks = [], onLabelCreated = null, onBookCreated = null, initialStageType = null }) {
   const isEdit = !!initialExercise
 
   const [stageType,      setStageType]      = useState(initialExercise?.stage_type ?? initialStageType ?? null)
@@ -3130,6 +3221,11 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     initialExercise?.estimated_minutes && ![5,10,15].includes(initialExercise.estimated_minutes)
       ? String(initialExercise.estimated_minutes) : ''
   )
+  const [bookId,         setBookId]         = useState(initialExercise?.book_id ?? null)
+  const [localBooks,     setLocalBooks]     = useState(allBooks)
+  const [newBookTitle,   setNewBookTitle]   = useState('')
+  const [savingBook,     setSavingBook]     = useState(false)
+  const [showBookForm,   setShowBookForm]   = useState(false)
   const [labelIds,       setLabelIds]       = useState(
     (initialExercise?.exercise_labels || []).map(el => el.label_id)
   )
@@ -3211,6 +3307,19 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   const updateQ = (id, fld, val) => setQuestions(p => p.map(q => q.tempId === id ? { ...q, [fld]: val } : q))
 
   // ── Label helpers ────────────────────────────────────────────
+  const handleCreateBook = async () => {
+    if (!newBookTitle.trim()) return
+    setSavingBook(true)
+    const bk = await createBook(newBookTitle.trim())
+    setSavingBook(false)
+    if (bk) {
+      setLocalBooks(p => [...p, bk].sort((a, b) => a.title.localeCompare(b.title)))
+      setBookId(bk.id)
+      setNewBookTitle(''); setShowBookForm(false)
+      onBookCreated?.(bk)
+    }
+  }
+
   const handleCreateLabel = async () => {
     if (!newLabelName.trim()) return
     setSavingLabel(true)
@@ -3236,7 +3345,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     if (stDef?.hasQuestions && !isVerbal && !questions.length) return
     setSaving(true); setSaveError(null)
     const finalMins = estimatedMins === 'other' ? (parseInt(customMins) || null) : estimatedMins
-    const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins, stageType: stageType ?? 'controlled_exercise' }
+    const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins, stageType: stageType ?? 'controlled_exercise', bookId: bookId || null }
     // For listening/viewing: auto-create one dummy question as the activity type marker
     const questionsToSave = isVerbal
       ? [{ type: selType, prompt: '', order_index: 0, options: [], correct_answer: null, hint: null }]
@@ -3340,7 +3449,44 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
         </div>
       )}
 
-      {/* ── 3. Labels ── */}
+      {/* ── 3. Book ── */}
+      <div className="builder-section">
+        <div className="builder-section-header">
+          <div>
+            <h4 className="builder-section-title">📚 Book</h4>
+            <p className="builder-section-sub">Which textbook is this stage from? (optional)</p>
+          </div>
+          <button type="button" className="btn-ghost"
+            style={{ fontSize: '0.78rem', padding: '0.28rem 0.65rem', flexShrink: 0 }}
+            onClick={() => setShowBookForm(p => !p)}>
+            {showBookForm ? 'Cancel' : '+ New book'}
+          </button>
+        </div>
+
+        {showBookForm && (
+          <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0' }}>
+            <input type="text" placeholder="e.g. English File B1"
+              value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateBook()}
+              style={{ flex: 1 }} />
+            <button className="btn-gold" style={{ fontSize: '0.8rem', padding: '0.35rem 0.9rem' }}
+              disabled={savingBook || !newBookTitle.trim()} onClick={handleCreateBook}>
+              {savingBook ? '…' : 'Create'}
+            </button>
+          </div>
+        )}
+
+        <select value={bookId || ''}
+          onChange={e => setBookId(e.target.value || null)}
+          style={{ marginTop: showBookForm ? 0 : '0.25rem' }}>
+          <option value="">— No book selected —</option>
+          {localBooks.map(bk => (
+            <option key={bk.id} value={bk.id}>{bk.title}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* ── 4. Labels ── */}
       <div className="builder-section">
         <div className="builder-section-header">
           <div>
