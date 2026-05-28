@@ -216,6 +216,7 @@ export default function App() {
   }
 
   const [page, setPage] = useState(initPage)
+  const [pageHistory, setPageHistory] = useState([])
   const [completedPath, setCompletedPath] = useState(null) // 'questionnaire' | 'consultation'
   const [studentData, setStudentData] = useState({})
   const [testAnswers, setTestAnswers] = useState({})
@@ -236,6 +237,7 @@ export default function App() {
   }, [])
 
   const goTo = (p) => {
+    setPageHistory(prev => [...prev, page])
     setPage(p)
     window.scrollTo(0, 0)
     if (p === 'admin')          window.history.pushState({}, '', '/admin')
@@ -243,6 +245,14 @@ export default function App() {
     else if (p === 'settings')  window.history.pushState({}, '', '/settings')
     else if (p === 'signin')    window.history.pushState({}, '', '/signin')
     else if (p === 'landing')   window.history.pushState({}, '', '/')
+  }
+
+  const goBack = () => {
+    if (pageHistory.length === 0) { goTo('landing'); return }
+    const prev = pageHistory[pageHistory.length - 1]
+    setPageHistory(h => h.slice(0, -1))
+    setPage(prev)
+    window.scrollTo(0, 0)
   }
 
   const handleSignOut = async () => {
@@ -255,20 +265,14 @@ export default function App() {
     return (
       <div className="flow-wrapper">
         <div className="flow-header">
-          {page === 'admin' ? (
-            <span className="flow-header-logo">English with Dogukan</span>
-          ) : (
-            <>
-              <button className="back-link" onClick={() => goTo('landing')}>
-                ← English with Dogukan
-              </button>
-              {user && (
-                <button className="back-link"
-                  onClick={() => goTo(user.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}>
-                  My account →
-                </button>
-              )}
-            </>
+          <button className="back-link" onClick={goBack}>
+            ← English with Dogukan
+          </button>
+          {user && (
+            <button className="back-link"
+              onClick={() => goTo(user.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}>
+              My account →
+            </button>
           )}
         </div>
         <div className="flow-content">
