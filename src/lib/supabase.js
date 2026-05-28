@@ -254,7 +254,7 @@ export async function fetchAllAssignmentsAdmin() {
     .select(`
       id, mode, status, note, assigned_at, submitted_at,
       exercises ( id, title, course, lesson_no ),
-      profiles:student_id ( id, name, email )
+      student_id
     `)
     .order('assigned_at', { ascending: false })
   if (error) { console.error('[supabase] fetchAllAssignmentsAdmin:', error); return [] }

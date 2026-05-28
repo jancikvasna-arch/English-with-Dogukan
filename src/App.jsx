@@ -3090,19 +3090,22 @@ function AdminLessonStages({ adminUserId }) {
                     <span className="admin-review-chip">✓ Completed — open to add comments</span>
                     <span>{submitted.length}</span>
                   </div>
-                  {submitted.map(a => (
-                    <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
-                      <div className="admin-student-info">
-                        <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
-                        <span className="admin-student-email">{a.exercises?.title}</span>
-                      </div>
-                      <div className="admin-student-meta">
-                        <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
-                        <span className="admin-date-chip">{new Date(a.submitted_at).toLocaleDateString('en-GB')}</span>
-                      </div>
-                      <span className="admin-arrow">›</span>
-                    </button>
-                  ))}
+                  {submitted.map(a => {
+                    const stu = students.find(s => s.id === a.student_id)
+                    return (
+                      <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
+                        <div className="admin-student-info">
+                          <strong>{stu?.name || stu?.email || 'Student'}</strong>
+                          <span className="admin-student-email">{a.exercises?.title}</span>
+                        </div>
+                        <div className="admin-student-meta">
+                          <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
+                          <span className="admin-date-chip">{new Date(a.submitted_at).toLocaleDateString('en-GB')}</span>
+                        </div>
+                        <span className="admin-arrow">›</span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
               {pending.length > 0 && (
@@ -3111,19 +3114,22 @@ function AdminLessonStages({ adminUserId }) {
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assigned — awaiting student</span>
                     <span>{pending.length}</span>
                   </div>
-                  {pending.map(a => (
-                    <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
-                      <div className="admin-student-info">
-                        <strong>{a.profiles?.name || a.profiles?.email || 'Student'}</strong>
-                        <span className="admin-student-email">{a.exercises?.title}</span>
-                      </div>
-                      <div className="admin-student-meta">
-                        <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
-                        <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
-                      </div>
-                      <span className="admin-arrow">›</span>
-                    </button>
-                  ))}
+                  {pending.map(a => {
+                    const stu = students.find(s => s.id === a.student_id)
+                    return (
+                      <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
+                        <div className="admin-student-info">
+                          <strong>{stu?.name || stu?.email || 'Student'}</strong>
+                          <span className="admin-student-email">{a.exercises?.title}</span>
+                        </div>
+                        <div className="admin-student-meta">
+                          <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
+                          <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
+                        </div>
+                        <span className="admin-arrow">›</span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
               {assignments.length === 0 && (
