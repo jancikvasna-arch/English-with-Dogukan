@@ -1879,6 +1879,82 @@ a { text-decoration: none; }
   padding: 0.5rem 0 1rem;
 }
 
+/* ─── Image-overlay fill-blank (student view) ──────────────────── */
+.img-overlay-wrap {
+  position: relative;
+  width: 100%;
+  display: block;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.img-overlay-img {
+  width: 100%;
+  display: block;
+}
+.img-overlay-input {
+  position: absolute;
+  background: rgba(212, 168, 83, 0.15);
+  border: none;
+  border-bottom: 2px solid rgba(212, 168, 83, 0.8);
+  color: #1a4fc4;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+  cursor: text;
+  padding: 0 2px;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.img-overlay-input:focus {
+  background: rgba(212, 168, 83, 0.3);
+  border-bottom-color: var(--gold);
+  outline: 2px solid rgba(212, 168, 83, 0.5);
+  outline-offset: 0;
+}
+.img-overlay-input:disabled { cursor: default; }
+
+/* ─── FbBlankEditor (builder) ──────────────────────────────────── */
+.fb-blank-editor {
+  position: relative; width: 100%;
+  cursor: crosshair; user-select: none;
+  border-radius: 8px; overflow: hidden;
+  border: 2px dashed var(--border);
+}
+.fb-blank-editor-img { width: 100%; display: block; pointer-events: none; }
+
+.fb-blank-box {
+  position: absolute;
+  border: 2px solid var(--gold);
+  background: rgba(212, 168, 83, 0.18);
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px;
+  transition: background 0.12s;
+}
+.fb-blank-box:hover { background: rgba(248, 113, 113, 0.25); border-color: #f87171; }
+.fb-blank-box--drawing {
+  pointer-events: none;
+  border-style: dashed;
+  background: rgba(212, 168, 83, 0.12);
+}
+.fb-blank-box-num {
+  font-size: 0.65rem; font-weight: 700; color: var(--gold); line-height: 1;
+}
+.fb-blank-box-del {
+  font-size: 0.6rem; color: #f87171; line-height: 1; display: none;
+}
+.fb-blank-box:hover .fb-blank-box-del { display: block; }
+.fb-blank-box:hover .fb-blank-box-num { display: none; }
+
+.fb-preview-section { margin-top: 0.75rem; }
+.fb-preview-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;
+}
+.fb-preview-label { font-size: 0.83rem; color: var(--text-muted); }
+
 /* Fill-blank builder: picture upload area */
 .fb-upload-area { margin-bottom: 1rem; }
 

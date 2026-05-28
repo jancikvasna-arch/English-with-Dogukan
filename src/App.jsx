@@ -476,17 +476,47 @@ async function ocrImage(file) {
   return text
 }
 
-// Extract fill-blank template from an exercise image.
-// Runs OCR, then normalises blank indicators (underlines/dashes) to ___.
-async function extractFillBlankTemplate(file) {
-  const raw = await ocrImage(file)
-  return raw
-    .replace(/_{2,}/g,  '___')   // 2+ underscores
-    .replace(/—{2,}/g,  '___')   // em-dashes
-    .replace(/-{3,}/g,  '___')   // 3+ hyphens
-    .replace(/={3,}/g,  '___')   // 3+ equals
-    .replace(/\n{3,}/g, '\n\n')  // collapse blank lines
-    .trim()
+// Detect blank positions in an exercise image using Tesseract word bboxes.
+// Returns [{x,y,w,h}] as percentages of the image dimensions.
+// x,y = top-left corner; w,h = width/height.
+async function detectImageBlanks(dataUrl) {
+  // Natural dimensions of the (possibly compressed) image
+  const naturalSize = await new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = reject
+    img.src = dataUrl
+  })
+
+  // Feed to Tesseract
+  const resp  = await fetch(dataUrl)
+  const blob  = await resp.blob()
+  const { createWorker } = await import('tesseract.js')
+  const worker = await createWorker('eng', 1, { logger: () => {}, errorHandler: () => {} })
+  const blobUrl = URL.createObjectURL(blob)
+  const { data } = await worker.recognize(blobUrl)
+  URL.revokeObjectURL(blobUrl)
+  await worker.terminate()
+
+  // Words that look like blank underlines: 2+ underscores, dashes, em-dashes, equals
+  const BLANK_RE = /^[_\-—=]{2,}$/
+  return (data.words || [])
+    .filter(w => BLANK_RE.test(w.text.trim()))
+    .map(w => ({
+      x: parseFloat(((w.bbox.x0 / naturalSize.w) * 100).toFixed(2)),
+      y: parseFloat(((w.bbox.y0 / naturalSize.h) * 100).toFixed(2)),
+      w: parseFloat((((w.bbox.x1 - w.bbox.x0) / naturalSize.w) * 100).toFixed(2)),
+      h: parseFloat((((w.bbox.y1 - w.bbox.y0) / naturalSize.h) * 100).toFixed(2)),
+    }))
+}
+
+// Helper: is this question prompt an overlay definition?
+function parseOverlayPrompt(prompt) {
+  try {
+    const p = JSON.parse(prompt || '')
+    if (p && p.overlay === true && Array.isArray(p.blanks)) return p
+  } catch {}
+  return null
 }
 
 /**
@@ -2099,6 +2129,146 @@ function InlineFillBlank({ prompt, answer, onChange, disabled = false, checked =
   )
 }
 
+// ─── FbBlankEditor (builder only) ────────────────────────────
+// Shows an exercise image. Dogukan can:
+//   • Click + drag to draw a new blank box
+//   • Click an existing blank box to remove it
+// blanks  : [{x,y,w,h} percentages]
+// onChange: (newBlanks) => void
+function FbBlankEditor({ src, blanks, onChange }) {
+  const wrapRef = useRef(null)
+  const [drawing, setDrawing] = useState(null) // {startX,startY} in %
+
+  const pct = (e) => {
+    const rect = wrapRef.current.getBoundingClientRect()
+    return {
+      x: ((e.clientX - rect.left) / rect.width)  * 100,
+      y: ((e.clientY - rect.top)  / rect.height) * 100,
+    }
+  }
+
+  const onMouseDown = (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const p = pct(e)
+    setDrawing({ sx: p.x, sy: p.y })
+  }
+  const onMouseMove = (e) => {
+    if (!drawing) return
+    const p = pct(e)
+    setDrawing(d => ({ ...d, cx: p.x, cy: p.y }))
+  }
+  const onMouseUp = (e) => {
+    if (!drawing) return
+    const p = pct(e)
+    const x = Math.min(drawing.sx, p.x)
+    const y = Math.min(drawing.sy, p.y)
+    const w = Math.abs(p.x - drawing.sx)
+    const h = Math.abs(p.y - drawing.sy)
+    setDrawing(null)
+    if (w < 1 || h < 0.5) return // too small — ignore accidental clicks
+    onChange([...blanks, { x: parseFloat(x.toFixed(2)), y: parseFloat(y.toFixed(2)),
+                           w: parseFloat(w.toFixed(2)), h: parseFloat(h.toFixed(2)) }])
+  }
+
+  // Preview rect while dragging
+  const preview = drawing?.cx != null ? {
+    x: Math.min(drawing.sx, drawing.cx),
+    y: Math.min(drawing.sy, drawing.cy),
+    w: Math.abs(drawing.cx - drawing.sx),
+    h: Math.abs(drawing.cy - drawing.sy),
+  } : null
+
+  return (
+    <div
+      ref={wrapRef}
+      className="fb-blank-editor"
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={() => setDrawing(null)}>
+      <img src={src} alt="Exercise" className="fb-blank-editor-img" draggable={false} />
+
+      {/* Existing blanks */}
+      {blanks.map((b, i) => (
+        <div key={i} className="fb-blank-box"
+          style={{ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` }}
+          onMouseDown={e => { e.stopPropagation() }}
+          onClick={() => onChange(blanks.filter((_, j) => j !== i))}>
+          <span className="fb-blank-box-num">{i + 1}</span>
+          <span className="fb-blank-box-del">✕</span>
+        </div>
+      ))}
+
+      {/* Live draw preview */}
+      {preview && (
+        <div className="fb-blank-box fb-blank-box--drawing"
+          style={{ left: `${preview.x}%`, top: `${preview.y}%`,
+                   width: `${preview.w}%`, height: `${preview.h}%` }} />
+      )}
+    </div>
+  )
+}
+
+// ─── ImageOverlayFill ─────────────────────────────────────────
+// Shows an exercise image with absolutely-positioned <input> boxes
+// placed over each detected blank. Students type directly on the image.
+function ImageOverlayFill({ src, blanks, answers, onChange, disabled = false }) {
+  const imgRef = useRef(null)
+  const [fontSize, setFontSize] = useState(14)
+
+  // Scale font-size to match rendered image height
+  useEffect(() => {
+    const update = () => {
+      if (imgRef.current) {
+        // Assume average blank height is ~5% of image; map to font-size
+        const renderedH = imgRef.current.clientHeight
+        setFontSize(Math.max(10, Math.round(renderedH * 0.035)))
+      }
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [src])
+
+  const current = (() => {
+    try { return JSON.parse(answers || '{}') } catch { return {} }
+  })()
+
+  const setBlank = (i, val) =>
+    onChange(JSON.stringify({ ...current, [i]: val }))
+
+  return (
+    <div className="img-overlay-wrap">
+      <img ref={imgRef} src={src} alt="Exercise" className="img-overlay-img"
+        onLoad={() => {
+          if (imgRef.current) {
+            const renderedH = imgRef.current.clientHeight
+            setFontSize(Math.max(10, Math.round(renderedH * 0.035)))
+          }
+        }}
+      />
+      {blanks.map((b, i) => (
+        <input
+          key={i}
+          type="text"
+          className="img-overlay-input"
+          disabled={disabled}
+          value={current[i] || ''}
+          onChange={e => !disabled && setBlank(i, e.target.value)}
+          style={{
+            left:     `${b.x}%`,
+            top:      `${b.y}%`,
+            width:    `${b.w}%`,
+            height:   `${b.h}%`,
+            fontSize: `${fontSize}px`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 // ─── ExercisePlayer (student) ─────────────────────────────────
 function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted }) {
   const ex = assignment.exercises
@@ -2129,6 +2299,15 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
       } catch { return false }
     }
     if (q.type === 'fill_blank') {
+      const overlay = parseOverlayPrompt(q.prompt)
+      if (overlay) {
+        // overlay mode: at least one blank filled is enough (Dogukan reviews manually)
+        try {
+          const ans = JSON.parse(answers[q.id] || '{}')
+          return overlay.blanks.length === 0 ||
+            overlay.blanks.some((_, i) => (ans[i] || '').trim().length > 0)
+        } catch { return false }
+      }
       const blanks = (q.prompt || '').split('___').length - 1
       if (blanks === 0) return true
       const ans = parseFillBlankAnswer(answers[q.id] || '')
@@ -2188,8 +2367,11 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
           <div className="exercise-context-passage">{ex.context_text}</div>
         </div>
       )}
-      {/* ── Context images ── */}
-      {ex?.context_images?.length > 0 && (
+      {/* ── Context images (skip if fill_blank overlay — the image is shown on the overlay) ── */}
+      {ex?.context_images?.length > 0 && !(
+        questions.length > 0 && questions[0].type === 'fill_blank' &&
+        parseOverlayPrompt(questions[0].prompt)
+      ) && (
         <div className="exercise-context-images">
           <p className="exercise-context-label">📖 Reference material</p>
           {ex.context_images.map((src, i) => (
@@ -2202,16 +2384,26 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
         {questions.map((q, idx) => {
           if (q.type === 'listening' || q.type === 'viewing') return null
 
-          // Fill-blank renders as a clean content block, no question-card chrome
+          // Fill-blank: overlay on image if positions detected, otherwise inline text
           if (q.type === 'fill_blank') {
+            const overlay = parseOverlayPrompt(q.prompt)
             return (
               <div key={q.id} className="exercise-fill-block">
                 {q.hint && <p className="eq-hint" style={{ marginBottom: '0.5rem' }}>💡 Hint: {q.hint}</p>}
-                <InlineFillBlank
-                  prompt={q.prompt}
-                  answer={answers[q.id] || null}
-                  onChange={val => setAnswer(q.id, val)}
-                />
+                {overlay && ex?.context_images?.[0] ? (
+                  <ImageOverlayFill
+                    src={ex.context_images[0]}
+                    blanks={overlay.blanks}
+                    answers={answers[q.id] || null}
+                    onChange={val => setAnswer(q.id, val)}
+                  />
+                ) : (
+                  <InlineFillBlank
+                    prompt={q.prompt}
+                    answer={answers[q.id] || null}
+                    onChange={val => setAnswer(q.id, val)}
+                  />
+                )}
               </div>
             )
           }
@@ -2465,30 +2657,26 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
           if (q.type === 'listening' || q.type === 'viewing') return null
           const result = getResult(q)
 
-          // Fill-blank: clean content block, no card chrome, Dogukan can type during screen share
+          // Fill-blank: overlay on image (demo/screen-share mode — Dogukan can type too)
           if (q.type === 'fill_blank') {
+            const overlay = parseOverlayPrompt(q.prompt)
             return (
-              <div key={q.id} className={`exercise-fill-block${checked && result === true ? ' eq--correct' : checked && result === false ? ' eq--wrong' : ''}`}>
-                {checked && result === true  && <span className="demo-mark demo-mark--correct" style={{ display:'inline-block', marginBottom:'0.4rem' }}>✓ All correct</span>}
-                {checked && result === false && <span className="demo-mark demo-mark--wrong"   style={{ display:'inline-block', marginBottom:'0.4rem' }}>✗ Some wrong</span>}
+              <div key={q.id} className="exercise-fill-block">
                 {q.hint && <p className="eq-hint" style={{ marginBottom: '0.5rem' }}>💡 Hint: {q.hint}</p>}
-                <InlineFillBlank
-                  prompt={q.prompt}
-                  answer={answers[q.id] || null}
-                  onChange={val => setAnswer(q.id, val)}
-                  checked={checked}
-                  correctAnswers={checked ? parseFillBlankCorrect(q.correct_answer ?? '') : null}
-                />
-                {checked && q.correct_answer && (() => {
-                  const correct = parseFillBlankCorrect(q.correct_answer)
-                  return (
-                    <div className="demo-correct-answer" style={{ marginTop: '0.5rem' }}>
-                      ✓ Answers: {correct.map((a, i) => (
-                        <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
-                      ))}
-                    </div>
-                  )
-                })()}
+                {overlay && exercise?.context_images?.[0] ? (
+                  <ImageOverlayFill
+                    src={exercise.context_images[0]}
+                    blanks={overlay.blanks}
+                    answers={answers[q.id] || null}
+                    onChange={val => setAnswer(q.id, val)}
+                  />
+                ) : (
+                  <InlineFillBlank
+                    prompt={q.prompt}
+                    answer={answers[q.id] || null}
+                    onChange={val => setAnswer(q.id, val)}
+                  />
+                )}
               </div>
             )
           }
@@ -3463,22 +3651,22 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     e.target.value = ''
   }
 
-  // ── Fill-blank: upload picture + auto-extract blanks ────────
+  // ── Fill-blank: upload picture + auto-detect blank positions ─
   const handleFbPicUpload = async (e) => {
     const file = e.target.files?.[0]; if (!file) return
     e.target.value = ''
     setFbPicLoading(true); setFbPicError(null)
     try {
-      // 1. Add the image as context so student sees it
+      // 1. Compress + store image
       const compressed = await compressImage(file)
-      setContextImages([compressed])   // replace, don't stack
-      // 2. OCR → extract text with ___ markers
-      const template = await extractFillBlankTemplate(file)
-      if (!template) throw new Error('Could not read any text from the image.')
-      // 3. Auto-fill the single fill_blank question's prompt
+      setContextImages([compressed])
+      // 2. Detect blank bounding boxes
+      const blanks = await detectImageBlanks(compressed)
+      // 3. Store as overlay prompt (even if 0 blanks — Dogukan can tap to add)
+      const prompt = JSON.stringify({ overlay: true, blanks })
       setQuestions(prev => {
         const q = prev[0] ?? newQ('fill_blank')
-        return [{ ...q, type: 'fill_blank', prompt: template }]
+        return [{ ...q, type: 'fill_blank', prompt, correct_answer: '' }]
       })
     } catch (err) {
       setFbPicError(err.message ?? 'Failed to read the picture. Please try again.')
@@ -3899,18 +4087,43 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
                     {fbPicError && <div className="auth-error" style={{ marginTop: '0.5rem' }}>{fbPicError}</div>}
                   </div>
 
-                  {/* Auto-extracted template — editable if OCR isn't perfect */}
-                  {questions[0] && (
-                    <BuilderQuestion
-                      key={questions[0].tempId}
-                      idx={0}
-                      question={questions[0]}
-                      onChange={(fld, val) => updateQ(questions[0].tempId, fld, val)}
-                      onRemove={() => {}}
-                      canRemove={false}
-                      flat={true}
-                    />
-                  )}
+                  {/* Preview: image with detected blanks + tap-to-add tool */}
+                  {contextImages[0] && questions[0] && (() => {
+                    const overlay = parseOverlayPrompt(questions[0].prompt)
+                    const blanks  = overlay?.blanks ?? []
+                    const updateBlanks = (next) => {
+                      updateQ(questions[0].tempId, 'prompt', JSON.stringify({ overlay: true, blanks: next }))
+                    }
+                    return (
+                      <div className="fb-preview-section">
+                        <div className="fb-preview-header">
+                          <span className="fb-preview-label">
+                            {blanks.length > 0
+                              ? `✅ ${blanks.length} blank${blanks.length !== 1 ? 's' : ''} detected — students will type directly on the image`
+                              : '⚠️ No blanks detected automatically — tap on the image below to add blank boxes'}
+                          </span>
+                          {blanks.length > 0 && (
+                            <button type="button" className="btn-ghost"
+                              style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                              onClick={() => updateBlanks([])}>
+                              Clear all blanks
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Tap-to-draw blank boxes on the image */}
+                        <FbBlankEditor
+                          src={contextImages[0]}
+                          blanks={blanks}
+                          onChange={updateBlanks}
+                        />
+
+                        <p className="builder-section-sub" style={{ marginTop: '0.5rem' }}>
+                          💡 Click and drag on the image to add a blank. Click an existing blank to remove it.
+                        </p>
+                      </div>
+                    )
+                  })()}
                 </>
               ) : (
                 /* ── All other types: numbered question cards ── */
