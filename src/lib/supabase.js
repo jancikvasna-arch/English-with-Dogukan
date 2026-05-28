@@ -255,6 +255,18 @@ export async function fetchAllAssignmentsAdmin() {
   return data ?? []
 }
 
+/** Fetch all assignments for one student (admin use — student profile page). */
+export async function fetchStudentAssignmentsAdmin(studentId) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('exercise_assignments')
+    .select('id, mode, status, note, assigned_at, submitted_at, exercises ( id, title, course )')
+    .eq('student_id', studentId)
+    .order('assigned_at', { ascending: false })
+  if (error) { console.error('[supabase] fetchStudentAssignmentsAdmin:', error); return [] }
+  return data ?? []
+}
+
 /** Fetch full assignment details for review (includes correct_answer + student answers). */
 export async function fetchAssignmentDetails(assignmentId) {
   if (!supabase) return null

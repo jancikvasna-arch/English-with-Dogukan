@@ -4,7 +4,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
   fetchMyAnswersForAssignment, submitExerciseAnswers,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
-  fetchAllAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
+  fetchAllAssignmentsAdmin, fetchStudentAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLessonPlans, createLessonPlan, assignLessonPlan,
   fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
@@ -3456,6 +3456,56 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
   )
 }
 
+// ─── AdminStudentExercises ────────────────────────────────────
+function AdminStudentExercises({ student, onReview }) {
+  const [assignments, setAssignments] = useState([])
+  const [loading,     setLoading]     = useState(true)
+
+  useEffect(() => {
+    fetchStudentAssignmentsAdmin(student.id).then(data => {
+      setAssignments(data); setLoading(false)
+    })
+  }, [student.id])
+
+  const completed = assignments.filter(a => a.status === 'submitted')
+  const pending   = assignments.filter(a => a.status !== 'submitted')
+
+  const renderRow = (a) => (
+    <button key={a.id} className="admin-student-row" onClick={() => onReview(a)}>
+      <div className="admin-student-info">
+        <strong>{a.exercises?.title}</strong>
+        <span className="admin-student-email">
+          {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+          {a.status === 'submitted'
+            ? ` · Completed ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+            : ` · Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+        </span>
+      </div>
+      <span style={{ fontSize: '0.82rem', fontWeight: 600, flexShrink: 0,
+        color: a.status === 'submitted' ? '#4ade80' : 'var(--text-muted)' }}>
+        {a.status === 'submitted' ? '✓ Completed' : '⏳ Pending'}
+      </span>
+      <span className="admin-arrow">›</span>
+    </button>
+  )
+
+  return (
+    <div className="admin-section">
+      <h3>Exercises ({assignments.length})</h3>
+      {loading ? (
+        <div className="dashboard-loading" style={{ padding: '0.5rem 0' }}>Loading…</div>
+      ) : assignments.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No exercises assigned to this student yet.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.5rem' }}>
+          {completed.map(renderRow)}
+          {pending.map(renderRow)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminStudentLessons ──────────────────────────────────────
 function AdminStudentLessons({ student, adminUserId }) {
   const [lessons,     setLessons]     = useState([])
@@ -3558,8 +3608,9 @@ function AdminPanel({ user, onSignOut }) {
   const [loginLoading,  setLoginLoading]  = useState(false)
   const [students,      setStudents]      = useState([])
   const [dataLoading,   setDataLoading]   = useState(false)
-  const [selected,      setSelected]      = useState(null)
-  const [adminTab,      setAdminTab]      = useState('students')
+  const [selected,               setSelected]               = useState(null)
+  const [reviewingFromStudent,   setReviewingFromStudent]   = useState(null) // assignment details for inline review
+  const [adminTab,               setAdminTab]               = useState('students')
   const [accessLevel,   setAccessLevel]   = useState('pending')
   const [accessSaving,  setAccessSaving]  = useState(false)
   const [accessSaved,   setAccessSaved]   = useState(false)
@@ -3610,6 +3661,11 @@ function AdminPanel({ user, onSignOut }) {
     }
   }
 
+  const openStudentReview = async (asgn) => {
+    const details = await fetchAssignmentDetails(asgn.id)
+    if (details) setReviewingFromStudent(details)
+  }
+
   if (!supabase) {
     return (
       <div className="flow-card text-center">
@@ -3640,6 +3696,18 @@ function AdminPanel({ user, onSignOut }) {
             {loginLoading ? 'Signing in…' : 'Sign in →'}
           </button>
         </form>
+      </div>
+    )
+  }
+
+  // Exercise review from student profile
+  if (reviewingFromStudent) {
+    return (
+      <div className="flow-card admin-detail">
+        <AdminExerciseReview
+          details={reviewingFromStudent}
+          onBack={() => setReviewingFromStudent(null)}
+        />
       </div>
     )
   }
@@ -3710,6 +3778,9 @@ function AdminPanel({ user, onSignOut }) {
             <p className="flow-sub" style={{ fontSize: '0.88rem' }}>No questionnaire completed yet.</p>
           </div>
         )}
+
+        {/* ── Exercises ── */}
+        <AdminStudentExercises student={selected} onReview={openStudentReview} />
 
         {/* ── Lesson log ── */}
         <AdminStudentLessons student={selected} adminUserId={user.id} />
