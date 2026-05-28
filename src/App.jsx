@@ -2398,15 +2398,17 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
         })}
       </div>
 
-      <div className="exercise-submit-row">
-        {!checked ? (
-          <button className="btn-gold btn-lg" onClick={() => setChecked(true)}>Check answers →</button>
-        ) : (
-          <button className="btn-ghost" onClick={() => { setChecked(false); setAnswers({}) }}>
-            ↺ Reset &amp; try again
-          </button>
-        )}
-      </div>
+      {!questions.every(q => q.type === 'listening' || q.type === 'viewing') && (
+        <div className="exercise-submit-row">
+          {!checked ? (
+            <button className="btn-gold btn-lg" onClick={() => setChecked(true)}>Check answers →</button>
+          ) : (
+            <button className="btn-ghost" onClick={() => { setChecked(false); setAnswers({}) }}>
+              ↺ Reset &amp; try again
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
