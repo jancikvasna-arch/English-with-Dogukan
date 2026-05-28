@@ -8,7 +8,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLabels, createLabel, deleteLabel, setExerciseLabels,
   fetchAllBooks, createBook, deleteBook,
-  fetchAllLessonPlans, createLessonPlan, updateLessonPlan,
+  fetchAllLessonPlans, createLessonPlan, updateLessonPlan, deleteLessonPlan,
   createLessonPlanWithStages, updateLessonPlanWithStages, assignLessonPlan,
   fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
@@ -3039,12 +3039,13 @@ function AdminLessonStages({ adminUserId }) {
 
 // ─── AdminLessonPlans ─────────────────────────────────────────
 function AdminLessonPlans({ adminUserId }) {
-  const [exercises, setExercises] = useState([])
-  const [plans,     setPlans]     = useState([])
-  const [labels,    setLabels]    = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [view,      setView]      = useState('list') // 'list' | 'create' | 'edit'
+  const [exercises,   setExercises]   = useState([])
+  const [plans,       setPlans]       = useState([])
+  const [labels,      setLabels]      = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [view,        setView]        = useState('list') // 'list' | 'create' | 'edit'
   const [editingPlan, setEditingPlan] = useState(null)
+  const [deletingPlanId, setDeletingPlanId] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -3108,8 +3109,27 @@ function AdminLessonPlans({ adminUserId }) {
                     </div>
                   )}
                 </div>
-                <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
-                  onClick={() => { setEditingPlan(p); setView('edit') }}>Edit</button>
+                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                  <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
+                    onClick={() => { setEditingPlan(p); setView('edit') }}>Edit</button>
+                  {deletingPlanId === p.id ? (
+                    <>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                        onClick={async () => {
+                          const ok = await deleteLessonPlan(p.id)
+                          if (ok) { setPlans(prev => prev.filter(x => x.id !== p.id)); setDeletingPlanId(null) }
+                        }}>Confirm delete</button>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => setDeletingPlanId(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="btn-ghost"
+                      style={{ fontSize: '0.85rem', color: '#e05c5c' }}
+                      onClick={() => setDeletingPlanId(p.id)}>Delete</button>
+                  )}
+                </div>
               </div>
             )
           })}

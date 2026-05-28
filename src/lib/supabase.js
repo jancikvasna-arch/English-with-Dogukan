@@ -647,6 +647,14 @@ export async function deleteBook(bookId) {
   return true
 }
 
+/** Permanently delete a lesson plan (cascades to lesson_stages via FK). */
+export async function deleteLessonPlan(planId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('lesson_plans').delete().eq('id', planId)
+  if (error) { console.error('[supabase] deleteLessonPlan:', error); return false }
+  return true
+}
+
 // ─── Lesson Plan with Stages ──────────────────────────────────
 
 /** Shared helper: upsert stages for a plan (delete-then-insert). */
