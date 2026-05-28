@@ -3150,7 +3150,17 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   // ── Exercise type ───────────────────────────────────────────
   const selectType = (type) => {
     setSelType(type)
-    if (!questions.length) setQuestions([newQ(type)])
+    if (!questions.length) {
+      setQuestions([newQ(type)])
+    } else {
+      // Convert all existing questions to the new type, keeping prompts + hints
+      setQuestions(prev => prev.map(q => ({
+        ...newQ(type),
+        tempId: q.tempId,   // preserve React key
+        prompt: q.prompt,   // preserve question text
+        hint:   q.hint,     // preserve hint text
+      })))
+    }
   }
 
   // ── OCR photo → show raw text for review ───────────────────
