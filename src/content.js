@@ -259,3 +259,54 @@ export const COURSES_DATA = [
     ],
   },
 ]
+
+export const TESTIMONIALS = [
+  {
+    quote: "Dogukan adapted every lesson to my exact needs. My confidence in business English went from zero to presenting in front of clients in four months.",
+    name: "Ana M.",
+    country: "Portugal",
+    outcome: "B1 → B2 in 4 months",
+    emoji: "🇵🇹",
+  },
+  {
+    quote: "The exercises are brilliant — not textbook-generic. He found gaps I didn't know I had and fixed them lesson by lesson.",
+    name: "Kenji T.",
+    country: "Japan",
+    outcome: "IELTS 6.5 → 7.5",
+    emoji: "🇯🇵",
+  },
+  {
+    quote: "I tried apps for years. One month with Dogukan was more progress than two years of Duolingo. Real conversation, real feedback, real results.",
+    name: "Sophie L.",
+    country: "France",
+    outcome: "A2 → B1",
+    emoji: "🇫🇷",
+  },
+]
+
+export const FAQ_ITEMS = [
+  {
+    q: "What happens at the free consultation?",
+    a: "It's a relaxed 20-minute call where Dogukan asks about your goals, current level, and what you find challenging. No test, no pressure — it's just a conversation so the first lesson is built specifically for you.",
+  },
+  {
+    q: "Do I need to buy any textbooks?",
+    a: "Not unless you want to. Dogukan builds exercises from scratch or uses materials from your own context — work emails, presentations, topics you care about. If a textbook is useful for your level, he'll recommend one.",
+  },
+  {
+    q: "How often should I take lessons?",
+    a: "Most students find once or twice a week works best. Consistency matters more than frequency — Dogukan will suggest a rhythm that fits your schedule after the consultation.",
+  },
+  {
+    q: "What if I need to cancel a lesson?",
+    a: "Life happens. Just give 24 hours notice and the lesson is rescheduled at no cost. Cancellations with less than 24 hours notice count as a completed lesson.",
+  },
+  {
+    q: "What level do I need to be?",
+    a: "Any level from complete beginner to advanced. Dogukan is CELTA-certified and has taught A1 through C1 students. The placement test or consultation will identify exactly where you are.",
+  },
+  {
+    q: "Is the placement test compulsory?",
+    a: "No — it's optional. Some students prefer to skip it and let the first lesson reveal their level naturally. Either way works.",
+  },
+]

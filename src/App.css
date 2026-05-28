@@ -2358,3 +2358,119 @@ button.label-chip:hover { opacity: 0.8; }
 /* Verbal activity note (listening / viewing) */
 .verbal-activity-note { display: flex; align-items: flex-start; gap: 0.6rem; background: rgba(96,165,250,0.08); border: 1px solid rgba(96,165,250,0.25); border-radius: 10px; padding: 0.9rem 1rem; margin: 0.75rem 0; font-size: 0.92rem; color: var(--text-muted); }
 .verbal-activity-note span { line-height: 1.5; }
+
+/* ─── Section helpers (shared by Testimonials & FAQ) ─────── */
+.section-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+.section-eyebrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 0.6rem;
+}
+.section-sub {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin: 0.6rem 0 0;
+  max-width: 640px;
+}
+
+/* ─── Testimonials ────────────────────────────────────────── */
+.testimonials-section {
+  background: var(--bg-darker);
+  padding: 5rem 1.5rem;
+}
+.testimonials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+}
+.testimonial-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.testimonial-quote {
+  font-size: 0.97rem;
+  line-height: 1.7;
+  color: var(--text);
+  font-style: italic;
+  margin: 0;
+  flex: 1;
+}
+.testimonial-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.testimonial-emoji { font-size: 1.6rem; }
+.testimonial-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+  margin: 0;
+}
+.testimonial-outcome {
+  font-size: 0.8rem;
+  color: var(--gold);
+  font-weight: 600;
+  margin: 0.15rem 0 0;
+}
+
+/* ─── FAQ ────────────────────────────────────────────────── */
+.faq-section {
+  background: var(--bg);
+  padding: 5rem 1.5rem;
+}
+.faq-list {
+  margin-top: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+.faq-item:first-child { border-top: 1px solid var(--border); }
+.faq-question {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 1.1rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+}
+.faq-question:hover { color: var(--gold); }
+.faq-chevron {
+  font-size: 1.4rem;
+  color: var(--gold);
+  flex-shrink: 0;
+  line-height: 1;
+}
+.faq-answer {
+  padding: 0 0 1.25rem;
+  font-size: 0.93rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin: 0;
+}
+.faq-item.open .faq-question { color: var(--gold); }

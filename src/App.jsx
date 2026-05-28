@@ -9,14 +9,14 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLabels, createLabel, deleteLabel, setExerciseLabels,
   fetchAllBooks, createBook, deleteBook, updateBook,
-  fetchAllLessonPlans, createLessonPlan, updateLessonPlan, deleteLessonPlan,
+  fetchAllLessonPlans, createLessonPlan, updateLessonPlan, deleteLessonPlan, duplicateLessonPlan,
   createLessonPlanWithStages, updateLessonPlanWithStages, assignLessonPlan,
   fetchMyProfile, updateMyName,
   updateStudentAccessLevel, updateStudentEnglishLevel,
   fetchStudentsAdmin, fetchManualStudents, createManualStudent,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
 } from './lib/supabase'
-import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER } from './content'
+import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
 // ─── Constants ───────────────────────────────────────────────
 const CALENDLY_CONSULTATION = 'https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins'
@@ -406,6 +406,7 @@ export default function App() {
       <Testimonials />
       <Pricing onBook={() => goTo('consultation')} />
       <AboutMe />
+      <FAQ />
       <BookingCTA onBook={() => goTo('consultation')} />
       <Footer />
       {WHATSAPP_NUMBER && <WhatsAppButton number={WHATSAPP_NUMBER} />}
@@ -747,41 +748,50 @@ function Courses() {
 
 // ─── Testimonials ─────────────────────────────────────────────
 function Testimonials() {
-  const testimonials = [
-    {
-      name: 'Maria S.', country: 'Spain', level: 'B2 → C1',
-      text: 'After 6 months with Dogukan I went from struggling in meetings to confidently leading them. His approach is patient, structured and genuinely fun.',
-    },
-    {
-      name: 'Kaito M.', country: 'Japan', level: 'B1 → B2',
-      text: 'I tried many tutors before but Dogukan is different. He actually listens to what you need and adapts every lesson. My business English has improved massively.',
-    },
-    {
-      name: 'Anya K.', country: 'Russia', level: 'B2 → C1',
-      text: 'The placement test was surprisingly accurate. He knew exactly where my gaps were and we fixed them quickly. I passed my IELTS exam with a 7.5.',
-    },
-  ]
-
   return (
-    <section className="section" id="testimonials">
-      <div className="container">
-        <div className="section-label">What students say</div>
-        <h2 className="section-title">Testimonials</h2>
+    <section className="testimonials-section" id="testimonials">
+      <div className="section-container">
+        <p className="section-eyebrow">Student results</p>
+        <h2 className="section-title">Real progress. Real people.</h2>
+        <p className="section-sub">Every lesson is built around you — here's what that looks like in practice.</p>
         <div className="testimonials-grid">
-          {testimonials.map((t) => (
-            <div key={t.name} className="testimonial-card">
-              <p className="testimonial-text">"{t.text}"</p>
-              <div className="testimonial-author">
-                <div className="author-avatar">{t.name[0]}</div>
+          {TESTIMONIALS.map((t, i) => (
+            <div key={i} className="testimonial-card">
+              <p className="testimonial-quote">"{t.quote}"</p>
+              <div className="testimonial-footer">
+                <span className="testimonial-emoji">{t.emoji}</span>
                 <div>
-                  <strong>{t.name}</strong>
-                  <span className="author-meta">{t.country} · {t.level}</span>
+                  <p className="testimonial-name">{t.name} · {t.country}</p>
+                  <p className="testimonial-outcome">{t.outcome}</p>
                 </div>
               </div>
             </div>
           ))}
         </div>
-        <p className="section-note">* Placeholder testimonials — real ones coming soon.</p>
+      </div>
+    </section>
+  )
+}
+
+// ─── FAQ ──────────────────────────────────────────────────────
+function FAQ() {
+  const [open, setOpen] = useState(null)
+  return (
+    <section className="faq-section" id="faq">
+      <div className="section-container" style={{ maxWidth: '740px' }}>
+        <p className="section-eyebrow">Got questions?</p>
+        <h2 className="section-title">Frequently asked</h2>
+        <div className="faq-list">
+          {FAQ_ITEMS.map((item, i) => (
+            <div key={i} className={`faq-item ${open === i ? 'open' : ''}`}>
+              <button className="faq-question" onClick={() => setOpen(open === i ? null : i)}>
+                <span>{item.q}</span>
+                <span className="faq-chevron">{open === i ? '−' : '+'}</span>
+              </button>
+              {open === i && <p className="faq-answer">{item.a}</p>}
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -3598,6 +3608,11 @@ function AdminLessonPlans({ adminUserId }) {
                   </button>
                   <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
                     onClick={() => { setEditingPlan(p); setView('edit') }}>Edit</button>
+                  <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
+                    onClick={async () => {
+                      const newId = await duplicateLessonPlan(p.id, adminUserId)
+                      if (newId) reloadAll()
+                    }}>Duplicate</button>
                   {deletingPlanId === p.id ? (
                     <>
                       <button className="btn-ghost"
