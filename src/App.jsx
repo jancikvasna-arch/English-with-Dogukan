@@ -255,14 +255,20 @@ export default function App() {
     return (
       <div className="flow-wrapper">
         <div className="flow-header">
-          <button className="back-link" onClick={() => goTo('landing')}>
-            ← English with Dogukan
-          </button>
-          {user && (
-            <button className="back-link" style={{ marginLeft: 'auto' }}
-              onClick={() => goTo(user.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}>
-              My account →
-            </button>
+          {page === 'admin' ? (
+            <span className="flow-header-logo">English with Dogukan</span>
+          ) : (
+            <>
+              <button className="back-link" onClick={() => goTo('landing')}>
+                ← English with Dogukan
+              </button>
+              {user && (
+                <button className="back-link"
+                  onClick={() => goTo(user.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}>
+                  My account →
+                </button>
+              )}
+            </>
           )}
         </div>
         <div className="flow-content">
