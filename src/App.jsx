@@ -3295,149 +3295,23 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
         )}
       </div>
 
-      {/* ── Title + instruction ── */}
-      <div className="admin-assign-form" style={{ marginBottom: '1.25rem' }}>
-        <div className="form-field">
-          <label>Title *</label>
-          <input type="text" placeholder="e.g. Jason's Family — Verbs: have / go / live / like"
-            value={title} onChange={e => setTitle(e.target.value)} />
-        </div>
-        <div className="form-field">
-          <label>Instruction <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(shown to student)</span></label>
-          <input type="text" placeholder="e.g. Complete the sentences about Jason."
-            value={description} onChange={e => setDescription(e.target.value)} />
-        </div>
-      </div>
-
-      {/* ── Context material ── */}
-      <div className="builder-section">
-        <div className="builder-section-header">
-          <div>
-            <h4 className="builder-section-title">📖 Context material</h4>
-            <p className="builder-section-sub">Reading text, vocab list or images from the book — your student sees these above the exercise</p>
-          </div>
-          {contextImages.length < 3 && (
-            <button className="builder-upload-btn"
-              onClick={() => contextFileRef.current?.click()}>
-              + Upload photo {contextImages.length > 0 ? `(${contextImages.length}/3)` : '(up to 3)'}
-            </button>
-          )}
-        </div>
-        <input ref={contextFileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-          onChange={handleContextImages} />
-        {contextImages.length > 0 && (
-          <div className="builder-thumbs">
-            {contextImages.map((src, i) => (
-              <div key={i} className="builder-thumb">
-                <img src={src} alt={`Context ${i + 1}`} />
-                <button className="builder-thumb-remove"
-                  onClick={() => setContextImages(p => p.filter((_, j) => j !== i))}>✕</button>
-              </div>
+      {/* ── 1. Exercise type (for exercise stages) ── */}
+      {(!stageType || stageTypeDef.hasQuestions) && (
+        <div className="builder-section">
+          <h4 className="builder-section-title">✏️ Exercise type</h4>
+          <div className="builder-type-pills">
+            {BUILDER_TYPES.map(t => (
+              <button key={t.value}
+                className={`builder-type-pill ${selType === t.value ? 'active' : ''}`}
+                onClick={() => selectType(t.value)}>
+                {t.icon} {t.label}
+              </button>
             ))}
           </div>
-        )}
-        {/* ── Audio link ── */}
-        <div className="form-field" style={{ marginTop: '1rem' }}>
-          <label>🎧 Audio / video link <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — YouTube, SoundCloud, etc.)</span></label>
-          <input type="url" placeholder="https://youtube.com/…"
-            value={audioUrl} onChange={e => setAudioUrl(e.target.value)} />
-          <p className="builder-section-sub" style={{ marginTop: '0.25rem' }}>
-            Students see a "Listen first" link above the exercise.
-          </p>
         </div>
-        {/* ── Reading text ── */}
-        <div className="form-field" style={{ marginTop: '0.75rem' }}>
-          <label>📖 Reading text <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — shown above exercise)</span></label>
-          <textarea className="writing-input" rows={5}
-            placeholder="Paste or type a reading passage here. Students read it before answering the questions."
-            value={contextText} onChange={e => setContextText(e.target.value)} />
-        </div>
-      </div>
-
-      {/* ── Exercise type + Questions (only for stages with questions) ── */}
-      {(!stageType || stageTypeDef.hasQuestions) && (
-        <>
-          <div className="builder-section">
-            <h4 className="builder-section-title">✏️ Exercise type</h4>
-            <div className="builder-type-pills">
-              {BUILDER_TYPES.map(t => (
-                <button key={t.value}
-                  className={`builder-type-pill ${selType === t.value ? 'active' : ''}`}
-                  onClick={() => selectType(t.value)}>
-                  {t.icon} {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Verbal activity note (listening / viewing) ── */}
-          {(selType === 'listening' || selType === 'viewing') && (
-            <div className="builder-section">
-              <div className="verbal-activity-note" style={{ margin: 0 }}>
-                {selType === 'listening' ? '🎧' : '🎥'}
-                <span>
-                  {selType === 'listening'
-                    ? 'Students will listen and discuss verbally with you. No written answers required — just add the audio link and any instructions above.'
-                    : 'Students will watch and discuss verbally with you. No written answers required — just add the video link and any instructions above.'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* ── Questions ── */}
-          {selType && selType !== 'listening' && selType !== 'viewing' && (
-            <div className="builder-section">
-              <div className="builder-section-header">
-                <h4 className="builder-section-title">❓ Questions</h4>
-                <button className="builder-ai-btn"
-                  onClick={() => exerciseFileRef.current?.click()}
-                  disabled={photoLoading}>
-                  {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
-                </button>
-              </div>
-              <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={handleExercisePhoto} />
-              {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
-
-              {/* ── OCR review: edit raw text before converting ── */}
-              {ocrDraft !== null && (
-                <div className="ocr-review-box">
-                  <p className="ocr-review-label">
-                    📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
-                  </p>
-                  <textarea
-                    className="ocr-review-textarea"
-                    rows={10}
-                    value={ocrDraft}
-                    onChange={e => setOcrDraft(e.target.value)}
-                    spellCheck={false}
-                  />
-                  <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
-                    <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
-                      onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
-                      ✓ Create questions from this text
-                    </button>
-                    <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
-                      onClick={() => setOcrDraft(null)}>Discard</button>
-                  </div>
-                </div>
-              )}
-
-              <div className="builder-questions">
-                {questions.map((q, idx) => (
-                  <BuilderQuestion key={q.tempId} idx={idx} question={q}
-                    onChange={(fld, val) => updateQ(q.tempId, fld, val)}
-                    onRemove={() => removeQ(q.tempId)}
-                    canRemove={questions.length > 1} />
-                ))}
-              </div>
-              <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
-            </div>
-          )}
-        </>
       )}
 
-      {/* ── Estimated time (admin-only) ── */}
+      {/* ── 2. Estimated time (admin-only) ── */}
       {(stageTypeDef.hasQuestions ? selType : true) && (
         <div className="builder-section">
           <h4 className="builder-section-title">⏱ Estimated time <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}>(only you can see this)</span></h4>
@@ -3466,7 +3340,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
         </div>
       )}
 
-      {/* ── Labels ── */}
+      {/* ── 3. Labels ── */}
       <div className="builder-section">
         <div className="builder-section-header">
           <div>
@@ -3519,6 +3393,130 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
           </p>
         )}
       </div>
+
+      {/* ── 4. Title + instruction ── */}
+      <div className="admin-assign-form" style={{ marginBottom: '1.25rem' }}>
+        <div className="form-field">
+          <label>Title *</label>
+          <input type="text" placeholder="e.g. Jason's Family — Verbs: have / go / live / like"
+            value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+        <div className="form-field">
+          <label>Instruction <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(shown to student)</span></label>
+          <input type="text" placeholder="e.g. Complete the sentences about Jason."
+            value={description} onChange={e => setDescription(e.target.value)} />
+        </div>
+      </div>
+
+      {/* ── 5. Context material ── */}
+      <div className="builder-section">
+        <div className="builder-section-header">
+          <div>
+            <h4 className="builder-section-title">📖 Context material</h4>
+            <p className="builder-section-sub">Reading text, vocab list or images from the book — your student sees these above the exercise</p>
+          </div>
+          {contextImages.length < 3 && (
+            <button className="builder-upload-btn"
+              onClick={() => contextFileRef.current?.click()}>
+              + Upload photo {contextImages.length > 0 ? `(${contextImages.length}/3)` : '(up to 3)'}
+            </button>
+          )}
+        </div>
+        <input ref={contextFileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+          onChange={handleContextImages} />
+        {contextImages.length > 0 && (
+          <div className="builder-thumbs">
+            {contextImages.map((src, i) => (
+              <div key={i} className="builder-thumb">
+                <img src={src} alt={`Context ${i + 1}`} />
+                <button className="builder-thumb-remove"
+                  onClick={() => setContextImages(p => p.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="form-field" style={{ marginTop: '1rem' }}>
+          <label>🎧 Audio / video link <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — YouTube, SoundCloud, etc.)</span></label>
+          <input type="url" placeholder="https://youtube.com/…"
+            value={audioUrl} onChange={e => setAudioUrl(e.target.value)} />
+          <p className="builder-section-sub" style={{ marginTop: '0.25rem' }}>
+            Students see a "Listen first" link above the exercise.
+          </p>
+        </div>
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>📖 Reading text <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — shown above exercise)</span></label>
+          <textarea className="writing-input" rows={5}
+            placeholder="Paste or type a reading passage here. Students read it before answering the questions."
+            value={contextText} onChange={e => setContextText(e.target.value)} />
+        </div>
+      </div>
+
+      {/* ── 6. Verbal activity note or Questions ── */}
+      {(!stageType || stageTypeDef.hasQuestions) && (
+        <>
+          {(selType === 'listening' || selType === 'viewing') && (
+            <div className="builder-section">
+              <div className="verbal-activity-note" style={{ margin: 0 }}>
+                {selType === 'listening' ? '🎧' : '🎥'}
+                <span>
+                  {selType === 'listening'
+                    ? 'Students will listen and discuss verbally with you. No written answers required — just add the audio link and any instructions above.'
+                    : 'Students will watch and discuss verbally with you. No written answers required — just add the video link and any instructions above.'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {selType && selType !== 'listening' && selType !== 'viewing' && (
+            <div className="builder-section">
+              <div className="builder-section-header">
+                <h4 className="builder-section-title">❓ Questions</h4>
+                <button className="builder-ai-btn"
+                  onClick={() => exerciseFileRef.current?.click()}
+                  disabled={photoLoading}>
+                  {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
+                </button>
+              </div>
+              <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={handleExercisePhoto} />
+              {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
+
+              {ocrDraft !== null && (
+                <div className="ocr-review-box">
+                  <p className="ocr-review-label">
+                    📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
+                  </p>
+                  <textarea
+                    className="ocr-review-textarea"
+                    rows={10}
+                    value={ocrDraft}
+                    onChange={e => setOcrDraft(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
+                    <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                      onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
+                      ✓ Create questions from this text
+                    </button>
+                    <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                      onClick={() => setOcrDraft(null)}>Discard</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="builder-questions">
+                {questions.map((q, idx) => (
+                  <BuilderQuestion key={q.tempId} idx={idx} question={q}
+                    onChange={(fld, val) => updateQ(q.tempId, fld, val)}
+                    onRemove={() => removeQ(q.tempId)}
+                    canRemove={questions.length > 1} />
+                ))}
+              </div>
+              <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+            </div>
+          )}
+        </>
+      )}
 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
