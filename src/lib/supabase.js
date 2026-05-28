@@ -713,6 +713,18 @@ export async function deleteBook(bookId) {
   return true
 }
 
+export async function updateBook(bookId, title) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('books')
+    .update({ title: title.trim() })
+    .eq('id', bookId)
+    .select()
+    .single()
+  if (error) { console.error('[supabase] updateBook:', error); return null }
+  return data
+}
+
 /** Permanently delete a lesson plan (cascades to lesson_stages via FK). */
 export async function deleteLessonPlan(planId) {
   if (!supabase) return false

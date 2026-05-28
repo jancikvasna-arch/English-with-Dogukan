@@ -8,7 +8,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   saveAnswerReviews, saveExerciseFeedback,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLabels, createLabel, deleteLabel, setExerciseLabels,
-  fetchAllBooks, createBook, deleteBook,
+  fetchAllBooks, createBook, deleteBook, updateBook,
   fetchAllLessonPlans, createLessonPlan, updateLessonPlan, deleteLessonPlan,
   createLessonPlanWithStages, updateLessonPlanWithStages, assignLessonPlan,
   fetchMyProfile, updateMyName,
@@ -559,7 +559,7 @@ function parseOcrIntoQuestions(rawText, type) {
 
 // ─── Shared: flow step indicator ──────────────────────────────
 function FlowSteps({ current }) {
-  const steps = ['About you', 'Placement test', 'Book your lesson']
+  const steps = ['Free consultation', 'Placement test', 'First lesson']
   return (
     <div className="flow-steps">
       {steps.map((s, i) => {
@@ -1584,7 +1584,7 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     return (
       <StudentSubmissionReview
         assignment={viewingSubmission.assignment}
-        questions={viewingSubmission.questions}
+        questions={viewingSubmission.questions ?? []}
         answerMap={viewingSubmission.answerMap}
         onBack={() => setViewingSubmission(null)}
       />
@@ -1595,7 +1595,7 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     return (
       <ExercisePlayer
         assignment={activeAssignment.assignment}
-        questions={activeAssignment.questions}
+        questions={activeAssignment.questions ?? []}
         studentId={user.id}
         onBack={() => setActiveAssignment(null)}
         onSubmitted={(id) => {
@@ -3412,6 +3412,15 @@ function AdminLessonPlans({ adminUserId }) {
   const [editingPlan,    setEditingPlan]    = useState(null)
   const [deletingPlanId, setDeletingPlanId] = useState(null)
 
+  // Assign plan to student
+  const [assigningPlanId, setAssigningPlanId] = useState(null)
+  const [apStudentId,     setApStudentId]     = useState('')
+  const [apMode,          setApMode]          = useState('homework')
+  const [apNote,          setApNote]          = useState('')
+  const [apSaving,        setApSaving]        = useState(false)
+  const [apError,         setApError]         = useState(null)
+  const [apDone,          setApDone]          = useState(false)
+
   useEffect(() => {
     setLoading(true)
     Promise.all([
@@ -3430,6 +3439,17 @@ function AdminLessonPlans({ adminUserId }) {
 
   const reloadAll = () => Promise.all([fetchAllExercises(), fetchAllLessonPlans()])
     .then(([exs, pls]) => { setExercises(exs); setPlans(pls) })
+
+  const handleAssignPlan = async (planId) => {
+    if (!apStudentId) { setApError('Please select a student.'); return }
+    setApSaving(true); setApError(null)
+    const ok = await assignLessonPlan({ planId, studentId: apStudentId, assignedBy: adminUserId, mode: apMode, note: apNote || null })
+    setApSaving(false)
+    if (ok) {
+      setApDone(true)
+      setTimeout(() => { setAssigningPlanId(null); setApDone(false); setApStudentId(''); setApNote('') }, 2000)
+    } else { setApError('Assignment failed — this plan may have no exercises, or student already has them.') }
+  }
 
   // Push a history entry when entering create/edit so the browser ← button
   // returns to the plan list rather than leaving the admin panel entirely.
@@ -3472,6 +3492,54 @@ function AdminLessonPlans({ adminUserId }) {
         <h3 style={{ margin: 0 }}>Lesson Plans ({plans.length})</h3>
         <button className="btn-gold" onClick={() => setView('create')}>+ Create plan</button>
       </div>
+
+      {/* Assign-to-student panel */}
+      {assigningPlanId && (() => {
+        const plan = plans.find(p => p.id === assigningPlanId)
+        return (
+          <div className="admin-assign-form" style={{ marginBottom: '1rem' }}>
+            <p style={{ margin: '0 0 0.75rem', fontWeight: 600 }}>Assign: {plan?.title}</p>
+            <div className="form-field">
+              <label>Student</label>
+              <select value={apStudentId} onChange={e => setApStudentId(e.target.value)}>
+                <option value="">Select student…</option>
+                {authStudents.filter(s => s.access_level !== 'pending').map(s => (
+                  <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label>Mode</label>
+              <div className="radio-group" style={{ flexDirection: 'row', gap: '0.5rem' }}>
+                {['homework', 'in_class'].map(m => (
+                  <button key={m} type="button"
+                    className={`radio-option ${apMode === m ? 'selected' : ''}`}
+                    style={{ flex: 1, justifyContent: 'center' }} onClick={() => setApMode(m)}>
+                    {m === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="form-field">
+              <label>Note <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input type="text" placeholder="e.g. Complete before Friday's lesson"
+                value={apNote} onChange={e => setApNote(e.target.value)} />
+            </div>
+            {apError && <div className="auth-error">{apError}</div>}
+            {apDone && (
+              <div style={{ color: '#22c55e', padding: '0.5rem 0.75rem', background: 'rgba(34,197,94,0.12)',
+                borderRadius: '6px', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                ✓ Plan assigned to student successfully
+              </div>
+            )}
+            <button className="btn-gold btn-full" disabled={apSaving || !apStudentId || apDone}
+              onClick={() => handleAssignPlan(assigningPlanId)}>
+              {apSaving ? 'Assigning…' : 'Assign all exercises to student →'}
+            </button>
+          </div>
+        )
+      })()}
+
       {loading ? <p>Loading…</p> : plans.length === 0 ? (
         <div className="dashboard-empty"><p>No lesson plans yet.</p></div>
       ) : (
@@ -3520,6 +3588,14 @@ function AdminLessonPlans({ adminUserId }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                  <button className="btn-ghost"
+                    style={{ fontSize: '0.85rem', color: assigningPlanId === p.id ? undefined : 'var(--gold)', borderColor: assigningPlanId === p.id ? undefined : 'var(--gold)' }}
+                    onClick={() => {
+                      setAssigningPlanId(p.id === assigningPlanId ? null : p.id)
+                      setApStudentId(''); setApMode('homework'); setApNote(''); setApError(null); setApDone(false)
+                    }}>
+                    {assigningPlanId === p.id ? '✕ Cancel' : 'Assign →'}
+                  </button>
                   <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
                     onClick={() => { setEditingPlan(p); setView('edit') }}>Edit</button>
                   {deletingPlanId === p.id ? (
@@ -5856,6 +5932,121 @@ function AdminStudentLessons({ student, adminUserId }) {
   )
 }
 
+// ─── AdminBooks ───────────────────────────────────────────────
+function AdminBooks({ adminUserId }) {
+  const [books,        setBooks]        = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [newTitle,     setNewTitle]     = useState('')
+  const [saving,       setSaving]       = useState(false)
+  const [editingId,    setEditingId]    = useState(null)
+  const [editingTitle, setEditingTitle] = useState('')
+  const [editSaving,   setEditSaving]   = useState(false)
+  const [deletingId,   setDeletingId]   = useState(null)
+
+  useEffect(() => {
+    fetchAllBooks().then(bks => { setBooks(bks); setLoading(false) })
+  }, [])
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    if (!newTitle.trim()) return
+    setSaving(true)
+    const bk = await createBook(newTitle.trim(), adminUserId)
+    setSaving(false)
+    if (bk) { setBooks(p => [...p, bk].sort((a, b) => a.title.localeCompare(b.title))); setNewTitle('') }
+  }
+
+  const startEdit = (bk) => { setEditingId(bk.id); setEditingTitle(bk.title) }
+
+  const handleEdit = async (id) => {
+    if (!editingTitle.trim()) return
+    setEditSaving(true)
+    const bk = await updateBook(id, editingTitle.trim())
+    setEditSaving(false)
+    if (bk) {
+      setBooks(p => p.map(b => b.id === id ? bk : b).sort((a, b) => a.title.localeCompare(b.title)))
+      setEditingId(null); setEditingTitle('')
+    }
+  }
+
+  const handleDelete = async (id) => {
+    const ok = await deleteBook(id)
+    if (ok) { setBooks(p => p.filter(b => b.id !== id)); setDeletingId(null) }
+  }
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>Books ({books.length})</h3>
+      </div>
+
+      <form onSubmit={handleCreate} style={{
+        display: 'flex', gap: '0.5rem', marginBottom: '1.5rem',
+        padding: '0.75rem 1rem', background: 'var(--bg-card)',
+        borderRadius: '8px', border: '1px solid var(--border)',
+      }}>
+        <input type="text" placeholder="New book title…" value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+          style={{ flex: 1, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', fontSize: '0.9rem', color: 'var(--text)' }} />
+        <button type="submit" className="btn-gold" disabled={saving || !newTitle.trim()}>
+          {saving ? 'Adding…' : '+ Add book'}
+        </button>
+      </form>
+
+      {loading ? <div className="dashboard-loading">Loading…</div> : books.length === 0 ? (
+        <div className="dashboard-empty">
+          <p>No books yet. Add your first textbook above.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          {books.map(bk => (
+            <div key={bk.id} className="admin-student-row"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {editingId === bk.id ? (
+                <>
+                  <input type="text" value={editingTitle} autoFocus
+                    onChange={e => setEditingTitle(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleEdit(bk.id)
+                      if (e.key === 'Escape') { setEditingId(null); setEditingTitle('') }
+                    }}
+                    style={{ flex: 1, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', fontSize: '0.9rem', color: 'var(--text)' }} />
+                  <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
+                    onClick={() => handleEdit(bk.id)} disabled={editSaving || !editingTitle.trim()}>
+                    {editSaving ? '…' : 'Save'}
+                  </button>
+                  <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
+                    onClick={() => { setEditingId(null); setEditingTitle('') }}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  <span style={{ flex: 1, fontWeight: 500 }}>📚 {bk.title}</span>
+                  <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                    onClick={() => startEdit(bk)}>Rename</button>
+                  {deletingId === bk.id ? (
+                    <>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                        onClick={() => handleDelete(bk.id)}>Confirm delete</button>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => setDeletingId(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="btn-ghost"
+                      style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
+                      onClick={() => setDeletingId(bk.id)}>Delete</button>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────
 function AdminPanel({ user, onSignOut }) {
   const [adminEmail,    setAdminEmail]    = useState('')
@@ -6231,6 +6422,10 @@ function AdminPanel({ user, onSignOut }) {
           onClick={() => setAdminTab('plans')}>
           🗂 Lesson Plans
         </button>
+        <button className={`admin-tab ${adminTab === 'books' ? 'active' : ''}`}
+          onClick={() => setAdminTab('books')}>
+          📖 Books
+        </button>
       </div>
 
       {/* Lesson Stages tab */}
@@ -6238,6 +6433,9 @@ function AdminPanel({ user, onSignOut }) {
 
       {/* Lesson Plans tab */}
       {adminTab === 'plans' && <AdminLessonPlans adminUserId={user?.id} />}
+
+      {/* Books tab */}
+      {adminTab === 'books' && <AdminBooks adminUserId={user?.id} />}
 
       {/* Students tab */}
       {adminTab === 'students' && (

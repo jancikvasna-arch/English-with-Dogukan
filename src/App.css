@@ -894,7 +894,8 @@ a { text-decoration: none; }
 }
 .flow-step--active .flow-step-num { background: var(--gold); color: #FFFFFF; }
 .flow-step--done .flow-step-num { background: rgba(0, 102, 153,0.2); color: var(--gold); }
-.flow-step-sep { margin-left: auto; color: var(--border); font-size: 0.9rem; }
+.flow-step-sep   { margin-left: auto; color: var(--border); font-size: 0.9rem; }
+.flow-step-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ─── Radio group (questionnaire) ───────────────────────────── */
 .radio-group {
