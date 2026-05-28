@@ -1804,6 +1804,70 @@ a { text-decoration: none; }
   display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;
 }
 
+/* ─── Inline fill-blank ──────────────────────────────────────── */
+.inline-fill-text {
+  font-size: 1rem;
+  line-height: 2.4;
+  color: var(--text);
+  padding: 0.25rem 0;
+}
+.inline-fill-input {
+  display: inline-block;
+  min-width: 90px;
+  max-width: 180px;
+  padding: 0.1rem 0.35rem 0.15rem;
+  margin: 0 0.15rem;
+  border: none;
+  border-bottom: 2px solid var(--gold);
+  background: transparent;
+  color: var(--gold-light);
+  font-size: 1rem;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+  vertical-align: baseline;
+  transition: border-color 0.15s, background 0.15s;
+}
+.inline-fill-input:focus {
+  border-bottom-color: var(--gold-light);
+  background: rgba(212, 168, 83, 0.07);
+  border-radius: 3px 3px 0 0;
+}
+.inline-fill-input:disabled {
+  cursor: default;
+  color: var(--text);
+}
+.inline-fill-input--correct {
+  border-bottom-color: #4ade80;
+  color: #4ade80;
+}
+.inline-fill-input--wrong {
+  border-bottom-color: #f87171;
+  color: #f87171;
+}
+
+/* Per-blank answer rows in builder */
+.fill-blank-answer-row {
+  display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem;
+}
+.fill-blank-answer-row input {
+  flex: 1;
+}
+.fill-blank-num {
+  font-size: 0.78rem; color: var(--text-muted);
+  white-space: nowrap; min-width: 52px;
+}
+
+/* Preview box in builder */
+.fill-blank-preview {
+  border: 1px solid var(--border); border-radius: 0.5rem;
+  padding: 0.7rem 1rem; background: rgba(255,255,255,0.02);
+  margin-top: 0.5rem;
+}
+.fill-blank-preview-label {
+  display: block; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.35rem;
+}
+
 /* ─── Exercise context: audio + reading text ─────────────────── */
 .exercise-audio-block {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;

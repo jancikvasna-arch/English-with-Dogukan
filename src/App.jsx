@@ -249,8 +249,10 @@ export default function App() {
   }
 
   const goBack = () => {
-    if (pageHistory.length === 0) { goTo('landing'); return }
+    if (pageHistory.length === 0) return  // nowhere to go, stay put
     const prev = pageHistory[pageHistory.length - 1]
+    // Never send a logged-in user back to the marketing/landing page — looks like logout
+    if (user && prev === 'landing') return
     setPageHistory(h => h.slice(0, -1))
     setPage(prev)
     window.scrollTo(0, 0)
@@ -1989,6 +1991,78 @@ function WordChoiceQuestion({ template, answer, onChange, disabled = false }) {
   )
 }
 
+// ─── Fill-blank helpers ───────────────────────────────────────
+// Parse student answer: JSON {"0":"word","1":"word2"} or legacy plain string
+function parseFillBlankAnswer(str) {
+  if (!str) return {}
+  try {
+    const p = JSON.parse(str)
+    if (typeof p === 'object' && !Array.isArray(p)) return p
+    if (Array.isArray(p)) return Object.fromEntries(p.map((v, i) => [i, v]))
+  } catch {}
+  return { 0: str }
+}
+// Parse correct answer: JSON ["ans1","ans2"] or legacy plain string
+function parseFillBlankCorrect(str) {
+  if (!str) return []
+  try {
+    const p = JSON.parse(str)
+    if (Array.isArray(p)) return p
+    if (typeof p === 'object') return Object.values(p)
+  } catch {}
+  return [str]
+}
+
+// ─── InlineFillBlank ─────────────────────────────────────────
+// Renders a fill-blank prompt with inline <input> fields for each ___.
+// answer   : JSON string {"0":"word","1":"word2"} or legacy plain string
+// onChange : (newJsonStr) => void
+// disabled : read-only mode
+// checked  : show correct/wrong colouring (demo mode)
+// correctAnswers : string[] for colouring when checked=true
+function InlineFillBlank({ prompt, answer, onChange, disabled = false, checked = false, correctAnswers = null }) {
+  const parts = (prompt || '').split('___')  // N+1 text segments, N blanks
+
+  const current = parseFillBlankAnswer(answer || '')
+
+  const setBlank = (idx, val) => {
+    onChange(JSON.stringify({ ...current, [idx]: val }))
+  }
+
+  // Render text segment preserving line breaks
+  const renderText = (text) =>
+    text.split('\n').flatMap((line, i) =>
+      i === 0 ? [line] : [<br key={i} />, line]
+    )
+
+  return (
+    <div className="inline-fill-text">
+      {parts.map((part, i) => {
+        const isLast = i === parts.length - 1
+        let inputClass = 'inline-fill-input'
+        if (checked && correctAnswers && !isLast) {
+          const ok = (current[i] || '').trim().toLowerCase() === (correctAnswers[i] || '').trim().toLowerCase()
+          inputClass += ok ? ' inline-fill-input--correct' : ' inline-fill-input--wrong'
+        }
+        return (
+          <span key={i}>
+            {renderText(part)}
+            {!isLast && (
+              <input
+                type="text"
+                className={inputClass}
+                disabled={disabled}
+                value={current[i] || ''}
+                onChange={e => !disabled && setBlank(i, e.target.value)}
+              />
+            )}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── ExercisePlayer (student) ─────────────────────────────────
 function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted }) {
   const ex = assignment.exercises
@@ -2017,6 +2091,12 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
         if (!interact.length) return true
         return interact.every(t => (ans[t.index] ?? '').toString().trim().length > 0)
       } catch { return false }
+    }
+    if (q.type === 'fill_blank') {
+      const blanks = (q.prompt || '').split('___').length - 1
+      if (blanks === 0) return true
+      const ans = parseFillBlankAnswer(answers[q.id] || '')
+      return Array.from({ length: blanks }, (_, i) => (ans[i] || '').trim().length > 0).every(Boolean)
     }
     return (answers[q.id] ?? '').trim().length > 0
   })
@@ -2098,7 +2178,7 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
                  : 'Written answer'}
               </span>
             </div>
-            {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
+            {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
             {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
             {q.type === 'multiple_choice' && (
@@ -2112,10 +2192,10 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
               </div>
             )}
             {q.type === 'fill_blank' && (
-              <input type="text" className="fill-input"
-                placeholder="Type your answer…"
-                value={answers[q.id] || ''}
-                onChange={e => setAnswer(q.id, e.target.value)}
+              <InlineFillBlank
+                prompt={q.prompt}
+                answer={answers[q.id] || null}
+                onChange={val => setAnswer(q.id, val)}
               />
             )}
             {q.type === 'true_false' && (
@@ -2273,8 +2353,15 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
     if (!ans) return null
     if (q.type === 'multiple_choice' || q.type === 'true_false')
       return ans === (q.correct_answer ?? '').trim() ? true : false
-    if (q.type === 'fill_blank')
-      return ans.toLowerCase() === (q.correct_answer ?? '').trim().toLowerCase() ? true : false
+    if (q.type === 'fill_blank') {
+      const blanks = (q.prompt || '').split('___').length - 1
+      if (blanks === 0) return null
+      const studentAns = parseFillBlankAnswer(ans)
+      const correctAns = parseFillBlankCorrect(q.correct_answer ?? '')
+      return Array.from({ length: blanks }, (_, i) =>
+        (studentAns[i] || '').trim().toLowerCase() === (correctAns[i] || '').trim().toLowerCase()
+      ).every(Boolean)
+    }
     if (q.type === 'matching') {
       try { const m = JSON.parse(ans); return (q.options||[]).every(p => m[p.left] === p.right) }
       catch { return null }
@@ -2342,7 +2429,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                 {checked && result === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
                 {checked && result === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
-              {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
               {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
               {q.type === 'multiple_choice' && (
@@ -2354,8 +2441,13 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                 </div>
               )}
               {q.type === 'fill_blank' && (
-                <input type="text" className="fill-input" placeholder="Type your answer…"
-                  value={answers[q.id]||''} onChange={e => setAnswer(q.id, e.target.value)} />
+                <InlineFillBlank
+                  prompt={q.prompt}
+                  answer={answers[q.id] || null}
+                  onChange={val => setAnswer(q.id, val)}
+                  checked={checked}
+                  correctAnswers={checked ? parseFillBlankCorrect(q.correct_answer ?? '') : null}
+                />
               )}
               {q.type === 'true_false' && (
                 <div className="options-list" style={{ flexDirection:'row', gap:'0.75rem' }}>
@@ -2386,9 +2478,19 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
               )}
 
               {/* Reveal correct answer after Check — word_choice has no auto-answer */}
-              {checked && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && (
+              {checked && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && q.type !== 'fill_blank' && (
                 <div className="demo-correct-answer">✓ Answer: <strong>{q.correct_answer}</strong></div>
               )}
+              {checked && q.type === 'fill_blank' && q.correct_answer && (() => {
+                const correct = parseFillBlankCorrect(q.correct_answer)
+                return (
+                  <div className="demo-correct-answer">
+                    ✓ Answers: {correct.map((a, i) => (
+                      <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
+                    ))}
+                  </div>
+                )
+              })()}
               {checked && q.type === 'matching' && q.options && (
                 <div className="demo-correct-answer">
                   ✓ Pairs: {(q.options||[]).map(p => `${p.left} → ${p.right}`).join(' · ')}
@@ -2490,13 +2592,24 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
                   {isCorrect ? '✓ Correct' : '✗ Incorrect'}
                 </span>}
               </div>
-              {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
 
               <div className="submission-answer-block">
                 <span className="review-label">Your answer:</span>
                 {q.type === 'word_choice' ? (
                   sa?.answer
                     ? <WordChoiceQuestion template={q.prompt} answer={sa.answer} onChange={() => {}} disabled={true} />
+                    : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                ) : q.type === 'fill_blank' ? (
+                  sa?.answer
+                    ? <InlineFillBlank
+                        prompt={q.prompt}
+                        answer={sa.answer}
+                        onChange={() => {}}
+                        disabled={true}
+                        checked={hasReview}
+                        correctAnswers={hasReview ? parseFillBlankCorrect(q.correct_answer ?? '') : null}
+                      />
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'matching' && sa?.answer ? (
                   <div className="review-matching-pairs">
@@ -2515,9 +2628,17 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
                   </div>
                 )}
 
-                {/* Show correct answer when marked wrong (not for word_choice — no auto-answer) */}
-                {hasReview && !isCorrect && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && (
+                {/* Show correct answer when marked wrong */}
+                {hasReview && !isCorrect && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && q.type !== 'fill_blank' && (
                   <div className="demo-correct-answer">✓ Correct answer: <strong>{q.correct_answer}</strong></div>
+                )}
+                {hasReview && !isCorrect && q.type === 'fill_blank' && q.correct_answer && (
+                  <div className="demo-correct-answer">
+                    ✓ Correct answers:{' '}
+                    {parseFillBlankCorrect(q.correct_answer).map((a, i) => (
+                      <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
+                    ))}
+                  </div>
                 )}
                 {hasReview && !isCorrect && q.type === 'matching' && q.options && (
                   <div className="demo-correct-answer">
@@ -3708,6 +3829,29 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
 function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
   const { type, prompt, options, correct_answer, hint } = question
 
+  // fill_blank: count blanks and parse stored correct answers
+  const fbBlankCount = type === 'fill_blank' ? (prompt || '').split('___').length - 1 : 0
+  const fbAnswers = (() => {
+    if (type !== 'fill_blank') return []
+    if (!correct_answer) return Array(Math.max(fbBlankCount, 1)).fill('')
+    try {
+      const p = JSON.parse(correct_answer)
+      if (Array.isArray(p)) {
+        const arr = [...p]
+        while (arr.length < fbBlankCount) arr.push('')
+        return arr
+      }
+    } catch {}
+    // Legacy plain string → slot 0
+    return [correct_answer, ...Array(Math.max(0, fbBlankCount - 1)).fill('')]
+  })()
+  const updateFbAnswer = (i, val) => {
+    const next = fbBlankCount > 0
+      ? Array.from({ length: fbBlankCount }, (_, j) => j === i ? val : (fbAnswers[j] || ''))
+      : [val]
+    onChange('correct_answer', JSON.stringify(next))
+  }
+
   return (
     <div className="builder-question-card">
       <div className="builder-q-header">
@@ -3723,23 +3867,42 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
         {canRemove && <button className="builder-q-remove" onClick={onRemove}>✕</button>}
       </div>
 
-      {type !== 'word_choice' && (
+      {type !== 'word_choice' && type !== 'fill_blank' && (
         <div className="form-field">
           <label>
-            {type === 'fill_blank' ? 'Sentence (use ___ for each blank)'
-             : type === 'matching' ? 'Instruction (e.g. "Match the words to their meanings")'
+            {type === 'matching' ? 'Instruction (e.g. "Match the words to their meanings")'
              : 'Question'}
           </label>
           <input type="text"
             placeholder={
-              type === 'fill_blank'        ? 'e.g. She ___ from Spain.'
-              : type === 'multiple_choice' ? 'e.g. Which sentence is correct?'
-              : type === 'true_false'      ? 'e.g. "Good morning" is used in the evening.'
+              type === 'multiple_choice' ? 'e.g. Which sentence is correct?'
+              : type === 'true_false'    ? 'e.g. "Good morning" is used in the evening.'
               : 'e.g. Match the words to their definitions.'
             }
             value={prompt}
             onChange={e => onChange('prompt', e.target.value)}
           />
+        </div>
+      )}
+
+      {type === 'fill_blank' && (
+        <div className="form-field">
+          <label>Conversation / sentence <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(use ___ for each blank)</span></label>
+          <p className="builder-section-sub" style={{ marginBottom: '0.5rem' }}>
+            Type the full text with <code>___</code> where each blank goes. Use new lines for multi-line dialogue.
+          </p>
+          <textarea className="writing-input"
+            rows={Math.max(3, (prompt || '').split('\n').length + 1)}
+            placeholder={"e.g. Hello. My ___ Cathy. What's ___ name?\nD: Dan.\nC: Where ___ you from?"}
+            value={prompt || ''}
+            onChange={e => onChange('prompt', e.target.value)}
+          />
+          {prompt && fbBlankCount > 0 && (
+            <div className="fill-blank-preview">
+              <span className="fill-blank-preview-label">Preview:</span>
+              <InlineFillBlank prompt={prompt} answer={null} onChange={() => {}} disabled={true} />
+            </div>
+          )}
         </div>
       )}
 
@@ -3802,11 +3965,19 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
         </div>
       )}
 
-      {type === 'fill_blank' && (
+      {type === 'fill_blank' && fbBlankCount > 0 && (
         <div className="form-field">
-          <label>Correct answer</label>
-          <input type="text" placeholder="e.g. is  (for multiple blanks, separate with commas)"
-            value={correct_answer || ''} onChange={e => onChange('correct_answer', e.target.value)} />
+          <label>Correct answer{fbBlankCount !== 1 ? 's' : ''} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({fbBlankCount} blank{fbBlankCount !== 1 ? 's' : ''})</span></label>
+          {Array.from({ length: fbBlankCount }, (_, i) => (
+            <div key={i} className="fill-blank-answer-row">
+              <span className="fill-blank-num">Blank {i + 1}</span>
+              <input type="text"
+                placeholder={`Correct answer for blank ${i + 1}`}
+                value={fbAnswers[i] || ''}
+                onChange={e => updateFbAnswer(i, e.target.value)}
+              />
+            </div>
+          ))}
         </div>
       )}
 
@@ -4301,8 +4472,20 @@ function AdminExerciseReview({ details, onBack }) {
     if (!sa?.answer?.trim()) return null
     if (q.type === 'multiple_choice' || q.type === 'true_false')
       return sa.answer.trim() === (q.correct_answer ?? '').trim() ? true : false
-    if (q.type === 'fill_blank')
-      return sa.answer.trim().toLowerCase() === (q.correct_answer ?? '').trim().toLowerCase() ? true : false
+    if (q.type === 'fill_blank') {
+      const blanks = (q.prompt || '').split('___').length - 1
+      if (blanks <= 1) {
+        // Legacy single-blank or plain answer
+        const studentAns = parseFillBlankAnswer(sa.answer.trim())
+        const correctAns = parseFillBlankCorrect(q.correct_answer ?? '')
+        return (studentAns[0] || '').toLowerCase() === (correctAns[0] || '').trim().toLowerCase()
+      }
+      const studentAns = parseFillBlankAnswer(sa.answer.trim())
+      const correctAns = parseFillBlankCorrect(q.correct_answer ?? '')
+      return Array.from({ length: blanks }, (_, i) =>
+        (studentAns[i] || '').toLowerCase() === (correctAns[i] || '').trim().toLowerCase()
+      ).every(Boolean)
+    }
     if (q.type === 'matching') {
       try { const m = JSON.parse(sa.answer); return (q.options||[]).every(p => m[p.left] === p.right) }
       catch { return null }
@@ -4412,14 +4595,25 @@ function AdminExerciseReview({ details, onBack }) {
                 {hasAnswer && correct === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
                 {hasAnswer && correct === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
-              {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
 
               {/* Student's answer */}
               <div className="review-answer-row" style={{ display: 'block' }}>
                 <span className="review-label">Student answered:</span>
                 {q.type === 'word_choice' ? (
                   hasAnswer
-                    ? <WordChoiceQuestion template={q.prompt} answer={sa.answer} onChange={() => {}} disabled={true} />
+                    ? <WordChoiceQuestion template={q.prompt} answer={sa?.answer} onChange={() => {}} disabled={true} />
+                    : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                ) : q.type === 'fill_blank' ? (
+                  hasAnswer
+                    ? <InlineFillBlank
+                        prompt={q.prompt}
+                        answer={sa?.answer}
+                        onChange={() => {}}
+                        disabled={true}
+                        checked={true}
+                        correctAnswers={parseFillBlankCorrect(q.correct_answer ?? '')}
+                      />
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'matching' && hasAnswer ? (
                   <div className="review-matching-pairs">
@@ -4438,9 +4632,17 @@ function AdminExerciseReview({ details, onBack }) {
                     {hasAnswer || <em>No answer given</em>}
                   </div>
                 )}
-                {q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && (
+                {q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && q.type !== 'fill_blank' && (
                   <div className="review-correct-answer">
                     <span className="review-label">Correct answer:</span> {q.correct_answer}
+                  </div>
+                )}
+                {q.type === 'fill_blank' && q.correct_answer && (
+                  <div className="review-correct-answer">
+                    <span className="review-label">Correct answers:</span>{' '}
+                    {parseFillBlankCorrect(q.correct_answer).map((a, i) => (
+                      <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
+                    ))}
                   </div>
                 )}
                 {q.type === 'matching' && q.options && (
