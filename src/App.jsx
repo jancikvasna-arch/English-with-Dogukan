@@ -4,13 +4,16 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
   fetchMyAnswersForAssignment, submitExerciseAnswers,
   fetchAllExercises, fetchStudentProfiles, assignExercise,
-  fetchAllAssignmentsAdmin, fetchStudentAssignmentsAdmin, fetchAssignmentDetails, saveAnswerReviews,
+  fetchAllAssignmentsAdmin, fetchStudentAssignmentsAdmin, fetchAssignmentDetails,
+  saveAnswerReviews, saveExerciseFeedback,
   createExerciseWithQuestions, fetchExerciseWithQuestions, updateExerciseWithQuestions, deleteExercise,
   fetchAllLabels, createLabel, deleteLabel, setExerciseLabels,
   fetchAllBooks, createBook, deleteBook,
   fetchAllLessonPlans, createLessonPlan, updateLessonPlan, deleteLessonPlan,
   createLessonPlanWithStages, updateLessonPlanWithStages, assignLessonPlan,
-  fetchMyProfile, updateMyName, updateStudentAccessLevel, fetchStudentsAdmin,
+  fetchMyProfile, updateMyName,
+  updateStudentAccessLevel, updateStudentEnglishLevel,
+  fetchStudentsAdmin, fetchManualStudents, createManualStudent,
   fetchStudentLessons, createLesson, updateLesson, fetchMyLessons, submitLessonFeedback,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER } from './content'
@@ -499,7 +502,8 @@ async function detectImageBlanks(dataUrl) {
   await worker.terminate()
 
   // Words that look like blank underlines: 2+ underscores, dashes, em-dashes, equals
-  const BLANK_RE = /^[_\-—=]{2,}$/
+  // Match underscores/dashes (lines), dots/middle-dots (dotted blanks), or mixed
+  const BLANK_RE = /^[_\-—=]{1,}$|^[.·•]{2,}$|^[_\-]{1,}[\s_\-]*[_\-]{1,}$/
   return (data.words || [])
     .filter(w => BLANK_RE.test(w.text.trim()))
     .map(w => ({
@@ -2578,31 +2582,8 @@ function MatchingQuestion({ pairs, answer, onChange }) {
 // ─── ExerciseDemoPlayer (admin — interactive preview) ─────────
 function ExerciseDemoPlayer({ exercise, questions, onBack }) {
   const [answers, setAnswers] = useState({})
-  const [checked, setChecked] = useState(false)
 
   const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
-
-  const getResult = (q) => {
-    if (!checked) return null
-    const ans = (answers[q.id] ?? '').toString().trim()
-    if (!ans) return null
-    if (q.type === 'multiple_choice' || q.type === 'true_false')
-      return ans === (q.correct_answer ?? '').trim() ? true : false
-    if (q.type === 'fill_blank') {
-      const blanks = (q.prompt || '').split('___').length - 1
-      if (blanks === 0) return null
-      const studentAns = parseFillBlankAnswer(ans)
-      const correctAns = parseFillBlankCorrect(q.correct_answer ?? '')
-      return Array.from({ length: blanks }, (_, i) =>
-        (studentAns[i] || '').trim().toLowerCase() === (correctAns[i] || '').trim().toLowerCase()
-      ).every(Boolean)
-    }
-    if (q.type === 'matching') {
-      try { const m = JSON.parse(ans); return (q.options||[]).every(p => m[p.left] === p.right) }
-      catch { return null }
-    }
-    return null // free_text — not auto-graded
-  }
 
   const typeLabel = (t) =>
     t === 'multiple_choice' ? 'Multiple choice'
@@ -2637,7 +2618,10 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
           <div className="exercise-context-passage">{exercise.context_text}</div>
         </div>
       )}
-      {exercise?.context_images?.length > 0 && (
+      {exercise?.context_images?.length > 0 && !(
+        questions.length > 0 && questions[0].type === 'fill_blank' &&
+        parseOverlayPrompt(questions[0].prompt)
+      ) && (
         <div className="exercise-context-images">
           <p className="exercise-context-label">📖 Reference material</p>
           {exercise.context_images.map((src, i) => (
@@ -2682,12 +2666,10 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
           }
 
           return (
-            <div key={q.id} className={`exercise-question${checked && result === true ? ' eq--correct' : checked && result === false ? ' eq--wrong' : ''}`}>
+            <div key={q.id} className="exercise-question">
               <div className="eq-label">
                 <span className="eq-num">Q{idx + 1}</span>
                 <span className="eq-type">{typeLabel(q.type)}</span>
-                {checked && result === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
-                {checked && result === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
               {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
               {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
@@ -2727,26 +2709,6 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                   onChange={val => setAnswer(q.id, val)}
                 />
               )}
-
-              {/* Reveal correct answer after Check — word_choice has no auto-answer */}
-              {checked && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && q.type !== 'fill_blank' && (
-                <div className="demo-correct-answer">✓ Answer: <strong>{q.correct_answer}</strong></div>
-              )}
-              {checked && q.type === 'fill_blank' && q.correct_answer && (() => {
-                const correct = parseFillBlankCorrect(q.correct_answer)
-                return (
-                  <div className="demo-correct-answer">
-                    ✓ Answers: {correct.map((a, i) => (
-                      <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
-                    ))}
-                  </div>
-                )
-              })()}
-              {checked && q.type === 'matching' && q.options && (
-                <div className="demo-correct-answer">
-                  ✓ Pairs: {(q.options||[]).map(p => `${p.left} → ${p.right}`).join(' · ')}
-                </div>
-              )}
             </div>
           )
         })}
@@ -2754,13 +2716,9 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
 
       {!questions.every(q => q.type === 'listening' || q.type === 'viewing') && (
         <div className="exercise-submit-row">
-          {!checked ? (
-            <button className="btn-gold btn-lg" onClick={() => setChecked(true)}>Check answers →</button>
-          ) : (
-            <button className="btn-ghost" onClick={() => { setChecked(false); setAnswers({}) }}>
-              ↺ Reset &amp; try again
-            </button>
-          )}
+          <button className="btn-ghost" onClick={() => setAnswers({})}>
+            ↺ Reset
+          </button>
         </div>
       )}
     </div>
@@ -2770,10 +2728,6 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
 // ─── StudentSubmissionReview ──────────────────────────────────
 function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
   const ex = assignment.exercises
-  const allAnswers = Object.values(answerMap)
-  const reviewed = allAnswers.some(a => a.is_correct !== null && a.is_correct !== undefined)
-  const correctCount = allAnswers.filter(a => a.is_correct === true).length
-  const reviewedCount = allAnswers.filter(a => a.is_correct !== null && a.is_correct !== undefined).length
 
   const typeLabel = (t) =>
     t === 'multiple_choice' ? 'Multiple choice'
@@ -2802,25 +2756,23 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
         )}
       </div>
 
-      {/* Score card */}
-      {reviewed ? (
-        <div className="submission-score-card">
-          <div className="submission-score-num">{correctCount}<span>/{reviewedCount}</span></div>
-          <div className="submission-score-label">correct answers</div>
-          {reviewedCount < questions.length && (
-            <p style={{ fontSize:'0.8rem', color:'var(--text-muted)', margin:'0.3rem 0 0' }}>
-              {questions.length - reviewedCount} question{questions.length - reviewedCount !== 1 ? 's' : ''} still pending review
-            </p>
-          )}
+      {/* Dogukan's feedback */}
+      {assignment.teacher_feedback ? (
+        <div className="submission-feedback-card">
+          <p className="submission-feedback-label">💬 Dogukan's feedback</p>
+          <p className="submission-feedback-text">{assignment.teacher_feedback}</p>
         </div>
       ) : (
         <div className="submission-pending-msg">
-          ⏳ Dogukan hasn't reviewed this exercise yet. Check back after your next lesson.
+          ⏳ Dogukan will go through this exercise with you and leave feedback after your lesson.
         </div>
       )}
 
-      {/* Context images */}
-      {ex?.context_images?.length > 0 && (
+      {/* Context images — hidden for fill_blank overlay (image is embedded in the answer display) */}
+      {ex?.context_images?.length > 0 && !(
+        questions.length > 0 && questions[0].type === 'fill_blank' &&
+        parseOverlayPrompt(questions[0].prompt)
+      ) && (
         <div className="exercise-context-images">
           <p className="exercise-context-label">📖 Reference material</p>
           {ex.context_images.map((src, i) => (
@@ -2831,17 +2783,32 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
 
       <div className="exercise-questions">
         {questions.map((q, idx) => {
+          if (q.type === 'listening' || q.type === 'viewing') return null
           const sa = answerMap[q.id]
-          const isCorrect = sa?.is_correct
-          const hasReview = isCorrect !== null && isCorrect !== undefined
+
+          // Fill-blank overlay: show image with typed answers
+          if (q.type === 'fill_blank' && parseOverlayPrompt(q.prompt)) {
+            const overlay = parseOverlayPrompt(q.prompt)
+            return (
+              <div key={q.id} className="exercise-fill-block">
+                {ex?.context_images?.[0] && (
+                  <ImageOverlayFill
+                    src={ex.context_images[0]}
+                    blanks={overlay.blanks}
+                    answers={sa?.answer || null}
+                    onChange={() => {}}
+                    disabled={true}
+                  />
+                )}
+              </div>
+            )
+          }
+
           return (
-            <div key={q.id} className={`exercise-question${hasReview && isCorrect ? ' eq--correct' : hasReview && !isCorrect ? ' eq--wrong' : ''}`}>
+            <div key={q.id} className="exercise-question">
               <div className="eq-label">
                 <span className="eq-num">Q{idx + 1}</span>
                 <span className="eq-type">{typeLabel(q.type)}</span>
-                {hasReview && <span className={`demo-mark ${isCorrect ? 'demo-mark--correct' : 'demo-mark--wrong'}`}>
-                  {isCorrect ? '✓ Correct' : '✗ Incorrect'}
-                </span>}
               </div>
               {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
 
@@ -2853,55 +2820,23 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'fill_blank' ? (
                   sa?.answer
-                    ? <InlineFillBlank
-                        prompt={q.prompt}
-                        answer={sa.answer}
-                        onChange={() => {}}
-                        disabled={true}
-                        checked={hasReview}
-                        correctAnswers={hasReview ? parseFillBlankCorrect(q.correct_answer ?? '') : null}
-                      />
+                    ? <InlineFillBlank prompt={q.prompt} answer={sa.answer} onChange={() => {}} disabled={true} />
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'matching' && sa?.answer ? (
                   <div className="review-matching-pairs">
                     {(() => { try {
                       const m = JSON.parse(sa.answer)
                       return (q.options||[]).map(p => (
-                        <div key={p.left} className={`review-match-row ${m[p.left]===p.right?'match-correct':'match-wrong'}`}>
-                          <span>{p.left}</span><span>→</span><span>{m[p.left]||<em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                        <div key={p.left} className="review-match-row">
+                          <span>{p.left}</span><span>→</span>
+                          <span>{m[p.left] || <em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
                         </div>
                       ))
                     } catch { return <em>Error reading answer</em> } })()}
                   </div>
                 ) : (
-                  <div className={`review-answer-box ${!sa?.answer?.trim()?'review-answer-empty':''}`}>
+                  <div className={`review-answer-box ${!sa?.answer?.trim() ? 'review-answer-empty' : ''}`}>
                     {sa?.answer?.trim() || <em>No answer given</em>}
-                  </div>
-                )}
-
-                {/* Show correct answer when marked wrong */}
-                {hasReview && !isCorrect && q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && q.type !== 'fill_blank' && (
-                  <div className="demo-correct-answer">✓ Correct answer: <strong>{q.correct_answer}</strong></div>
-                )}
-                {hasReview && !isCorrect && q.type === 'fill_blank' && q.correct_answer && (
-                  <div className="demo-correct-answer">
-                    ✓ Correct answers:{' '}
-                    {parseFillBlankCorrect(q.correct_answer).map((a, i) => (
-                      <span key={i}>{i > 0 && ' · '}<strong>{a}</strong></span>
-                    ))}
-                  </div>
-                )}
-                {hasReview && !isCorrect && q.type === 'matching' && q.options && (
-                  <div className="demo-correct-answer">
-                    ✓ Correct pairs: {(q.options||[]).map(p=>`${p.left} → ${p.right}`).join(' · ')}
-                  </div>
-                )}
-
-                {/* Teacher comment */}
-                {sa?.teacher_comment && (
-                  <div className="submission-teacher-comment">
-                    <span className="review-label">💬 Dogukan's feedback:</span>
-                    <p>{sa.teacher_comment}</p>
                   </div>
                 )}
               </div>
@@ -2930,6 +2865,9 @@ function AdminLessonStages({ adminUserId }) {
   const [filterLabelIds, setFilterLabelIds] = useState([])   // active label filter in library tab
   const [filterStageType,setFilterStageType]= useState(null) // active stage type filter in library tab
   const [filterBookId,   setFilterBookId]   = useState(null) // active book filter in library tab
+  const [filterUnit,     setFilterUnit]     = useState('')   // unit number filter
+  const [filterPage,     setFilterPage]     = useState('')   // page number filter
+  const [filterSection,  setFilterSection]  = useState('')   // section text filter
   const [showLabelMgr,   setShowLabelMgr]   = useState(false) // label management panel open
   const [deletingLabelId,setDeletingLabelId]= useState(null)
   const [showBookMgr,    setShowBookMgr]    = useState(false) // book management panel open
@@ -3204,16 +3142,25 @@ function AdminLessonStages({ adminUserId }) {
         const typeFiltered = filterStageType
           ? exercises.filter(ex => ex.stage_type === filterStageType)
           : exercises
-        const labelFiltered = filterLabelIds.length === 0
-          ? typeFiltered
-          : typeFiltered.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
-        const filteredExercises = filterBookId
-          ? labelFiltered.filter(ex => ex.book_id === filterBookId)
-          : labelFiltered
+        const bookFiltered = filterBookId
+          ? typeFiltered.filter(ex => ex.book_id === filterBookId)
+          : typeFiltered
+        const unitFiltered = filterUnit
+          ? bookFiltered.filter(ex => ex.unit === parseInt(filterUnit))
+          : bookFiltered
+        const pageFiltered = filterPage
+          ? unitFiltered.filter(ex => ex.page === parseInt(filterPage))
+          : unitFiltered
+        const sectionFiltered = filterSection.trim()
+          ? pageFiltered.filter(ex => (ex.section || '').toLowerCase().includes(filterSection.trim().toLowerCase()))
+          : pageFiltered
+        const filteredExercises = filterLabelIds.length === 0
+          ? sectionFiltered
+          : sectionFiltered.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
         return (
           <div>
             <div className="admin-exercises-toolbar">
-              <h3 style={{ margin: 0 }}>Stage Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0 || filterBookId) ? ` / ${exercises.length}` : ''})</h3>
+              <h3 style={{ margin: 0 }}>Stage Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0 || filterBookId || filterUnit || filterPage || filterSection) ? ` / ${exercises.length}` : ''})</h3>
               <div style={{ display: 'flex', gap: '0.4rem' }}>
                 <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
                   onClick={() => { setShowBookMgr(false); setShowLabelMgr(p => !p) }}>🏷 Labels</button>
@@ -3322,6 +3269,27 @@ function AdminLessonStages({ adminUserId }) {
               </div>
             )}
 
+            {/* ── Location filter (unit / page / section) ── */}
+            <div className="library-filter-row library-filter-row--location">
+              <span className="library-filter-label">📍</span>
+              <input type="number" min="1" placeholder="Unit" value={filterUnit}
+                onChange={e => setFilterUnit(e.target.value)}
+                className="location-filter-input" />
+              <input type="number" min="1" placeholder="Page" value={filterPage}
+                onChange={e => setFilterPage(e.target.value)}
+                className="location-filter-input" />
+              <input type="text" placeholder="Section" value={filterSection}
+                onChange={e => setFilterSection(e.target.value)}
+                className="location-filter-input location-filter-input--wide" />
+              {(filterUnit || filterPage || filterSection) && (
+                <button className="btn-ghost"
+                  style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                  onClick={() => { setFilterUnit(''); setFilterPage(''); setFilterSection('') }}>
+                  Clear
+                </button>
+              )}
+            </div>
+
             {/* ── Label filter ── */}
             {labels.length > 0 && (
               <div className="library-filter-row">
@@ -3350,7 +3318,7 @@ function AdminLessonStages({ adminUserId }) {
             ) : filteredExercises.length === 0 ? (
               <div className="dashboard-empty">
                 <p>No stages match the selected filter.</p>
-                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => { setFilterLabelIds([]); setFilterStageType(null) }}>Clear filter</button>
+                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => { setFilterLabelIds([]); setFilterStageType(null); setFilterBookId(null); setFilterUnit(''); setFilterPage(''); setFilterSection('') }}>Clear filter</button>
               </div>
             ) : (
               <div className="library-list">
@@ -3358,13 +3326,25 @@ function AdminLessonStages({ adminUserId }) {
                   const stDef = STAGE_TYPES.find(t => t.value === ex.stage_type) || { icon: '✏️', label: 'Exercise' }
                   return (
                   <div key={ex.id} className="library-row">
+                    {ex.thumbnail && (
+                      <img src={ex.thumbnail} alt="" className="library-row-thumb" />
+                    )}
                     <div className="library-row-main">
                       <div className="library-row-info">
                         <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
                         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.25rem', alignItems: 'center' }}>
                           <span className="stage-type-badge-sm" style={{ fontSize: '0.75rem', padding: '0.18rem 0.5rem' }}>{stDef.icon} {stDef.label}</span>
-                          {ex.course && <span className="admin-level-chip">{ex.course}</span>}
                           {ex.books?.title && <span className="admin-level-chip">📚 {ex.books.title}</span>}
+                          {(ex.unit != null || ex.page != null || ex.section || ex.exercise_no != null) && (
+                            <span className="admin-level-chip location-chip">
+                              {[
+                                ex.unit        != null ? `Unit ${ex.unit}`    : null,
+                                ex.page        != null ? `p.${ex.page}`       : null,
+                                ex.section     || null,
+                                ex.exercise_no != null ? `Ex.${ex.exercise_no}` : null,
+                              ].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
                           {ex.estimated_minutes && (
                             <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>⏱ {ex.estimated_minutes} min</span>
                           )}
@@ -3411,12 +3391,15 @@ function AdminLessonStages({ adminUserId }) {
 
 // ─── AdminLessonPlans ─────────────────────────────────────────
 function AdminLessonPlans({ adminUserId }) {
-  const [exercises,   setExercises]   = useState([])
-  const [plans,       setPlans]       = useState([])
-  const [labels,      setLabels]      = useState([])
-  const [loading,     setLoading]     = useState(true)
-  const [view,        setView]        = useState('list') // 'list' | 'create' | 'edit'
-  const [editingPlan, setEditingPlan] = useState(null)
+  const [exercises,      setExercises]      = useState([])
+  const [plans,          setPlans]          = useState([])
+  const [labels,         setLabels]         = useState([])
+  const [books,          setBooks]          = useState([])
+  const [authStudents,   setAuthStudents]   = useState([])
+  const [manualStudents, setManualStudents] = useState([])
+  const [loading,        setLoading]        = useState(true)
+  const [view,           setView]           = useState('list') // 'list' | 'create' | 'edit'
+  const [editingPlan,    setEditingPlan]    = useState(null)
   const [deletingPlanId, setDeletingPlanId] = useState(null)
 
   useEffect(() => {
@@ -3425,22 +3408,33 @@ function AdminLessonPlans({ adminUserId }) {
       fetchAllExercises(),
       fetchAllLessonPlans(),
       fetchAllLabels(),
-    ]).then(([exs, pls, lbls]) => {
+      fetchAllBooks(),
+      fetchStudentsAdmin(),
+      fetchManualStudents(),
+    ]).then(([exs, pls, lbls, bks, auths, manuals]) => {
       setExercises(exs); setPlans(pls); setLabels(lbls)
+      setBooks(bks); setAuthStudents(auths); setManualStudents(manuals)
       setLoading(false)
     })
   }, [])
 
+  const reloadAll = () => Promise.all([fetchAllExercises(), fetchAllLessonPlans()])
+    .then(([exs, pls]) => { setExercises(exs); setPlans(pls) })
+
+  const builderProps = {
+    exercises, labels, books, authStudents, manualStudents, adminUserId,
+  }
+
   if (view === 'create') {
-    return <LessonStageBuilder exercises={exercises} adminUserId={adminUserId}
+    return <LessonStageBuilder {...builderProps}
       onCancel={() => setView('list')}
-      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list') }} />
+      onSaved={() => { reloadAll(); setView('list') }} />
   }
   if (view === 'edit' && editingPlan) {
-    return <LessonStageBuilder exercises={exercises} adminUserId={adminUserId}
+    return <LessonStageBuilder {...builderProps}
       initialPlan={editingPlan}
       onCancel={() => { setView('list'); setEditingPlan(null) }}
-      onSaved={() => { fetchAllLessonPlans().then(setPlans); setView('list'); setEditingPlan(null) }} />
+      onSaved={(newExs) => { reloadAll(); setView('list'); setEditingPlan(null) }} />
   }
 
   return (
@@ -3464,6 +3458,21 @@ function AdminLessonPlans({ adminUserId }) {
                   <strong>{p.title}</strong>
                   {p.description && <span className="plan-desc"> — {p.description}</span>}
                   <div style={{ marginTop: '0.25rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {(p.profiles || p.manual_students) && (
+                      <span className="admin-level-chip">
+                        👤 {(p.profiles?.name || p.profiles?.email) ?? (p.manual_students?.name)}
+                        {(p.profiles?.english_level || p.manual_students?.english_level) && (
+                          <> · <span style={{ textTransform: 'capitalize' }}>
+                            {p.profiles?.english_level || p.manual_students?.english_level}
+                          </span></>
+                        )}
+                      </span>
+                    )}
+                    {p.scheduled_at && (
+                      <span className="admin-level-chip" style={{ color: 'var(--gold)' }}>
+                        📅 {new Date(p.scheduled_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                      </span>
+                    )}
                     <span className="admin-level-chip">{count} stage{count !== 1 ? 's' : ''}</span>
                     {totalMins > 0 && <span className="admin-level-chip">⏱ {totalMins} min</span>}
                   </div>
@@ -3584,6 +3593,41 @@ function initStagesFromPlan(plan) {
     }))
 }
 
+/** Convert a lesson plan's lesson_stages into grouped stage structure for the builder. */
+function initStageGroupsFromPlan(plan) {
+  if (!plan) return [{ number: 1, name: '', items: [] }]
+  const stages = (plan.lesson_stages ?? []).slice().sort((a, b) => a.order_index - b.order_index)
+  if (stages.length === 0) {
+    // Legacy: load from lesson_plan_exercises
+    const legacyItems = (plan.lesson_plan_exercises ?? [])
+      .slice().sort((a, b) => a.order_index - b.order_index)
+      .filter(lpe => lpe.exercises?.id)
+      .map(lpe => ({
+        id: crypto.randomUUID(), type: 'controlled_exercise', title: '',
+        durationMinutes: null, customDuration: '', exerciseId: lpe.exercises.id,
+        exerciseTitle: lpe.exercises.title || '', contentText: '', audioUrl: '', contentImages: [],
+      }))
+    return [{ number: 1, name: '', items: legacyItems }]
+  }
+  // Group by stage_number; fall back to one group per item if stage_number is null
+  const groups = {}
+  stages.forEach((s, i) => {
+    const num = s.stage_number ?? (i + 1)
+    if (!groups[num]) groups[num] = { number: num, name: s.stage_name || '', items: [] }
+    groups[num].items.push({
+      id: s.id, type: s.stage_type, title: s.title || '',
+      durationMinutes: [5,10,15].includes(s.duration_minutes) ? s.duration_minutes
+                       : s.duration_minutes ? 'other' : null,
+      customDuration: ![5,10,15].includes(s.duration_minutes) && s.duration_minutes
+                      ? String(s.duration_minutes) : '',
+      exerciseId: s.exercise_id || null, exerciseTitle: s.exercises?.title || '',
+      contentText: s.content_text || '', audioUrl: s.audio_url || '',
+      contentImages: s.content_images || [],
+    })
+  })
+  return Object.values(groups).sort((a, b) => a.number - b.number)
+}
+
 function newQ(type) {
   return {
     tempId:         crypto.randomUUID(),
@@ -3613,7 +3657,13 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     initialExercise?.estimated_minutes && ![5,10,15].includes(initialExercise.estimated_minutes)
       ? String(initialExercise.estimated_minutes) : ''
   )
-  const [bookId,         setBookId]         = useState(initialExercise?.book_id ?? null)
+  const [bookId,         setBookId]         = useState(initialExercise?.book_id     ?? null)
+  const [exUnit,         setExUnit]         = useState(initialExercise?.unit        ?? null)
+  const [exPage,         setExPage]         = useState(initialExercise?.page        ?? null)
+  const [exSection,      setExSection]      = useState(initialExercise?.section     ?? '')
+  const [exNo,           setExNo]           = useState(initialExercise?.exercise_no ?? null)
+  const [thumbnail,      setThumbnail]      = useState(initialExercise?.thumbnail   ?? null)
+  const [thumbLoading,   setThumbLoading]   = useState(false)
   const [localBooks,     setLocalBooks]     = useState(allBooks)
   const [newBookTitle,   setNewBookTitle]   = useState('')
   const [savingBook,     setSavingBook]     = useState(false)
@@ -3641,6 +3691,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   const contextFileRef  = useRef(null)
   const exerciseFileRef = useRef(null)
   const fbPicFileRef    = useRef(null)
+  const thumbnailRef    = useRef(null)
 
   // ── Context images ──────────────────────────────────────────
   const handleContextImages = async (e) => {
@@ -3649,6 +3700,18 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     const compressed = await Promise.all(files.map(f => compressImage(f)))
     setContextImages(prev => [...prev, ...compressed].slice(0, 3))
     e.target.value = ''
+  }
+
+  // ── Thumbnail: small compressed image for library card ───────
+  const handleThumbnailUpload = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    e.target.value = ''
+    setThumbLoading(true)
+    try {
+      const compressed = await compressImage(file, 400)
+      setThumbnail(compressed)
+    } catch {}
+    finally { setThumbLoading(false) }
   }
 
   // ── Fill-blank: upload picture + auto-detect blank positions ─
@@ -3763,9 +3826,24 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     if (!title.trim()) return
     if (stDef?.hasQuestions && !selType) return
     if (stDef?.hasQuestions && !isVerbal && !questions.length) return
+    // Location fields are required for exercise stages
+    if (stDef?.hasQuestions && (!exUnit || !exPage || !exSection.trim() || !exNo)) {
+      setSaveError('Please fill in the location fields (unit, page, section, exercise number) — these are required for exercises.')
+      return
+    }
     setSaving(true); setSaveError(null)
     const finalMins = estimatedMins === 'other' ? (parseInt(customMins) || null) : estimatedMins
-    const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins, stageType: stageType ?? 'controlled_exercise', bookId: bookId || null }
+    const meta = {
+      title, description, contextImages, contextText, audioUrl,
+      estimatedMinutes: finalMins,
+      stageType: stageType ?? 'controlled_exercise',
+      bookId:    bookId   || null,
+      unit:      exUnit   || null,
+      page:      exPage   || null,
+      section:   exSection.trim() || null,
+      exerciseNo: exNo    || null,
+      thumbnail: thumbnail || null,
+    }
     // For listening/viewing: auto-create one dummy question as the activity type marker
     const questionsToSave = isVerbal
       ? [{ type: selType, prompt: '', order_index: 0, options: [], correct_answer: null, hint: null }]
@@ -3904,6 +3982,77 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
             <option key={bk.id} value={bk.id}>{bk.title}</option>
           ))}
         </select>
+      </div>
+
+      {/* ── Location in textbook ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">
+          📍 Location in textbook
+          {stageTypeDef.hasQuestions
+            ? <span className="builder-required-note"> — required for exercises</span>
+            : <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}> (optional)</span>}
+        </h4>
+        <div className="location-fields">
+          <div className="location-field">
+            <label>Unit {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <input type="number" min="1" placeholder="e.g. 3"
+              value={exUnit ?? ''}
+              onChange={e => setExUnit(e.target.value ? parseInt(e.target.value) : null)} />
+          </div>
+          <div className="location-field">
+            <label>Page {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <input type="number" min="1" placeholder="e.g. 42"
+              value={exPage ?? ''}
+              onChange={e => setExPage(e.target.value ? parseInt(e.target.value) : null)} />
+          </div>
+          <div className="location-field">
+            <label>Section {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <input type="text" placeholder="e.g. Grammar"
+              value={exSection}
+              onChange={e => setExSection(e.target.value)} />
+          </div>
+          <div className="location-field">
+            <label>Exercise No. {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <input type="number" min="1" placeholder="e.g. 2"
+              value={exNo ?? ''}
+              onChange={e => setExNo(e.target.value ? parseInt(e.target.value) : null)} />
+          </div>
+        </div>
+
+        {/* Thumbnail */}
+        <div style={{ marginTop: '1rem' }}>
+          <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.4rem', display: 'block' }}>
+            📸 Thumbnail <span style={{ fontWeight: 400 }}>(optional — a photo snippet shown on the library card)</span>
+          </label>
+          <input ref={thumbnailRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={handleThumbnailUpload} />
+          {thumbnail ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <img src={thumbnail} alt="Thumbnail"
+                style={{ width: '88px', height: '62px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <button type="button" className="btn-ghost"
+                  style={{ fontSize: '0.78rem', padding: '0.25rem 0.65rem' }}
+                  disabled={thumbLoading}
+                  onClick={() => thumbnailRef.current?.click()}>
+                  {thumbLoading ? '⏳…' : '🔄 Replace'}
+                </button>
+                <button type="button" className="btn-ghost"
+                  style={{ fontSize: '0.78rem', padding: '0.25rem 0.65rem', color: 'var(--text-muted)' }}
+                  onClick={() => setThumbnail(null)}>
+                  ✕ Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="btn-ghost"
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+              disabled={thumbLoading}
+              onClick={() => thumbnailRef.current?.click()}>
+              {thumbLoading ? '⏳ Uploading…' : '+ Upload thumbnail'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── 4. Labels ── */}
@@ -4520,6 +4669,129 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel, initialP
   )
 }
 
+// ─── ExercisePicker — lesson plan library picker ──────────────
+function ExercisePicker({ exercises, labels = [], books = [], onSelect, onCancel }) {
+  const [search,        setSearch]        = useState('')
+  const [filterType,    setFilterType]    = useState(null)
+  const [filterBook,    setFilterBook]    = useState(null)
+  const [filterUnit,    setFilterUnit]    = useState('')
+  const [filterPage,    setFilterPage]    = useState('')
+  const [filterSection, setFilterSection] = useState('')
+  const [filterLabels,  setFilterLabels]  = useState([])
+
+  const filtered = useMemo(() => exercises.filter(ex => {
+    if (filterType    && ex.stage_type !== filterType)                         return false
+    if (filterBook    && ex.book_id    !== filterBook)                         return false
+    if (filterUnit    && ex.unit       !== parseInt(filterUnit))               return false
+    if (filterPage    && ex.page       !== parseInt(filterPage))               return false
+    if (filterSection && !(ex.section || '').toLowerCase().includes(filterSection.toLowerCase())) return false
+    if (filterLabels.length > 0 && !(ex.labels || []).some(l => filterLabels.includes(l.id))) return false
+    if (search        && !ex.title.toLowerCase().includes(search.toLowerCase()))  return false
+    return true
+  }), [exercises, filterType, filterBook, filterUnit, filterPage, filterSection, filterLabels, search])
+
+  const allExLabels = useMemo(() => {
+    const map = {}
+    exercises.forEach(ex => (ex.labels || []).forEach(l => { map[l.id] = l }))
+    return Object.values(map)
+  }, [exercises])
+
+  return (
+    <div>
+      <div className="admin-exercises-toolbar">
+        <h3 style={{ margin: 0 }}>Pick an exercise from your library</h3>
+        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+
+      {/* Stage type filter */}
+      <div className="stage-type-filter">
+        <button className={`stage-type-chip ${!filterType ? 'active' : ''}`} onClick={() => setFilterType(null)}>All</button>
+        {STAGE_TYPES.map(t => (
+          <button key={t.value} className={`stage-type-chip ${filterType === t.value ? 'active' : ''}`}
+            onClick={() => setFilterType(filterType === t.value ? null : t.value)}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Book filter */}
+      {books.length > 0 && (
+        <div className="library-filter-row">
+          <span className="library-filter-label">📚 Book:</span>
+          <button className={`filter-chip ${!filterBook ? 'filter-chip--active' : ''}`} onClick={() => setFilterBook(null)}>All</button>
+          {books.map(bk => (
+            <button key={bk.id} className={`filter-chip ${filterBook === bk.id ? 'filter-chip--active' : ''}`}
+              onClick={() => setFilterBook(filterBook === bk.id ? null : bk.id)}>{bk.title}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Location + search row */}
+      <div className="library-filter-row library-filter-row--location">
+        <span className="library-filter-label">📍</span>
+        <input type="number" min="1" placeholder="Unit" value={filterUnit}
+          onChange={e => setFilterUnit(e.target.value)} className="location-filter-input" />
+        <input type="number" min="1" placeholder="Page" value={filterPage}
+          onChange={e => setFilterPage(e.target.value)} className="location-filter-input" />
+        <input type="text" placeholder="Section" value={filterSection}
+          onChange={e => setFilterSection(e.target.value)} className="location-filter-input location-filter-input--wide" />
+        <input type="text" placeholder="Search by title…" value={search}
+          onChange={e => setSearch(e.target.value)} className="location-filter-input"
+          style={{ width: '14rem' }} />
+      </div>
+
+      {/* Label filter */}
+      {allExLabels.length > 0 && (
+        <div className="library-filter-row">
+          <span className="library-filter-label">Filter:</span>
+          <button className={`filter-chip ${filterLabels.length === 0 ? 'filter-chip--active' : ''}`}
+            onClick={() => setFilterLabels([])}>All</button>
+          {allExLabels.map(l => (
+            <button key={l.id} className={`filter-chip ${filterLabels.includes(l.id) ? 'filter-chip--active' : ''}`}
+              style={{ '--lbl-color': l.color }}
+              onClick={() => setFilterLabels(p => p.includes(l.id) ? p.filter(x=>x!==l.id) : [...p, l.id])}>
+              {l.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0.25rem 0 0.75rem' }}>
+        {filtered.length} exercise{filtered.length !== 1 ? 's' : ''} shown
+      </p>
+
+      {filtered.length === 0 ? (
+        <div className="dashboard-empty"><p>No exercises match the filter.</p></div>
+      ) : (
+        <div className="stage-picker-grid">
+          {filtered.map(ex => {
+            const def = STAGE_TYPES.find(t => t.value === ex.stage_type) || { icon: '✏️', label: 'Exercise' }
+            return (
+              <button key={ex.id} className="stage-picker-card" onClick={() => onSelect(ex)}>
+                {ex.thumbnail && (
+                  <img src={ex.thumbnail} alt="" style={{ width: '100%', height: '72px', objectFit: 'cover', borderRadius: '6px', marginBottom: '0.5rem' }} />
+                )}
+                <div className="stage-picker-title">{ex.title}</div>
+                <div className="stage-picker-meta">
+                  <span className="admin-level-chip" style={{ fontSize: '0.72rem' }}>{def.icon} {def.label}</span>
+                  {ex.books?.title && <span className="admin-level-chip" style={{ fontSize: '0.72rem' }}>📚 {ex.books.title}</span>}
+                  {(ex.unit != null || ex.page != null) && (
+                    <span className="admin-level-chip" style={{ fontSize: '0.72rem', color: 'var(--gold)' }}>
+                      {[ex.unit != null ? `U${ex.unit}` : null, ex.page != null ? `p.${ex.page}` : null, ex.section || null].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                  {ex.estimated_minutes && <span className="admin-level-chip" style={{ fontSize: '0.72rem' }}>⏱ {ex.estimated_minutes} min</span>}
+                  {(ex.labels||[]).map(l => <span key={l.id} className="label-chip" style={{ '--lbl-color': l.color, fontSize: '0.72rem' }}>{l.name}</span>)}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── StagePicker ─────────────────────────────────────────────
 function StagePicker({ type, allStages, onSelect, onCancel }) {
   const def = STAGE_TYPES.find(t => t.value === type) || {}
@@ -4686,66 +4958,134 @@ function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMove
   )
 }
 
-// ─── LessonStageBuilder ───────────────────────────────────────
-function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initialPlan = null }) {
+// ─── LessonStageBuilder v2 ────────────────────────────────────
+function LessonStageBuilder({
+  exercises: allExercises, labels, books, authStudents = [], manualStudents = [],
+  adminUserId, onSaved, onCancel, initialPlan = null
+}) {
   const isEdit = !!initialPlan
-  const [title,     setTitle]     = useState(initialPlan?.title ?? '')
-  const [desc,      setDesc]      = useState(initialPlan?.description ?? '')
-  const [stages,    setStages]    = useState(() => initStagesFromPlan(initialPlan))
-  const [saving,    setSaving]    = useState(false)
-  const [err,       setErr]       = useState(null)
-  const [pickerFor, setPickerFor] = useState(null) // { type, stageId } | null
 
-  const totalMins = stages.reduce((sum, s) => {
-    const m = s.durationMinutes === 'other' ? (parseInt(s.customDuration) || 0) : (s.durationMinutes || 0)
-    return sum + m
-  }, 0)
+  // Student
+  const initStudentType = initialPlan?.manual_student_id ? 'manual'
+    : initialPlan?.student_id ? 'profile' : null
+  const initStudentId = initialPlan?.manual_student_id ?? initialPlan?.student_id ?? null
+  const [studentType,  setStudentType]  = useState(initStudentType)
+  const [studentId,    setStudentId]    = useState(initStudentId)
 
-  const openPickerForType = (type)    => setPickerFor({ type, stageId: null })
-  const openPickerForStage = (stageId, type) => setPickerFor({ type, stageId })
-
-  const removeStage = (id)  => setStages(p => p.filter(s => s.id !== id))
-  const moveStage  = (i, dir) => setStages(p => {
-    const a = [...p]; [a[i], a[i + dir]] = [a[i + dir], a[i]]; return a
+  // Lesson metadata
+  const [title,           setTitle]           = useState(initialPlan?.title            ?? '')
+  const [lessonAim,       setLessonAim]       = useState(initialPlan?.lesson_aim       ?? '')
+  const [teachingPoint,   setTeachingPoint]   = useState(initialPlan?.teaching_point   ?? '')
+  const [langAnalysis,    setLangAnalysis]    = useState(initialPlan?.language_analysis ?? '')
+  const [scheduledAt,     setScheduledAt]     = useState(() => {
+    if (!initialPlan?.scheduled_at) return ''
+    const d = new Date(initialPlan.scheduled_at)
+    const pad = n => String(n).padStart(2,'0')
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
   })
-  const updateStage = (id, field, val) =>
-    setStages(p => p.map(s => s.id === id ? { ...s, [field]: val } : s))
 
+  // Numbered stage groups
+  const [stageGroups,  setStageGroups]  = useState(() => initStageGroupsFromPlan(initialPlan))
+
+  // Exercise picker/creator overlay: null | { groupNumber, mode: 'pick'|'create' }
+  const [pickerCtx,    setPickerCtx]    = useState(null)
+  // All exercises including ones created inline during this session
+  const [exercises,    setExercises]    = useState(allExercises)
+
+  const [saving,  setSaving]  = useState(false)
+  const [err,     setErr]     = useState(null)
+
+  // ── Student derived info ──────────────────────────────────────
+  const selectedStudent = useMemo(() => {
+    if (!studentId || !studentType) return null
+    return studentType === 'manual'
+      ? manualStudents.find(s => s.id === studentId)
+      : authStudents.find(s => s.id === studentId)
+  }, [studentId, studentType, authStudents, manualStudents])
+
+  // ── Stage group helpers ────────────────────────────────────────
+  const addStageGroup = () => {
+    const nextNum = stageGroups.length > 0
+      ? Math.max(...stageGroups.map(g => g.number)) + 1
+      : 1
+    if (nextNum > 10) return // max 10 stages
+    setStageGroups(p => [...p, { number: nextNum, name: '', items: [] }])
+  }
+  const removeStageGroup = (num) =>
+    setStageGroups(p => p.filter(g => g.number !== num))
+  const updateGroupName = (num, name) =>
+    setStageGroups(p => p.map(g => g.number === num ? { ...g, name } : g))
+  const addItemToGroup = (num, item) =>
+    setStageGroups(p => p.map(g => g.number === num ? { ...g, items: [...g.items, item] } : g))
+  const removeItemFromGroup = (num, itemId) =>
+    setStageGroups(p => p.map(g => g.number === num ? { ...g, items: g.items.filter(i => i.id !== itemId) } : g))
+  const updateItemInGroup = (num, itemId, field, val) =>
+    setStageGroups(p => p.map(g => g.number === num
+      ? { ...g, items: g.items.map(i => i.id === itemId ? { ...i, [field]: val } : i) }
+      : g))
+
+  // ── Exercise picker callbacks ──────────────────────────────────
   const handlePickerSelect = (exercise) => {
-    if (!pickerFor) return
-    if (pickerFor.stageId === null) {
-      // Add new stage with the selected exercise
-      const stage = newStage(pickerFor.type)
-      stage.exerciseId    = exercise.id
-      stage.exerciseTitle = exercise.title
-      setStages(p => [...p, stage])
-    } else {
-      // Update existing stage's exercise
-      setStages(p => p.map(s => s.id === pickerFor.stageId
-        ? { ...s, exerciseId: exercise.id, exerciseTitle: exercise.title }
-        : s))
-    }
-    setPickerFor(null)
+    if (!pickerCtx) return
+    const item = newStage('controlled_exercise')
+    item.exerciseId    = exercise.id
+    item.exerciseTitle = exercise.title
+    item.type          = exercise.stage_type || 'controlled_exercise'
+    addItemToGroup(pickerCtx.groupNumber, item)
+    setPickerCtx(null)
   }
 
+  const handleNewExerciseSaved = async (newExId) => {
+    const reloaded = await fetchAllExercises()
+    setExercises(reloaded)
+    const newEx = reloaded.find(e => e.id === newExId)
+    if (newEx && pickerCtx) {
+      const item = newStage(newEx.stage_type || 'controlled_exercise')
+      item.exerciseId    = newEx.id
+      item.exerciseTitle = newEx.title
+      item.type          = newEx.stage_type || 'controlled_exercise'
+      addItemToGroup(pickerCtx.groupNumber, item)
+    }
+    setPickerCtx(null)
+  }
+
+  // ── Save ──────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true); setErr(null)
+    const flatItems = stageGroups.flatMap(g =>
+      g.items.map(item => ({ ...item, stageNumber: g.number, stageName: g.name || null }))
+    )
+    const meta = {
+      studentId:        studentType === 'profile' ? studentId : null,
+      manualStudentId:  studentType === 'manual'  ? studentId : null,
+      lessonAim:        lessonAim,
+      teachingPoint:    teachingPoint,
+      languageAnalysis: langAnalysis,
+      scheduledAt:      scheduledAt ? new Date(scheduledAt).toISOString() : null,
+    }
     const id = isEdit
-      ? await updateLessonPlanWithStages(initialPlan.id, title, desc, stages)
-      : await createLessonPlanWithStages(title, desc, adminUserId, stages)
+      ? await updateLessonPlanWithStages(initialPlan.id, title, null, flatItems, meta)
+      : await createLessonPlanWithStages(title, null, adminUserId, flatItems, meta)
     setSaving(false)
     if (id) onSaved(id)
     else setErr('Something went wrong. Please try again.')
   }
 
-  // Show stage picker overlay
-  if (pickerFor) {
-    return <StagePicker
-      type={pickerFor.type}
-      allStages={exercises}
+  const totalItems = stageGroups.reduce((sum, g) => sum + g.items.length, 0)
+
+  // ── Picker overlay ─────────────────────────────────────────────
+  if (pickerCtx?.mode === 'pick') {
+    return <ExercisePicker
+      exercises={exercises} labels={labels} books={books}
       onSelect={handlePickerSelect}
-      onCancel={() => setPickerFor(null)} />
+      onCancel={() => setPickerCtx(null)} />
+  }
+  if (pickerCtx?.mode === 'create') {
+    return <ExerciseBuilder
+      allLabels={labels} allBooks={books}
+      onSaved={handleNewExerciseSaved}
+      onCancel={() => setPickerCtx(null)} />
   }
 
   return (
@@ -4755,71 +5095,156 @@ function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initial
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
 
-      <div className="admin-assign-form" style={{ marginBottom: '1.25rem' }}>
+      {/* ── Student ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">👤 Student</h4>
+        <select value={studentId ? `${studentType}:${studentId}` : ''}
+          onChange={e => {
+            const val = e.target.value
+            if (!val) { setStudentType(null); setStudentId(null); return }
+            const [type, id] = val.split(':')
+            setStudentType(type); setStudentId(id)
+          }}>
+          <option value="">— Select student —</option>
+          {authStudents.filter(s => s.access_level !== 'pending').length > 0 && (
+            <optgroup label="Active students">
+              {authStudents.filter(s => s.access_level !== 'pending').map(s => (
+                <option key={s.id} value={`profile:${s.id}`}>
+                  {s.name || s.email}{s.english_level ? ` (${s.english_level})` : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {manualStudents.length > 0 && (
+            <optgroup label="Manual students">
+              {manualStudents.map(s => (
+                <option key={s.id} value={`manual:${s.id}`}>
+                  {s.name}{s.english_level ? ` (${s.english_level})` : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        {selectedStudent?.english_level && (
+          <p style={{ fontSize: '0.82rem', color: 'var(--gold)', marginTop: '0.4rem', margin: '0.4rem 0 0' }}>
+            Level: <strong style={{ textTransform: 'capitalize' }}>{selectedStudent.english_level}</strong>
+          </p>
+        )}
+      </div>
+
+      {/* ── Lesson Info ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">📋 Lesson info</h4>
         <div className="form-field">
-          <label>Plan title *</label>
-          <input type="text" placeholder="e.g. Beginner — Lesson 3: Present Simple"
+          <label>Title <span className="required-star">*</span></label>
+          <input type="text" placeholder="e.g. Present Simple — Habits & Routines"
             value={title} onChange={e => setTitle(e.target.value)} />
         </div>
-        <div className="form-field">
-          <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-          <input type="text" placeholder="Brief description"
-            value={desc} onChange={e => setDesc(e.target.value)} />
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>📅 Date &amp; time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+          <input type="datetime-local" value={scheduledAt}
+            onChange={e => setScheduledAt(e.target.value)} />
+        </div>
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>🎯 Lesson aim</label>
+          <textarea className="writing-input" rows={2}
+            placeholder="e.g. Students will be able to talk about daily habits using the present simple."
+            value={lessonAim} onChange={e => setLessonAim(e.target.value)} />
+        </div>
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>✏️ Teaching point</label>
+          <textarea className="writing-input" rows={2}
+            placeholder="e.g. He/She/It + verb + s/es. Negative: don't / doesn't."
+            value={teachingPoint} onChange={e => setTeachingPoint(e.target.value)} />
+        </div>
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>🔬 Language analysis</label>
+          <textarea className="writing-input" rows={2}
+            placeholder="e.g. Form: S + V(s) + O. Meaning: habitual actions. Pronunciation: /s/ /z/ /ɪz/ endings."
+            value={langAnalysis} onChange={e => setLangAnalysis(e.target.value)} />
         </div>
       </div>
 
-      {/* Total time */}
-      {totalMins > 0 && (
-        <div className="stage-total-row">
-          <span className="stage-total-label">Total planned time:</span>
-          <span className="stage-total-mins">{totalMins} min</span>
-        </div>
-      )}
+      {/* ── Stage Groups ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">📌 Lesson stages</h4>
+        {stageGroups.length === 0 && (
+          <div className="dashboard-empty" style={{ margin: '0.5rem 0 1rem' }}>
+            <p style={{ margin: 0 }}>No stages yet — click "Add stage" to begin.</p>
+          </div>
+        )}
+        {stageGroups.map(group => (
+          <div key={group.number} className="plan-stage-group">
+            <div className="plan-stage-group-header">
+              <span className="plan-stage-num">Stage {group.number}</span>
+              <input type="text" className="plan-stage-name-input"
+                placeholder="Stage name (optional, e.g. Warm-up)"
+                value={group.name}
+                onChange={e => updateGroupName(group.number, e.target.value)} />
+              <button type="button" className="btn-ghost"
+                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#e05c5c', flexShrink: 0 }}
+                onClick={() => removeStageGroup(group.number)}>
+                Remove
+              </button>
+            </div>
 
-      {/* Stage list */}
-      {stages.length > 0 && (
-        <div className="stage-list">
-          {stages.map((s, i) => (
-            <StageCard key={s.id} stage={s} idx={i} exercises={exercises}
-              onChange={(field, val) => updateStage(s.id, field, val)}
-              onRemove={() => removeStage(s.id)}
-              onMoveUp={() => moveStage(i, -1)}
-              onMoveDown={() => moveStage(i, 1)}
-              canMoveUp={i > 0}
-              canMoveDown={i < stages.length - 1}
-              onPickerOpen={() => openPickerForStage(s.id, s.type)}
-            />
-          ))}
-        </div>
-      )}
+            {/* Items in this group */}
+            {group.items.length === 0 ? (
+              <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: '0.4rem 0' }}>
+                No exercises yet — add one below.
+              </p>
+            ) : (
+              <div className="plan-stage-items">
+                {group.items.map(item => {
+                  const def = STAGE_TYPES.find(t => t.value === item.type) || { icon: '✏️', label: 'Exercise' }
+                  return (
+                    <div key={item.id} className="plan-stage-item">
+                      <span className="plan-stage-item-icon">{def.icon}</span>
+                      <span className="plan-stage-item-title">
+                        {item.exerciseTitle || item.title || <em style={{ color: 'var(--text-muted)' }}>No title</em>}
+                      </span>
+                      <span className="plan-stage-item-type">{def.label}</span>
+                      <button type="button"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '0.2rem 0.4rem', flexShrink: 0 }}
+                        onClick={() => removeItemFromGroup(group.number, item.id)}>✕</button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
-      {stages.length === 0 && (
-        <div className="dashboard-empty" style={{ margin: '1rem 0' }}>
-          <p style={{ margin: 0 }}>No stages yet — add one below.</p>
-        </div>
-      )}
+            {/* Add exercise buttons */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn-ghost"
+                style={{ fontSize: '0.8rem', padding: '0.3rem 0.75rem' }}
+                onClick={() => setPickerCtx({ groupNumber: group.number, mode: 'pick' })}>
+                + Pick from library
+              </button>
+              <button type="button" className="btn-ghost"
+                style={{ fontSize: '0.8rem', padding: '0.3rem 0.75rem' }}
+                onClick={() => setPickerCtx({ groupNumber: group.number, mode: 'create' })}>
+                + Create new exercise
+              </button>
+            </div>
+          </div>
+        ))}
 
-      {/* Add stage buttons */}
-      <div className="stage-add-section">
-        <p className="stage-add-label">Add a stage:</p>
-        <div className="stage-add-row">
-          {STAGE_TYPES.map(t => (
-            <button key={t.value} type="button" className="stage-add-btn"
-              onClick={() => t.hasExercise ? openPickerForType(t.value) : setStages(p => [...p, newStage(t.value)])}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
+        {stageGroups.length < 10 && (
+          <button type="button" className="stage-add-btn"
+            style={{ marginTop: '0.75rem' }}
+            onClick={addStageGroup}>
+            + Add Stage {stageGroups.length > 0 ? stageGroups.length + 1 : 1}
+          </button>
+        )}
       </div>
 
       {err && <div className="auth-error" style={{ marginTop: '0.75rem' }}>{err}</div>}
-      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', alignItems: 'center' }}>
-        <button className="btn-gold" onClick={handleSave}
-          disabled={saving || !title.trim()}>
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn-gold" onClick={handleSave} disabled={saving || !title.trim()}>
           {saving ? 'Saving…'
             : isEdit
-              ? `Save changes (${stages.length} stage${stages.length !== 1 ? 's' : ''})`
-              : `Save plan (${stages.length} stage${stages.length !== 1 ? 's' : ''})`}
+              ? `Save changes (${stageGroups.length} stage${stageGroups.length !== 1 ? 's' : ''}, ${totalItems} item${totalItems !== 1 ? 's' : ''})`
+              : `Save plan (${stageGroups.length} stage${stageGroups.length !== 1 ? 's' : ''}, ${totalItems} item${totalItems !== 1 ? 's' : ''})`}
         </button>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
       </div>
@@ -4829,62 +5254,23 @@ function LessonStageBuilder({ exercises, adminUserId, onSaved, onCancel, initial
 
 // ─── AdminExerciseReview ──────────────────────────────────────
 function AdminExerciseReview({ details, onBack }) {
-  const questions = (details.exercises?.questions ?? [])
+  const questions  = (details.exercises?.questions ?? [])
     .slice().sort((a, b) => a.order_index - b.order_index)
-  const answerMap = Object.fromEntries(details.studentAnswers.map(a => [a.question_id, a]))
+  const answerMap  = Object.fromEntries(details.studentAnswers.map(a => [a.question_id, a]))
 
-  // Comments only — no manual grading. is_correct is auto-computed on save.
-  const [comments, setComments] = useState(() => {
-    const init = {}
-    questions.forEach(q => { init[q.id] = answerMap[q.id]?.teacher_comment ?? '' })
-    return init
-  })
-  const [saving, setSaving] = useState(false)
-  const [saved,  setSaved]  = useState(false)
-
-  // Auto-compute correctness for question types that have a single right answer
-  const autoCorrect = (q) => {
-    const sa = answerMap[q.id]
-    if (!sa?.answer?.trim()) return null
-    if (q.type === 'multiple_choice' || q.type === 'true_false')
-      return sa.answer.trim() === (q.correct_answer ?? '').trim() ? true : false
-    if (q.type === 'fill_blank') {
-      const blanks = (q.prompt || '').split('___').length - 1
-      if (blanks <= 1) {
-        // Legacy single-blank or plain answer
-        const studentAns = parseFillBlankAnswer(sa.answer.trim())
-        const correctAns = parseFillBlankCorrect(q.correct_answer ?? '')
-        return (studentAns[0] || '').toLowerCase() === (correctAns[0] || '').trim().toLowerCase()
-      }
-      const studentAns = parseFillBlankAnswer(sa.answer.trim())
-      const correctAns = parseFillBlankCorrect(q.correct_answer ?? '')
-      return Array.from({ length: blanks }, (_, i) =>
-        (studentAns[i] || '').toLowerCase() === (correctAns[i] || '').trim().toLowerCase()
-      ).every(Boolean)
-    }
-    if (q.type === 'matching') {
-      try { const m = JSON.parse(sa.answer); return (q.options||[]).every(p => m[p.left] === p.right) }
-      catch { return null }
-    }
-    return null // free_text / word_choice — no auto-grade
-  }
+  const [feedback, setFeedback] = useState(details.teacher_feedback ?? '')
+  const [saving,   setSaving]   = useState(false)
+  const [saved,    setSaved]    = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
-    const payload = questions
-      .filter(q => answerMap[q.id]?.id)
-      .map(q => ({
-        id:              answerMap[q.id].id,
-        is_correct:      autoCorrect(q),
-        teacher_comment: comments[q.id] || null,
-      }))
-    await saveAnswerReviews(payload)
+    await saveExerciseFeedback(details.id, feedback)
     setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
-  const student  = details.profiles
-  const exercise = details.exercises
+  const student    = details.profiles
+  const exercise   = details.exercises
   const hasAnswers = details.studentAnswers.length > 0
 
   const typeLabel = (t) =>
@@ -5029,30 +5415,35 @@ function AdminExerciseReview({ details, onBack }) {
                 )}
               </div>
 
-              {/* Comment box — always visible */}
-              <div className="form-field" style={{ marginTop: '0.75rem' }}>
-                <label style={{ fontSize: '0.8rem' }}>
-                  Your comment <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>— visible to student</span>
-                </label>
-                <textarea className="writing-input" rows={2}
-                  placeholder="e.g. Good try! Remember that 'he' uses 'is', not 'are'."
-                  value={comments[q.id] || ''}
-                  onChange={e => setComments(prev => ({ ...prev, [q.id]: e.target.value }))}
-                />
-              </div>
             </div>
           )
         })}
       </div>
 
-      {hasAnswers && (
-        <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button className="btn-gold" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save comments →'}
-          </button>
-          {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved — student can now see your comments</span>}
+      {/* ── Overall feedback box ── */}
+      <div className="exercise-feedback-section">
+        <div className="form-field">
+          <label>
+            💬 Feedback for student
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.4rem' }}>
+              — visible to student after you save
+            </span>
+          </label>
+          <textarea className="writing-input" rows={4}
+            placeholder="e.g. Great effort! Watch your subject-verb agreement — 'he goes', not 'he go'. Ask me about it in the next lesson!"
+            value={feedback}
+            onChange={e => setFeedback(e.target.value)}
+          />
         </div>
-      )}
+        {hasAnswers && (
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginTop: '0.75rem' }}>
+            <button className="btn-gold" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save feedback →'}
+            </button>
+            {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved — student can see your feedback</span>}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -5346,6 +5737,9 @@ function AdminPanel({ user, onSignOut }) {
   const [accessLevel,   setAccessLevel]   = useState('pending')
   const [accessSaving,  setAccessSaving]  = useState(false)
   const [accessSaved,   setAccessSaved]   = useState(false)
+  const [engLevel,      setEngLevel]      = useState('')
+  const [engLevelSaving, setEngLevelSaving] = useState(false)
+  const [engLevelSaved,  setEngLevelSaved]  = useState(false)
 
   const isAdmin      = user?.email === ADMIN_EMAIL
   const pendingCount = students.filter(s => s.access_level === 'pending').length
@@ -5376,6 +5770,21 @@ function AdminPanel({ user, onSignOut }) {
     setSelected(s)
     setAccessLevel(s.access_level || 'pending')
     setAccessSaved(false)
+    setEngLevel(s.english_level || '')
+    setEngLevelSaved(false)
+  }
+
+  const handleEngLevelSave = async () => {
+    setEngLevelSaving(true)
+    const ok = await updateStudentEnglishLevel(selected.id, engLevel || null)
+    setEngLevelSaving(false)
+    if (ok) {
+      const updated = { ...selected, english_level: engLevel || null }
+      setSelected(updated)
+      setStudents(prev => prev.map(s => s.id === selected.id ? { ...s, english_level: engLevel || null } : s))
+      setEngLevelSaved(true)
+      setTimeout(() => setEngLevelSaved(false), 2500)
+    }
   }
 
   const handleAccessSave = async (levelOverride) => {
@@ -5487,6 +5896,26 @@ function AdminPanel({ user, onSignOut }) {
           )}
         </div>
 
+        {/* ── English level ── */}
+        <div className="admin-section">
+          <h3>English level</h3>
+          <div className="admin-access-row">
+            <select className="admin-access-select" value={engLevel}
+              onChange={e => setEngLevel(e.target.value)}>
+              <option value="">Not set</option>
+              <option value="elementary">Elementary</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+            <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+              onClick={handleEngLevelSave}
+              disabled={engLevelSaving || engLevel === (selected.english_level || '')}>
+              {engLevelSaving ? 'Saving…' : 'Save'}
+            </button>
+            {engLevelSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
+          </div>
+        </div>
+
         {/* ── Placement result ── */}
         {result ? (
           <div className="admin-section">
@@ -5581,6 +6010,7 @@ function AdminPanel({ user, onSignOut }) {
                     </div>
                     <div className="admin-student-meta">
                       <AccessBadge level="pending" />
+                      {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
                       <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
                     </div>
                     <span className="admin-arrow">›</span>
@@ -5605,6 +6035,7 @@ function AdminPanel({ user, onSignOut }) {
                       </div>
                       <div className="admin-student-meta">
                         <AccessBadge level={s.access_level} />
+                        {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
                         {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
                         {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
                         <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
