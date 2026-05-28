@@ -3756,50 +3756,75 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
 
           {selType && selType !== 'listening' && selType !== 'viewing' && (
             <div className="builder-section">
-              <div className="builder-section-header">
-                <h4 className="builder-section-title">❓ Questions</h4>
-                <button className="builder-ai-btn"
-                  onClick={() => exerciseFileRef.current?.click()}
-                  disabled={photoLoading}>
-                  {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
-                </button>
-              </div>
-              <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={handleExercisePhoto} />
-              {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
-
-              {ocrDraft !== null && (
-                <div className="ocr-review-box">
-                  <p className="ocr-review-label">
-                    📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
+              {selType === 'fill_blank' ? (
+                /* ── Fill-in-the-blank: flat single template, no question cards ── */
+                <>
+                  <h4 className="builder-section-title">✏️ Dialogue / text template</h4>
+                  <p className="builder-section-sub">
+                    Upload the picture above, then type the full conversation or sentences below.
+                    Use <code>___</code> for each blank — students will type directly into those blanks.
                   </p>
-                  <textarea
-                    className="ocr-review-textarea"
-                    rows={10}
-                    value={ocrDraft}
-                    onChange={e => setOcrDraft(e.target.value)}
-                    spellCheck={false}
-                  />
-                  <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
-                    <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
-                      onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
-                      ✓ Create questions from this text
+                  {questions[0] && (
+                    <BuilderQuestion
+                      key={questions[0].tempId}
+                      idx={0}
+                      question={questions[0]}
+                      onChange={(fld, val) => updateQ(questions[0].tempId, fld, val)}
+                      onRemove={() => {}}
+                      canRemove={false}
+                      flat={true}
+                    />
+                  )}
+                </>
+              ) : (
+                /* ── All other types: numbered question cards ── */
+                <>
+                  <div className="builder-section-header">
+                    <h4 className="builder-section-title">❓ Questions</h4>
+                    <button className="builder-ai-btn"
+                      onClick={() => exerciseFileRef.current?.click()}
+                      disabled={photoLoading}>
+                      {photoLoading ? '⏳ Reading photo…' : '📸 Extract questions from photo'}
                     </button>
-                    <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
-                      onClick={() => setOcrDraft(null)}>Discard</button>
                   </div>
-                </div>
-              )}
+                  <input ref={exerciseFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={handleExercisePhoto} />
+                  {photoError && <div className="auth-error" style={{ margin: '0.5rem 0 0.75rem' }}>{photoError}</div>}
 
-              <div className="builder-questions">
-                {questions.map((q, idx) => (
-                  <BuilderQuestion key={q.tempId} idx={idx} question={q}
-                    onChange={(fld, val) => updateQ(q.tempId, fld, val)}
-                    onRemove={() => removeQ(q.tempId)}
-                    canRemove={questions.length > 1} />
-                ))}
-              </div>
-              <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+                  {ocrDraft !== null && (
+                    <div className="ocr-review-box">
+                      <p className="ocr-review-label">
+                        📝 OCR extracted the text below. <strong>Delete everything except the exercise questions</strong>, then click "Create questions".
+                      </p>
+                      <textarea
+                        className="ocr-review-textarea"
+                        rows={10}
+                        value={ocrDraft}
+                        onChange={e => setOcrDraft(e.target.value)}
+                        spellCheck={false}
+                      />
+                      <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.6rem' }}>
+                        <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                          onClick={applyOcrDraft} disabled={!ocrDraft.trim()}>
+                          ✓ Create questions from this text
+                        </button>
+                        <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.5rem 1rem' }}
+                          onClick={() => setOcrDraft(null)}>Discard</button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="builder-questions">
+                    {questions.map((q, idx) => (
+                      <BuilderQuestion key={q.tempId} idx={idx} question={q}
+                        onChange={(fld, val) => updateQ(q.tempId, fld, val)}
+                        onRemove={() => removeQ(q.tempId)}
+                        canRemove={questions.length > 1} />
+                    ))}
+                  </div>
+                  <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+                </>
+              )}
             </div>
           )}
         </>
@@ -3826,7 +3851,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
 }
 
 // ─── BuilderQuestion ──────────────────────────────────────────
-function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
+function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = false }) {
   const { type, prompt, options, correct_answer, hint } = question
 
   // fill_blank: count blanks and parse stored correct answers
@@ -3853,19 +3878,21 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove }) {
   }
 
   return (
-    <div className="builder-question-card">
-      <div className="builder-q-header">
-        <span className="eq-num">{idx + 1}</span>
-        <span className="eq-type" style={{ flex: 1 }}>
-          {type === 'multiple_choice' ? 'Multiple choice'
-           : type === 'fill_blank'    ? 'Fill in the blank'
-           : type === 'true_false'    ? 'True / False'
-           : type === 'matching'      ? 'Matching'
-           : type === 'word_choice'   ? 'Word choice'
-           : 'Written answer'}
-        </span>
-        {canRemove && <button className="builder-q-remove" onClick={onRemove}>✕</button>}
-      </div>
+    <div className={flat ? 'builder-flat-template' : 'builder-question-card'}>
+      {!flat && (
+        <div className="builder-q-header">
+          <span className="eq-num">{idx + 1}</span>
+          <span className="eq-type" style={{ flex: 1 }}>
+            {type === 'multiple_choice' ? 'Multiple choice'
+             : type === 'fill_blank'    ? 'Fill in the blank'
+             : type === 'true_false'    ? 'True / False'
+             : type === 'matching'      ? 'Matching'
+             : type === 'word_choice'   ? 'Word choice'
+             : 'Written answer'}
+          </span>
+          {canRemove && <button className="builder-q-remove" onClick={onRemove}>✕</button>}
+        </div>
+      )}
 
       {type !== 'word_choice' && type !== 'fill_blank' && (
         <div className="form-field">

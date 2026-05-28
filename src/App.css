@@ -1846,6 +1846,11 @@ a { text-decoration: none; }
   color: #f87171;
 }
 
+/* Flat template wrapper for fill_blank builder (no card chrome) */
+.builder-flat-template {
+  display: flex; flex-direction: column; gap: 0.1rem;
+}
+
 /* Per-blank answer rows in builder */
 .fill-blank-answer-row {
   display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem;
