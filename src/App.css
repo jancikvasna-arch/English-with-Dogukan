@@ -2287,14 +2287,38 @@ button.label-chip:hover { opacity: 0.8; }
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
   font-family: 'DM Sans', sans-serif;
 }
-.plan-stage-items { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.5rem; }
+.plan-stage-items { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+
+/* Rich card for exercises added to a stage */
+.plan-stage-item-card {
+  display: flex; align-items: flex-start; gap: 0.75rem;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+  padding: 0.6rem 0.75rem; font-size: 0.88rem;
+}
+.plan-stage-item-thumb {
+  width: 72px; height: 50px; object-fit: cover; border-radius: 5px;
+  flex-shrink: 0; border: 1px solid var(--border);
+}
+.plan-stage-item-body { flex: 1; min-width: 0; }
+.plan-stage-item-title-row {
+  display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem;
+}
+.plan-stage-item-icon { font-size: 1rem; flex-shrink: 0; }
+.plan-stage-item-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-stage-item-remove {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 0.85rem; padding: 0.1rem 0.35rem;
+  flex-shrink: 0; border-radius: 4px; line-height: 1;
+}
+.plan-stage-item-remove:hover { color: #f87171; background: rgba(248,113,113,0.08); }
+.plan-stage-item-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+
+/* Legacy (keep for backwards compat) */
 .plan-stage-item {
   display: flex; align-items: center; gap: 0.5rem;
   background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
   padding: 0.45rem 0.75rem; font-size: 0.88rem;
 }
-.plan-stage-item-icon { font-size: 1rem; flex-shrink: 0; }
-.plan-stage-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-stage-item-type { font-size: 0.75rem; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
 
 /* Stage type filter in library */

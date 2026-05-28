@@ -3152,10 +3152,10 @@ function AdminLessonStages({ adminUserId }) {
           ? typeFiltered.filter(ex => ex.book_id === filterBookId)
           : typeFiltered
         const unitFiltered = filterUnit
-          ? bookFiltered.filter(ex => ex.unit === parseInt(filterUnit))
+          ? bookFiltered.filter(ex => String(ex.unit ?? '').startsWith(filterUnit))
           : bookFiltered
         const pageFiltered = filterPage
-          ? unitFiltered.filter(ex => ex.page === parseInt(filterPage))
+          ? unitFiltered.filter(ex => String(ex.page ?? '').startsWith(filterPage))
           : unitFiltered
         const sectionFiltered = filterSection.trim()
           ? pageFiltered.filter(ex => (ex.section || '').toLowerCase().includes(filterSection.trim().toLowerCase()))
@@ -3648,7 +3648,7 @@ function newQ(type) {
   }
 }
 
-function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], allBooks = [], onLabelCreated = null, onBookCreated = null, initialStageType = null }) {
+function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], allBooks = [], onLabelCreated = null, onBookCreated = null, initialStageType = null, cancelLabel = 'Cancel' }) {
   const isEdit = !!initialExercise
 
   const [stageType,      setStageType]      = useState(initialExercise?.stage_type ?? initialStageType ?? null)
@@ -3873,7 +3873,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       <div>
         <div className="admin-exercises-toolbar">
           <h3 style={{ margin: 0 }}>Create Lesson Stage</h3>
-          <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn-ghost" onClick={onCancel}>{cancelLabel}</button>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', margin: '0.5rem 0 0.25rem' }}>
           What type of lesson stage are you creating?
@@ -3896,7 +3896,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     <div>
       <div className="admin-exercises-toolbar">
         <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Lesson Stage' : 'Create Lesson Stage'}</h3>
-        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        <button className="btn-ghost" onClick={onCancel}>{cancelLabel}</button>
       </div>
 
       {/* ── Stage type badge ── */}
@@ -4348,7 +4348,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
                       : `Save stage (${questions.length} question${questions.length !== 1 ? 's' : ''})`)
                   : 'Save stage')}
         </button>
-        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        <button className="btn-ghost" onClick={onCancel}>{cancelLabel}</button>
       </div>
     </div>
   )
@@ -4676,7 +4676,7 @@ function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel, initialP
 }
 
 // ─── ExercisePicker — lesson plan library picker ──────────────
-function ExercisePicker({ exercises, labels = [], books = [], onSelect, onCancel }) {
+function ExercisePicker({ exercises, labels = [], books = [], onSelect, onCancel, cancelLabel = 'Cancel' }) {
   const [search,        setSearch]        = useState('')
   const [filterType,    setFilterType]    = useState(null)
   const [filterBook,    setFilterBook]    = useState(null)
@@ -4688,8 +4688,8 @@ function ExercisePicker({ exercises, labels = [], books = [], onSelect, onCancel
   const filtered = useMemo(() => exercises.filter(ex => {
     if (filterType    && ex.stage_type !== filterType)                         return false
     if (filterBook    && ex.book_id    !== filterBook)                         return false
-    if (filterUnit    && ex.unit       !== parseInt(filterUnit))               return false
-    if (filterPage    && ex.page       !== parseInt(filterPage))               return false
+    if (filterUnit    && !String(ex.unit  ?? '').startsWith(filterUnit))        return false
+    if (filterPage    && !String(ex.page  ?? '').startsWith(filterPage))       return false
     if (filterSection && !(ex.section || '').toLowerCase().includes(filterSection.toLowerCase())) return false
     if (filterLabels.length > 0 && !(ex.labels || []).some(l => filterLabels.includes(l.id))) return false
     if (search        && !ex.title.toLowerCase().includes(search.toLowerCase()))  return false
@@ -4706,7 +4706,7 @@ function ExercisePicker({ exercises, labels = [], books = [], onSelect, onCancel
     <div>
       <div className="admin-exercises-toolbar">
         <h3 style={{ margin: 0 }}>Pick an exercise from your library</h3>
-        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        <button className="btn-ghost" onClick={onCancel}>{cancelLabel}</button>
       </div>
 
       {/* Stage type filter */}
@@ -4998,6 +4998,26 @@ function LessonStageBuilder({
   // All exercises including ones created inline during this session
   const [exercises,    setExercises]    = useState(allExercises)
 
+  // Browser back-button support: push a history entry when picker opens,
+  // and close it when the user presses ← browser back.
+  useEffect(() => {
+    if (pickerCtx) {
+      window.history.pushState({ lessonPickerOpen: true }, '')
+      window.scrollTo(0, 0)
+    }
+  }, [!!pickerCtx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handlePop = () => {
+      if (pickerCtx) { setPickerCtx(null); window.scrollTo(0, 0) }
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
+  }, [pickerCtx])
+
+  // Helper: close picker and restore scroll position
+  const closePickerCtx = () => { setPickerCtx(null); window.scrollTo(0, 0) }
+
   const [saving,  setSaving]  = useState(false)
   const [err,     setErr]     = useState(null)
 
@@ -5038,7 +5058,7 @@ function LessonStageBuilder({
     item.exerciseTitle = exercise.title
     item.type          = exercise.stage_type || 'controlled_exercise'
     addItemToGroup(pickerCtx.groupNumber, item)
-    setPickerCtx(null)
+    closePickerCtx()
   }
 
   const handleNewExerciseSaved = async (newExId) => {
@@ -5052,7 +5072,7 @@ function LessonStageBuilder({
       item.type          = newEx.stage_type || 'controlled_exercise'
       addItemToGroup(pickerCtx.groupNumber, item)
     }
-    setPickerCtx(null)
+    closePickerCtx()
   }
 
   // ── Save ──────────────────────────────────────────────────────
@@ -5085,13 +5105,15 @@ function LessonStageBuilder({
     return <ExercisePicker
       exercises={exercises} labels={labels} books={books}
       onSelect={handlePickerSelect}
-      onCancel={() => setPickerCtx(null)} />
+      onCancel={closePickerCtx}
+      cancelLabel="← Back to lesson plan" />
   }
   if (pickerCtx?.mode === 'create') {
     return <ExerciseBuilder
       allLabels={labels} allBooks={books}
       onSaved={handleNewExerciseSaved}
-      onCancel={() => setPickerCtx(null)} />
+      onCancel={closePickerCtx}
+      cancelLabel="← Back to lesson plan" />
   }
 
   return (
@@ -5203,16 +5225,39 @@ function LessonStageBuilder({
               <div className="plan-stage-items">
                 {group.items.map(item => {
                   const def = STAGE_TYPES.find(t => t.value === item.type) || { icon: '✏️', label: 'Exercise' }
+                  const exFull = exercises.find(e => e.id === item.exerciseId)
+                  const book   = exFull?.book_id ? books.find(b => b.id === exFull.book_id) : null
+                  const locParts = [
+                    exFull?.unit != null ? `Unit ${exFull.unit}` : null,
+                    exFull?.page != null ? `p.${exFull.page}` : null,
+                    exFull?.section || null,
+                    exFull?.exercise_no != null ? `Ex.${exFull.exercise_no}` : null,
+                  ].filter(Boolean)
                   return (
-                    <div key={item.id} className="plan-stage-item">
-                      <span className="plan-stage-item-icon">{def.icon}</span>
-                      <span className="plan-stage-item-title">
-                        {item.exerciseTitle || item.title || <em style={{ color: 'var(--text-muted)' }}>No title</em>}
-                      </span>
-                      <span className="plan-stage-item-type">{def.label}</span>
-                      <button type="button"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '0.2rem 0.4rem', flexShrink: 0 }}
-                        onClick={() => removeItemFromGroup(group.number, item.id)}>✕</button>
+                    <div key={item.id} className="plan-stage-item-card">
+                      {exFull?.thumbnail && (
+                        <img src={exFull.thumbnail} alt="" className="plan-stage-item-thumb" />
+                      )}
+                      <div className="plan-stage-item-body">
+                        <div className="plan-stage-item-title-row">
+                          <span className="plan-stage-item-icon">{def.icon}</span>
+                          <span className="plan-stage-item-title">
+                            {item.exerciseTitle || item.title || <em style={{ color: 'var(--text-muted)' }}>No title</em>}
+                          </span>
+                          <button type="button" className="plan-stage-item-remove"
+                            onClick={() => removeItemFromGroup(group.number, item.id)}>✕</button>
+                        </div>
+                        <div className="plan-stage-item-meta">
+                          <span className="stage-type-badge-sm">{def.icon} {def.label}</span>
+                          {book && <span className="admin-level-chip" style={{ fontSize: '0.72rem' }}>📚 {book.title}</span>}
+                          {locParts.length > 0 && (
+                            <span className="admin-level-chip location-chip" style={{ fontSize: '0.72rem' }}>{locParts.join(' · ')}</span>
+                          )}
+                          {exFull?.estimated_minutes && (
+                            <span className="admin-level-chip" style={{ fontSize: '0.72rem' }}>⏱ {exFull.estimated_minutes} min</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )
                 })}
