@@ -1989,6 +1989,7 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
   const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
 
   const allAnswered = questions.every(q => {
+    if (q.type === 'listening' || q.type === 'viewing') return true
     if (q.type === 'matching') {
       if (!answers[q.id]) return false
       try {
@@ -2071,7 +2072,9 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
       )}
 
       <div className="exercise-questions">
-        {questions.map((q, idx) => (
+        {questions.map((q, idx) => {
+          if (q.type === 'listening' || q.type === 'viewing') return null
+          return (
           <div key={q.id} className="exercise-question">
             <div className="eq-label">
               <span className="eq-num">Q{idx + 1}</span>
@@ -2137,14 +2140,29 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
               />
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
+
+      {/* Verbal-activity note for listening/viewing exercises */}
+      {questions.every(q => q.type === 'listening' || q.type === 'viewing') && questions.length > 0 && (
+        <div className="verbal-activity-note">
+          {questions[0].type === 'listening' ? '🎧' : '🎥'}
+          <span>
+            {questions[0].type === 'listening'
+              ? 'Listen carefully and be ready to discuss with your teacher.'
+              : 'Watch carefully and be ready to discuss with your teacher.'}
+          </span>
+        </div>
+      )}
 
       {!confirming ? (
         <div className="exercise-submit-row">
           {!allAnswered && <p className="exercise-submit-hint">Answer all questions before submitting.</p>}
           <button className="btn-gold btn-lg" disabled={!allAnswered} onClick={() => setConfirming(true)}>
-            Submit answers →
+            {questions.every(q => q.type === 'listening' || q.type === 'viewing') && questions.length > 0
+              ? 'Mark as done →'
+              : 'Submit answers →'}
           </button>
         </div>
       ) : (
@@ -2259,6 +2277,8 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
     : t === 'true_false'    ? 'True / False'
     : t === 'matching'      ? 'Matching'
     : t === 'word_choice'   ? 'Word choice'
+    : t === 'listening'     ? 'Listening'
+    : t === 'viewing'       ? 'Viewing'
     : 'Written answer'
 
   return (
@@ -2294,7 +2314,14 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
       )}
 
       <div className="exercise-questions">
+        {questions.every(q => q.type === 'listening' || q.type === 'viewing') && questions.length > 0 && (
+          <div className="verbal-activity-note">
+            {questions[0].type === 'listening' ? '🎧' : '🎥'}
+            <span>{questions[0].type === 'listening' ? 'Listening activity — verbal discussion.' : 'Viewing activity — verbal discussion.'}</span>
+          </div>
+        )}
         {questions.map((q, idx) => {
+          if (q.type === 'listening' || q.type === 'viewing') return null
           const result = getResult(q)
           return (
             <div key={q.id} className={`exercise-question${checked && result === true ? ' eq--correct' : checked && result === false ? ' eq--wrong' : ''}`}>
@@ -2388,6 +2415,8 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
     : t === 'true_false'    ? 'True / False'
     : t === 'matching'      ? 'Matching'
     : t === 'word_choice'   ? 'Word choice'
+    : t === 'listening'     ? 'Listening'
+    : t === 'viewing'       ? 'Viewing'
     : 'Written answer'
 
   return (
@@ -2994,6 +3023,8 @@ const BUILDER_TYPES = [
   { value: 'true_false',      label: 'True / False', icon: '✓✗' },
   { value: 'matching',        label: 'Matching', icon: '↔️' },
   { value: 'word_choice',     label: 'Word Choice', icon: '↕️' },
+  { value: 'listening',       label: 'Listening', icon: '🎧' },
+  { value: 'viewing',         label: 'Viewing',   icon: '🎥' },
 ]
 
 // ─── Lesson stage types ───────────────────────────────────────
@@ -3176,13 +3207,21 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
 
   // ── Save ────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!title.trim() || (STAGE_TYPES.find(t => t.value === stageType)?.hasQuestions && !questions.length)) return
+    const stDef = STAGE_TYPES.find(t => t.value === stageType)
+    const isVerbal = selType === 'listening' || selType === 'viewing'
+    if (!title.trim()) return
+    if (stDef?.hasQuestions && !selType) return
+    if (stDef?.hasQuestions && !isVerbal && !questions.length) return
     setSaving(true); setSaveError(null)
     const finalMins = estimatedMins === 'other' ? (parseInt(customMins) || null) : estimatedMins
     const meta = { title, description, contextImages, contextText, audioUrl, estimatedMinutes: finalMins, stageType: stageType ?? 'controlled_exercise' }
+    // For listening/viewing: auto-create one dummy question as the activity type marker
+    const questionsToSave = isVerbal
+      ? [{ type: selType, prompt: '', order_index: 0, options: [], correct_answer: null, hint: null }]
+      : questions
     const id = isEdit
-      ? await updateExerciseWithQuestions(initialExercise.id, meta, questions)
-      : await createExerciseWithQuestions(meta, questions)
+      ? await updateExerciseWithQuestions(initialExercise.id, meta, questionsToSave)
+      : await createExerciseWithQuestions(meta, questionsToSave)
     if (id) {
       await setExerciseLabels(id, labelIds)
       setSaving(false)
@@ -3309,8 +3348,22 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
             </div>
           </div>
 
+          {/* ── Verbal activity note (listening / viewing) ── */}
+          {(selType === 'listening' || selType === 'viewing') && (
+            <div className="builder-section">
+              <div className="verbal-activity-note" style={{ margin: 0 }}>
+                {selType === 'listening' ? '🎧' : '🎥'}
+                <span>
+                  {selType === 'listening'
+                    ? 'Students will listen and discuss verbally with you. No written answers required — just add the audio link and any instructions above.'
+                    : 'Students will watch and discuss verbally with you. No written answers required — just add the video link and any instructions above.'}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* ── Questions ── */}
-          {selType && (
+          {selType && selType !== 'listening' && selType !== 'viewing' && (
             <div className="builder-section">
               <div className="builder-section-header">
                 <h4 className="builder-section-title">❓ Questions</h4>
@@ -3448,13 +3501,15 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
-          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!questions.length || !selType))}>
+          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!selType || (selType !== 'listening' && selType !== 'viewing' && !questions.length)))}>
           {saving
             ? 'Saving…'
             : isEdit
-              ? (stageTypeDef.hasQuestions ? `Update stage (${questions.length} Q)` : 'Update stage')
+              ? (stageTypeDef.hasQuestions ? `Update stage (${(selType === 'listening' || selType === 'viewing') ? selType : questions.length + ' Q'})` : 'Update stage')
               : (stageTypeDef.hasQuestions
-                  ? `Save stage (${questions.length} question${questions.length !== 1 ? 's' : ''})`
+                  ? ((selType === 'listening' || selType === 'viewing')
+                      ? `Save ${selType} stage`
+                      : `Save stage (${questions.length} question${questions.length !== 1 ? 's' : ''})`)
                   : 'Save stage')}
         </button>
         <button className="btn-ghost" onClick={onCancel}>Cancel</button>
@@ -4093,6 +4148,8 @@ function AdminExerciseReview({ details, onBack }) {
     : t === 'true_false'    ? 'True / False'
     : t === 'matching'      ? 'Matching'
     : t === 'word_choice'   ? 'Word choice'
+    : t === 'listening'     ? 'Listening'
+    : t === 'viewing'       ? 'Viewing'
     : 'Written answer'
 
   return (
@@ -4149,7 +4206,14 @@ function AdminExerciseReview({ details, onBack }) {
       )}
 
       <div className="review-questions">
+        {questions.every(q => q.type === 'listening' || q.type === 'viewing') && questions.length > 0 && (
+          <div className="verbal-activity-note">
+            {questions[0].type === 'listening' ? '🎧' : '🎥'}
+            <span>{questions[0].type === 'listening' ? 'Listening activity — student listened and discussed verbally.' : 'Viewing activity — student watched and discussed verbally.'}</span>
+          </div>
+        )}
         {questions.map((q, idx) => {
+          if (q.type === 'listening' || q.type === 'viewing') return null
           const sa        = answerMap[q.id]
           const hasAnswer = sa?.answer?.trim()
           const correct   = autoCorrect(q)
