@@ -5792,14 +5792,31 @@ function AdminPanel({ user, onSignOut }) {
   const [engLevelSaving, setEngLevelSaving] = useState(false)
   const [engLevelSaved,  setEngLevelSaved]  = useState(false)
 
+  // Manual students
+  const [manualStudents,      setManualStudents]      = useState([])
+  const [selectedManual,      setSelectedManual]      = useState(null)
+  const [editManualLevel,     setEditManualLevel]     = useState('')
+  const [editManualLevelSaving, setEditManualLevelSaving] = useState(false)
+  const [editManualLevelSaved,  setEditManualLevelSaved]  = useState(false)
+
+  // Add student form
+  const [showAddStudentForm, setShowAddStudentForm] = useState(false)
+  const [newStudentName,     setNewStudentName]     = useState('')
+  const [newStudentEmail,    setNewStudentEmail]    = useState('')
+  const [newStudentLevel,    setNewStudentLevel]    = useState('')
+  const [newStudentNotes,    setNewStudentNotes]    = useState('')
+  const [addStudentSaving,   setAddStudentSaving]   = useState(false)
+  const [addStudentError,    setAddStudentError]    = useState(null)
+
   const isAdmin      = user?.email === ADMIN_EMAIL
   const pendingCount = students.filter(s => s.access_level === 'pending').length
 
   useEffect(() => {
     if (!isAdmin || !supabase) return
     setDataLoading(true)
-    fetchStudentsAdmin().then(data => {
-      setStudents(data)
+    Promise.all([fetchStudentsAdmin(), fetchManualStudents()]).then(([authData, manualData]) => {
+      setStudents(authData)
+      setManualStudents(manualData)
       setDataLoading(false)
     })
   }, [isAdmin])
@@ -5858,6 +5875,48 @@ function AdminPanel({ user, onSignOut }) {
     if (details) setReviewingFromStudent(details)
   }
 
+  const openManualStudent = (s) => {
+    setSelectedManual(s)
+    setEditManualLevel(s.english_level || '')
+    setEditManualLevelSaved(false)
+  }
+
+  const handleManualLevelSave = async () => {
+    setEditManualLevelSaving(true)
+    const { error } = await supabase.from('manual_students')
+      .update({ english_level: editManualLevel || null })
+      .eq('id', selectedManual.id)
+    setEditManualLevelSaving(false)
+    if (!error) {
+      setManualStudents(prev => prev.map(s =>
+        s.id === selectedManual.id ? { ...s, english_level: editManualLevel || null } : s))
+      setSelectedManual(prev => ({ ...prev, english_level: editManualLevel || null }))
+      setEditManualLevelSaved(true)
+      setTimeout(() => setEditManualLevelSaved(false), 2500)
+    }
+  }
+
+  const handleAddStudent = async (e) => {
+    e.preventDefault()
+    if (!newStudentName.trim()) return
+    setAddStudentSaving(true)
+    setAddStudentError(null)
+    const created = await createManualStudent({
+      name: newStudentName, email: newStudentEmail,
+      englishLevel: newStudentLevel, notes: newStudentNotes,
+      createdBy: user.id,
+    })
+    setAddStudentSaving(false)
+    if (created) {
+      setManualStudents(prev => [created, ...prev])
+      setShowAddStudentForm(false)
+      setNewStudentName(''); setNewStudentEmail('')
+      setNewStudentLevel(''); setNewStudentNotes('')
+    } else {
+      setAddStudentError('Could not save — check the console for details.')
+    }
+  }
+
   if (!supabase) {
     return (
       <div className="flow-card text-center">
@@ -5900,6 +5959,55 @@ function AdminPanel({ user, onSignOut }) {
           details={reviewingFromStudent}
           onBack={() => setReviewingFromStudent(null)}
         />
+      </div>
+    )
+  }
+
+  // Manual student detail view
+  if (selectedManual) {
+    return (
+      <div className="flow-card admin-detail">
+        <button className="back-btn" onClick={() => setSelectedManual(null)}>← Back to students</button>
+        <div className="admin-detail-header">
+          <div>
+            <h2 style={{ marginBottom: '0.2rem' }}>{selectedManual.name}</h2>
+            {selectedManual.email && <p className="admin-email">{selectedManual.email}</p>}
+            <p className="admin-date">Added {new Date(selectedManual.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          </div>
+          <span className="admin-level-chip" style={{ fontSize: '0.8rem', opacity: 0.8 }}>Manual student</span>
+        </div>
+
+        <div className="admin-section">
+          <h3>English level</h3>
+          <div className="admin-access-row">
+            <select className="admin-access-select" value={editManualLevel}
+              onChange={e => setEditManualLevel(e.target.value)}>
+              <option value="">Not set</option>
+              <option value="elementary">Elementary</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+            <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+              onClick={handleManualLevelSave}
+              disabled={editManualLevelSaving || editManualLevel === (selectedManual.english_level || '')}>
+              {editManualLevelSaving ? 'Saving…' : 'Save'}
+            </button>
+            {editManualLevelSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
+          </div>
+        </div>
+
+        {selectedManual.notes && (
+          <div className="admin-section">
+            <h3>Notes</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.65' }}>{selectedManual.notes}</p>
+          </div>
+        )}
+
+        <div className="admin-section">
+          <p className="flow-sub" style={{ fontSize: '0.88rem' }}>
+            This is a manually-added student — they don't have a login account yet.
+          </p>
+        </div>
       </div>
     )
   }
@@ -6039,66 +6147,144 @@ function AdminPanel({ user, onSignOut }) {
 
       {/* Students tab */}
       {adminTab === 'students' && (
-        dataLoading ? (
-          <div className="dashboard-loading">Loading students…</div>
-        ) : students.length === 0 ? (
-          <div className="dashboard-empty">
-            <p>No students yet.</p>
-            <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who sign up will appear here.</p>
-          </div>
-        ) : (
-          <div className="admin-list">
-            {/* Pending section */}
-            {pendingStudents.length > 0 && (
-              <>
-                <p className="admin-section-label">⏳ Awaiting approval ({pendingStudents.length})</p>
-                {pendingStudents.map(s => (
-                  <button key={s.id} className="admin-student-row admin-student-row--pending"
-                    onClick={() => openStudent(s)}>
-                    <div className="admin-student-info">
-                      <strong>{s.name || 'Unknown'}</strong>
-                      <span className="admin-student-email">{s.email}</span>
-                    </div>
-                    <div className="admin-student-meta">
-                      <AccessBadge level="pending" />
-                      {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                      <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
-                    </div>
-                    <span className="admin-arrow">›</span>
+        <div>
+          {/* Add student button / form */}
+          {!showAddStudentForm ? (
+            <div style={{ marginBottom: '1rem' }}>
+              <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.55rem 1.1rem' }}
+                onClick={() => setShowAddStudentForm(true)}>
+                + Add student
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleAddStudent} className="admin-add-lesson-form" style={{ marginBottom: '1.25rem' }}>
+              <p style={{ margin: '0 0 0.75rem', fontWeight: 600, fontSize: '0.95rem' }}>New student</p>
+              <div className="booking-form" style={{ gap: '0.75rem' }}>
+                <div className="form-field">
+                  <label>Name <span className="required-star">*</span></label>
+                  <input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)}
+                    placeholder="e.g. Maria García" autoFocus required />
+                </div>
+                <div className="form-field">
+                  <label>Email <span className="optional">(optional)</span></label>
+                  <input type="email" value={newStudentEmail} onChange={e => setNewStudentEmail(e.target.value)}
+                    placeholder="e.g. maria@example.com" />
+                </div>
+                <div className="form-field">
+                  <label>English level <span className="optional">(optional)</span></label>
+                  <select value={newStudentLevel} onChange={e => setNewStudentLevel(e.target.value)}>
+                    <option value="">Not set</option>
+                    <option value="elementary">Elementary</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label>Notes <span className="optional">(optional)</span></label>
+                  <textarea value={newStudentNotes} onChange={e => setNewStudentNotes(e.target.value)}
+                    placeholder="Any notes about this student…" rows={2} />
+                </div>
+                {addStudentError && <div className="auth-error">{addStudentError}</div>}
+                <div style={{ display: 'flex', gap: '0.6rem' }}>
+                  <button type="submit" className="btn-gold" style={{ fontSize: '0.88rem' }}
+                    disabled={addStudentSaving || !newStudentName.trim()}>
+                    {addStudentSaving ? 'Saving…' : 'Save student'}
                   </button>
-                ))}
-              </>
-            )}
+                  <button type="button" className="btn-ghost" style={{ fontSize: '0.88rem' }}
+                    onClick={() => { setShowAddStudentForm(false); setAddStudentError(null) }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
 
-            {/* Active students */}
-            {activeStudents.length > 0 && (
-              <>
-                {pendingStudents.length > 0 && (
-                  <p className="admin-section-label" style={{ marginTop: '1.25rem' }}>Active students ({activeStudents.length})</p>
-                )}
-                {activeStudents.map(s => {
-                  const result = s.questionnaire_submissions?.[0]?.placement_results?.[0]
-                  return (
-                    <button key={s.id} className="admin-student-row" onClick={() => openStudent(s)}>
+          {dataLoading ? (
+            <div className="dashboard-loading">Loading students…</div>
+          ) : (
+            <div className="admin-list">
+              {/* Pending section */}
+              {pendingStudents.length > 0 && (
+                <>
+                  <p className="admin-section-label">⏳ Awaiting approval ({pendingStudents.length})</p>
+                  {pendingStudents.map(s => (
+                    <button key={s.id} className="admin-student-row admin-student-row--pending"
+                      onClick={() => openStudent(s)}>
                       <div className="admin-student-info">
                         <strong>{s.name || 'Unknown'}</strong>
                         <span className="admin-student-email">{s.email}</span>
                       </div>
                       <div className="admin-student-meta">
-                        <AccessBadge level={s.access_level} />
+                        <AccessBadge level="pending" />
                         {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                        {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
-                        {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
                         <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
                       </div>
                       <span className="admin-arrow">›</span>
                     </button>
-                  )
-                })}
-              </>
-            )}
-          </div>
-        )
+                  ))}
+                </>
+              )}
+
+              {/* Active auth students */}
+              {activeStudents.length > 0 && (
+                <>
+                  <p className="admin-section-label" style={{ marginTop: pendingStudents.length > 0 ? '1.25rem' : 0 }}>
+                    Registered students ({activeStudents.length})
+                  </p>
+                  {activeStudents.map(s => {
+                    const result = s.questionnaire_submissions?.[0]?.placement_results?.[0]
+                    return (
+                      <button key={s.id} className="admin-student-row" onClick={() => openStudent(s)}>
+                        <div className="admin-student-info">
+                          <strong>{s.name || 'Unknown'}</strong>
+                          <span className="admin-student-email">{s.email}</span>
+                        </div>
+                        <div className="admin-student-meta">
+                          <AccessBadge level={s.access_level} />
+                          {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
+                          {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
+                          {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
+                          <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                        </div>
+                        <span className="admin-arrow">›</span>
+                      </button>
+                    )
+                  })}
+                </>
+              )}
+
+              {/* Manual students */}
+              {manualStudents.length > 0 && (
+                <>
+                  <p className="admin-section-label" style={{ marginTop: '1.25rem' }}>
+                    Manual students ({manualStudents.length})
+                  </p>
+                  {manualStudents.map(s => (
+                    <button key={s.id} className="admin-student-row" onClick={() => openManualStudent(s)}>
+                      <div className="admin-student-info">
+                        <strong>{s.name}</strong>
+                        <span className="admin-student-email">{s.email || 'No email'}</span>
+                      </div>
+                      <div className="admin-student-meta">
+                        {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
+                        <span className="admin-level-chip" style={{ opacity: 0.65 }}>Manual</span>
+                        <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                      </div>
+                      <span className="admin-arrow">›</span>
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {students.length === 0 && manualStudents.length === 0 && (
+                <div className="dashboard-empty">
+                  <p>No students yet.</p>
+                  <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who sign up will appear here, or add one manually above.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
