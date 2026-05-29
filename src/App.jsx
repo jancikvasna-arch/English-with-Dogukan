@@ -678,36 +678,21 @@ function Hero({ onBook }) {
           </div>
         </div>
         <div className="hero-card">
-          <div className="journey-card">
-            <div className="journey-card-title">Your learning journey</div>
-            <div className="journey-steps">
-              <div className="journey-step">
-                <div className="step-num">1</div>
-                <div>
-                  <strong>Tell me about your learning needs</strong>
-                  <p>Quick questionnaire or a free 15-min consultation call</p>
-                </div>
-              </div>
-              <div className="journey-step">
-                <div className="step-num">2</div>
-                <div>
-                  <strong>Free Level Test</strong>
-                  <p>Take a test so that we determine your level</p>
-                </div>
-              </div>
-              <div className="journey-step">
-                <div className="step-num">3</div>
-                <div>
-                  <strong>First lesson free</strong>
-                  <p>Designed specifically for you — no commitment</p>
-                </div>
-              </div>
-              <div className="journey-step">
-                <div className="step-num">4</div>
-                <div>
-                  <strong>Start your course</strong>
-                  <p>Lessons focus on improving your practical communication skills. I prepare custom lessons to address your needs and fill in the gaps in your knowledge.</p>
-                </div>
+          <div className="hero-teacher-card">
+            <div className="hero-teacher-photo">
+              <img src="/hero.png" alt="Dogukan — English teacher" />
+            </div>
+            <div className="hero-teacher-info">
+              <p className="hero-teacher-name">Hi, I'm Dogukan 👋</p>
+              <p className="hero-teacher-bio">
+                CELTA-certified English teacher from International House, London.
+                I specialise in one-to-one lessons built around your goals — whether that's
+                everyday conversation, exam prep, or professional English.
+              </p>
+              <div className="hero-teacher-creds">
+                <span>🎓 CELTA — IH London</span>
+                <span>📚 Oxford &amp; Cambridge</span>
+                <span>🌍 Students from 20+ countries</span>
               </div>
             </div>
           </div>

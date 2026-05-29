@@ -196,35 +196,53 @@ a { text-decoration: none; }
   gap: 1rem;
   flex-wrap: wrap;
 }
-.journey-card {
+/* Hero teacher intro card */
+.hero-teacher-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 2rem;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.07);
 }
-.journey-card-title {
+.hero-teacher-photo {
+  width: 100%;
+  aspect-ratio: 4/3;
+  overflow: hidden;
+  background: var(--bg-darker);
+}
+.hero-teacher-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+.hero-teacher-info {
+  padding: 1.5rem;
+}
+.hero-teacher-name {
   font-family: 'DM Serif Display', serif;
-  font-size: 1.1rem;
-  color: var(--gold);
-  margin-bottom: 1.5rem;
+  font-size: 1.2rem;
+  color: var(--text);
+  margin: 0 0 0.6rem;
+  font-weight: 400;
 }
-.journey-steps { display: flex; flex-direction: column; gap: 1.25rem; }
-.journey-step { display: flex; gap: 1rem; align-items: flex-start; }
-.step-num {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  background: rgba(0, 102, 153,0.15);
-  color: var(--gold);
-  border-radius: 50%;
+.hero-teacher-bio {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  margin: 0 0 1rem;
+}
+.hero-teacher-creds {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.8rem;
+  flex-direction: column;
+  gap: 0.35rem;
 }
-.journey-step strong { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
-.journey-step p { color: var(--text-muted); font-size: 0.85rem; margin: 0; }
+.hero-teacher-creds span {
+  font-size: 0.82rem;
+  color: var(--gold);
+  font-weight: 600;
+}
 
 /* ─── Sections ──────────────────────────────────────────── */
 .section { padding: 6rem 1.5rem; }
@@ -982,7 +1000,7 @@ a { text-decoration: none; }
 }
 
 /* ─── Student dashboard ──────────────────────────────────── */
-.dashboard-card { max-width: 680px; }
+.dashboard-card { max-width: 1050px; }
 .dashboard-header {
   display: flex; justify-content: space-between; align-items: flex-start;
   margin-bottom: 2rem;
@@ -1008,8 +1026,8 @@ a { text-decoration: none; }
 .dashboard-actions { margin-top: 0.5rem; }
 
 /* ─── Admin panel ────────────────────────────────────────── */
-.admin-panel { max-width: 780px; }
-.admin-detail { max-width: 680px; }
+.admin-panel { max-width: 1150px; }
+.admin-detail { max-width: 1050px; }
 .admin-header {
   display: flex; justify-content: space-between; align-items: flex-start;
   margin-bottom: 2rem;
@@ -1084,7 +1102,8 @@ a { text-decoration: none; }
 /* ─── Responsive ────────────────────────────────────────── */
 @media (max-width: 900px) {
   .hero-inner { grid-template-columns: 1fr; gap: 3rem; }
-  .hero-card { display: none; }
+  .hero-card { display: block; }
+  .hero-teacher-photo { aspect-ratio: 16/9; }
   .steps-grid { grid-template-columns: 1fr 1fr; }
   .courses-grid { grid-template-columns: 1fr; }
   .testimonials-grid { grid-template-columns: 1fr; }
@@ -1133,7 +1152,7 @@ a { text-decoration: none; }
 }
 
 /* Exercise player */
-.exercise-player-card { max-width: 680px; }
+.exercise-player-card { max-width: 920px; }
 .exercise-player-header { margin-bottom: 2rem; }
 .exercise-teacher-note {
   margin-top: 1rem; background: rgba(0,102,153,0.08); border: 1px solid rgba(0,102,153,0.2);
