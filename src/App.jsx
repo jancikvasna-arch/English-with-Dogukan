@@ -21,6 +21,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyReferralCode, fetchMyReferrals, lookupReferralCode, logReferral,
   markDiscountApplied, fetchAllReferrals,
   createProspect, fetchAllProspects, updateProspectStatus,
+  fetchNotesForExercise, saveNote, deleteNote, fetchMyAssignedPlans,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -1834,6 +1835,12 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [myReferrals,     setMyReferrals]     = useState([])
   const [referralCopied,  setReferralCopied]  = useState(false)
 
+  // Lesson plans assigned to this student (full plan view with notes)
+  const [myPlans,             setMyPlans]             = useState([])
+  const [activePlan,          setActivePlan]          = useState(null) // plan object
+  const [activePlanExercise,  setActivePlanExercise]  = useState(null) // { exercise, questions }
+  const [loadingPlanExId,     setLoadingPlanExId]     = useState(null)
+
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
     Promise.all([
@@ -1848,7 +1855,8 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       fetchMyVocabulary(user.id),
       fetchMyReferralCode(user.id),
       fetchMyReferrals(user.id),
-    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab, refCode, refs]) => {
+      fetchMyAssignedPlans(),
+    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab, refCode, refs, plans]) => {
       setProfile(prof)
       setResult(res)
       setAssignments(exs)
@@ -1859,6 +1867,7 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       setVocabulary(vocab)
       setReferralCode(refCode)
       setMyReferrals(refs)
+      setMyPlans(plans)
       setLoading(false)
     })
   }, [user])
@@ -1894,6 +1903,13 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     if (ok) setVocabulary(prev => prev.filter(v => v.id !== id))
   }
 
+  const openPlanExercise = async (exerciseId) => {
+    setLoadingPlanExId(exerciseId)
+    const full = await fetchExerciseWithQuestions(exerciseId)
+    setLoadingPlanExId(null)
+    if (full) setActivePlanExercise(full)
+  }
+
   if (viewingSubmission) {
     return (
       <StudentSubmissionReview
@@ -1925,6 +1941,121 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
           }
         }}
       />
+    )
+  }
+
+  // Student: viewing an exercise inside a lesson plan (with notes)
+  if (activePlan && activePlanExercise) {
+    return (
+      <div className="flow-card dashboard-card">
+        <ExerciseDemoPlayer
+          exercise={activePlanExercise}
+          questions={activePlanExercise.questions ?? []}
+          embedded={true}
+          onBack={() => setActivePlanExercise(null)}
+          lessonPlanId={activePlan.id}
+          authorId={user.id}
+          authorEmail={user.email}
+        />
+      </div>
+    )
+  }
+
+  // Student: viewing a lesson plan's stage list
+  if (activePlan) {
+    const lessonStages = (activePlan.lesson_stages ?? [])
+      .filter(s => (s.section ?? 'lesson') !== 'homework')
+      .sort((a, b) => (a.stage_number || 0) - (b.stage_number || 0) || a.order_index - b.order_index)
+    const homeworkStages = (activePlan.lesson_stages ?? [])
+      .filter(s => (s.section ?? 'lesson') === 'homework')
+
+    const stageGroups = lessonStages.reduce((acc, s) => {
+      const num = s.stage_number ?? 1
+      if (!acc[num]) acc[num] = { number: num, name: s.stage_name, items: [] }
+      acc[num].items.push(s)
+      return acc
+    }, {})
+
+    return (
+      <div className="flow-card dashboard-card">
+        <button className="back-btn" onClick={() => setActivePlan(null)}>← Back to plans</button>
+        <h2 style={{ margin: '0.75rem 0 0.25rem', fontSize: '1.35rem' }}>{activePlan.title}</h2>
+        {activePlan.description && <p className="flow-sub" style={{ marginBottom: '0.75rem' }}>{activePlan.description}</p>}
+        {activePlan.scheduled_at && (
+          <div style={{ marginBottom: '1rem' }}>
+            <span className="admin-level-chip" style={{ color: 'var(--gold)' }}>
+              📅 {new Date(activePlan.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          </div>
+        )}
+
+        {/* Lesson stages */}
+        <div className="builder-section">
+          <h4 className="builder-section-title">📌 Lesson stages</h4>
+          {Object.values(stageGroups).map(group => (
+            <div key={group.number} style={{ marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 600, marginBottom: '0.4rem', color: 'var(--gold)' }}>
+                Stage {group.number}{group.name ? ` — ${group.name}` : ''}
+              </div>
+              {group.items.map(stage => {
+                const ex = stage.exercises
+                return (
+                  <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', background: '#fff', borderRadius: '7px', border: '1px solid #e8e3d8', marginBottom: '0.4rem' }}>
+                    <span style={{ flex: 1, fontSize: '0.9rem' }}>{ex?.title || stage.title || 'Stage item'}</span>
+                    {ex && (
+                      <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem', whiteSpace: 'nowrap' }}
+                        onClick={() => openPlanExercise(ex.id)}
+                        disabled={loadingPlanExId === ex.id}>
+                        {loadingPlanExId === ex.id ? '…' : '▶ Open'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+          {Object.keys(stageGroups).length === 0 && (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No stages yet.</p>
+          )}
+        </div>
+
+        {/* Homework section */}
+        {homeworkStages.length > 0 && (
+          <div className="builder-section" style={{ marginTop: '1rem' }}>
+            <h4 className="builder-section-title">📚 Homework</h4>
+            {homeworkStages.map(stage => {
+              const ex = stage.exercises
+              return (
+                <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', background: '#fff', borderRadius: '7px', border: '1px solid #e8e3d8', marginBottom: '0.4rem' }}>
+                  <span style={{ flex: 1, fontSize: '0.9rem' }}>
+                    {ex?.title || stage.title || 'Homework exercise'}
+                    {stage.content_text && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginLeft: '0.5rem' }}>— {stage.content_text}</span>
+                    )}
+                  </span>
+                  {ex && (
+                    <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem', whiteSpace: 'nowrap' }}
+                      onClick={() => openPlanExercise(ex.id)}
+                      disabled={loadingPlanExId === ex.id}>
+                      {loadingPlanExId === ex.id ? '…' : '▶ Open'}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Plan-level notes (not tied to a specific exercise) */}
+        <div style={{ marginTop: '1.5rem' }}>
+          <NotesSection
+            planId={activePlan.id}
+            exerciseId={null}
+            authorId={user.id}
+            authorEmail={user.email}
+          />
+        </div>
+      </div>
     )
   }
 
@@ -2044,6 +2175,40 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
               {/* ── Lesson history ── */}
               <StudentLessonList lessons={lessons} onFeedbackSaved={(id, fb) =>
                 setLessons(prev => prev.map(l => l.id === id ? { ...l, student_feedback: fb } : l))} />
+
+              {/* ── Lesson Plans (live session plans with notes) ── */}
+              {myPlans.length > 0 && (
+                <div className="dashboard-exercises">
+                  <h3 className="dashboard-section-title">🗂 My Lesson Plans</h3>
+                  <div className="plan-card-list">
+                    {myPlans.map(plan => {
+                      const stageCount = (plan.lesson_stages ?? []).filter(s => (s.section ?? 'lesson') !== 'homework').length
+                      const hwCount    = (plan.lesson_stages ?? []).filter(s => (s.section ?? 'lesson') === 'homework').length
+                      return (
+                        <div key={plan.id} className="plan-card" style={{ cursor: 'pointer' }} onClick={() => setActivePlan(plan)}>
+                          <div className="plan-card-header">
+                            <div style={{ flex: 1 }}>
+                              <strong className="plan-card-title">{plan.title}</strong>
+                              <span className="plan-card-progress">
+                                {stageCount} stage{stageCount !== 1 ? 's' : ''}{hwCount > 0 ? ` · ${hwCount} homework` : ''}
+                              </span>
+                            </div>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Open →</span>
+                          </div>
+                          {plan.description && (
+                            <p className="plan-card-desc">{plan.description}</p>
+                          )}
+                          {plan.scheduled_at && (
+                            <p className="plan-card-desc" style={{ color: 'var(--gold)', marginTop: '0.25rem' }}>
+                              📅 {new Date(plan.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* ── Exercises (grouped by lesson plan, then solo) ── */}
               {(() => {
@@ -3086,8 +3251,176 @@ function MatchingQuestion({ pairs, answer, onChange }) {
   )
 }
 
+// ─── EmbeddedMedia ────────────────────────────────────────────
+// Embeds YouTube, renders <audio> for direct audio files, or
+// falls back to a plain link. Used during live screen-share lessons.
+function EmbeddedMedia({ url, label }) {
+  if (!url) return null
+
+  // Detect YouTube URLs
+  const ytMatch = url.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+  )
+  if (ytMatch) {
+    const videoId = ytMatch[1]
+    const embedUrl = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`
+    return (
+      <div className="embedded-media-block">
+        <span className="exercise-context-label">{label || '🎥 Watch / Listen'}</span>
+        <div className="embedded-yt-wrapper">
+          <iframe
+            src={embedUrl}
+            title="Embedded video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // Detect direct audio file links
+  const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(url)
+  if (isAudio) {
+    return (
+      <div className="embedded-media-block">
+        <span className="exercise-context-label">{label || '🎧 Listen first'}</span>
+        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+        <audio controls src={url} style={{ width: '100%', marginTop: '0.5rem' }} />
+      </div>
+    )
+  }
+
+  // Fallback — plain link (opens in new tab)
+  return (
+    <div className="embedded-media-block">
+      <span className="exercise-context-label">{label || '🎧 Listen / Watch'}</span>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
+        Open audio / video →
+      </a>
+    </div>
+  )
+}
+
+// ─── NotesSection ─────────────────────────────────────────────
+// Per-exercise (or plan-level) notes panel shown during live lessons.
+// Teacher and student can both read and write notes.
+function NotesSection({ planId, exerciseId = null, authorId, authorEmail }) {
+  const [notes,    setNotes]    = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [text,     setText]     = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [expanded, setExpanded] = useState(true)
+
+  // Load notes whenever planId / exerciseId changes
+  useEffect(() => {
+    if (!planId) { setLoading(false); return }
+    setLoading(true)
+    fetchNotesForExercise(planId, exerciseId).then(data => {
+      setNotes(data)
+      setLoading(false)
+    })
+  }, [planId, exerciseId])
+
+  const handleSave = async () => {
+    const trimmed = text.trim()
+    if (!trimmed || !authorId) return
+    setSaving(true)
+    const saved = await saveNote({ planId, exerciseId, authorId, content: trimmed })
+    setSaving(false)
+    if (saved) {
+      // Attach a minimal author object so the note renders immediately
+      setNotes(prev => [...prev, { ...saved, author: { id: authorId, email: authorEmail } }])
+      setText('')
+    }
+  }
+
+  const handleDelete = async (noteId) => {
+    const ok = await deleteNote(noteId)
+    if (ok) setNotes(prev => prev.filter(n => n.id !== noteId))
+  }
+
+  const formatTime = (ts) => {
+    if (!ts) return ''
+    const d = new Date(ts)
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
+      ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const displayName = (note) => {
+    const meta = note.author?.raw_user_meta_data
+    return meta?.name || meta?.full_name || note.author?.email || 'Unknown'
+  }
+
+  if (!planId) return null
+
+  return (
+    <div className="notes-section no-print">
+      <button
+        className="notes-section-toggle"
+        onClick={() => setExpanded(p => !p)}
+      >
+        📝 Lesson notes {notes.length > 0 && <span className="notes-count-chip">{notes.length}</span>}
+        <span style={{ marginLeft: 'auto', opacity: 0.6, fontSize: '0.75rem' }}>{expanded ? '▲ hide' : '▼ show'}</span>
+      </button>
+
+      {expanded && (
+        <div className="notes-section-body">
+          {/* Existing notes */}
+          {loading ? (
+            <p className="notes-empty">Loading notes…</p>
+          ) : notes.length === 0 ? (
+            <p className="notes-empty">No notes yet for this exercise. Add the first one below.</p>
+          ) : (
+            <div className="notes-list">
+              {notes.map(note => (
+                <div key={note.id} className="note-item">
+                  <div className="note-item-header">
+                    <span className="note-author">{displayName(note)}</span>
+                    <span className="note-time">{formatTime(note.created_at)}</span>
+                    {note.author_id === authorId && (
+                      <button
+                        className="note-delete-btn"
+                        title="Delete this note"
+                        onClick={() => handleDelete(note.id)}
+                      >✕</button>
+                    )}
+                  </div>
+                  <p className="note-content">{note.content}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* New note input */}
+          <div className="notes-input-row">
+            <textarea
+              className="notes-textarea"
+              rows={2}
+              placeholder="Write a note for this exercise…"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave()
+              }}
+            />
+            <button
+              className="btn-gold notes-save-btn"
+              disabled={saving || !text.trim()}
+              onClick={handleSave}
+            >
+              {saving ? '…' : 'Save note'}
+            </button>
+          </div>
+          <p className="notes-hint">Ctrl+Enter to save quickly</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── ExerciseDemoPlayer (admin — interactive preview) ─────────
-function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
+function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false, lessonPlanId = null, authorId = null, authorEmail = null }) {
   const [answers, setAnswers] = useState({})
 
   const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
@@ -3112,12 +3445,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
       </div>
 
       {exercise?.audio_url && (
-        <div className="exercise-audio-block">
-          <span className="exercise-context-label">🎧 Listen first</span>
-          <a href={exercise.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
-            Open audio / video →
-          </a>
-        </div>
+        <EmbeddedMedia url={exercise.audio_url} label="🎧 Listen first" />
       )}
       {exercise?.context_text && (
         <div className="exercise-context-text">
@@ -3232,6 +3560,15 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
             ↺ Reset
           </button>
         </div>
+      )}
+
+      {lessonPlanId && (
+        <NotesSection
+          planId={lessonPlanId}
+          exerciseId={exercise?.id ?? null}
+          authorId={authorId}
+          authorEmail={authorEmail}
+        />
       )}
     </>
   )
@@ -3820,7 +4157,7 @@ function AdminLessonStages({ adminUserId }) {
 }
 
 // ─── LessonPlanView ───────────────────────────────────────────
-function LessonPlanView({ plan, exercises, onBack }) {
+function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmail = null }) {
   const [viewMode,      setViewMode]      = useState('teacher') // 'teacher' | 'student'
   const [activeExercise, setActiveExercise] = useState(null)    // { exercise, questions }
   const [loadingExId,    setLoadingExId]    = useState(null)
@@ -3854,12 +4191,15 @@ function LessonPlanView({ plan, exercises, onBack }) {
   if (activeExercise) {
     return (
       <div>
-        <button className="back-btn" onClick={() => setActiveExercise(null)}>← Back to plan</button>
         <ExerciseDemoPlayer
           exercise={activeExercise}
           questions={activeExercise.questions ?? []}
           embedded={true}
-          onBack={() => setActiveExercise(null)} />
+          onBack={() => setActiveExercise(null)}
+          lessonPlanId={plan.id}
+          authorId={adminUserId}
+          authorEmail={adminEmail}
+        />
       </div>
     )
   }
@@ -4096,7 +4436,10 @@ function AdminLessonPlans({ adminUserId }) {
     return <LessonPlanView
       plan={viewingPlan}
       exercises={exercises}
-      onBack={() => { setView('list'); setViewingPlan(null) }} />
+      onBack={() => { setView('list'); setViewingPlan(null) }}
+      adminUserId={adminUserId}
+      adminEmail={ADMIN_EMAIL}
+    />
   }
 
   return (

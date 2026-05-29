@@ -1201,3 +1201,80 @@ export async function updateProspectStatus(id, status, adminNotes) {
   const { error } = await supabase.from('prospects').update(update).eq('id', id)
   return !error
 }
+
+// ─── Lesson Notes ─────────────────────────────────────────────
+
+/** Fetch all notes for a given lesson plan (plan-level + all exercise notes). */
+export async function fetchNotesForPlan(planId) {
+  if (!supabase || !planId) return []
+  const { data } = await supabase
+    .from('lesson_notes')
+    .select('*, author:author_id(id, email, raw_user_meta_data)')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: true })
+  return data ?? []
+}
+
+/** Fetch notes scoped to one exercise within a plan. */
+export async function fetchNotesForExercise(planId, exerciseId) {
+  if (!supabase || !planId) return []
+  const query = supabase
+    .from('lesson_notes')
+    .select('*, author:author_id(id, email, raw_user_meta_data)')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: true })
+  if (exerciseId) {
+    query.eq('exercise_id', exerciseId)
+  } else {
+    query.is('exercise_id', null)
+  }
+  const { data } = await query
+  return data ?? []
+}
+
+/** Save (insert) a new note. Returns the inserted row or null. */
+export async function saveNote({ planId, exerciseId = null, authorId, content }) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('lesson_notes')
+    .insert({
+      plan_id: planId,
+      exercise_id: exerciseId || null,
+      author_id: authorId,
+      content,
+    })
+    .select()
+    .single()
+  if (error) { console.error('saveNote error', error); return null }
+  return data
+}
+
+/** Delete a note by id. Returns true on success. */
+export async function deleteNote(noteId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('lesson_notes').delete().eq('id', noteId)
+  return !error
+}
+
+/** Fetch lesson plans assigned to the currently logged-in student.
+ *  Returns the same shape as fetchAllLessonPlans so the viewer components are reusable.
+ *  Each stage embeds a full exercise object (audio_url, context_text, context_images, etc.)
+ *  so the caller doesn't need a separate exercises array. */
+export async function fetchMyAssignedPlans() {
+  if (!supabase) return []
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data } = await supabase
+    .from('lesson_plans')
+    .select(`
+      id, title, description, english_level, lesson_level, scheduled_at, created_at,
+      lesson_stages (
+        id, order_index, stage_number, stage_name, stage_type, title,
+        duration_minutes, exercise_id, content_text, audio_url, content_images, section,
+        exercises ( id, title, description, audio_url, context_text, context_images, course )
+      )
+    `)
+    .eq('student_id', user.id)
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
