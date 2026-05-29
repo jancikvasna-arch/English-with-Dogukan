@@ -3053,7 +3053,7 @@ function MatchingQuestion({ pairs, answer, onChange }) {
 }
 
 // ─── ExerciseDemoPlayer (admin — interactive preview) ─────────
-function ExerciseDemoPlayer({ exercise, questions, onBack }) {
+function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
   const [answers, setAnswers] = useState({})
 
   const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
@@ -3068,9 +3068,9 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
     : t === 'viewing'       ? 'Viewing'
     : 'Written answer'
 
-  return (
-    <div className="flow-card exercise-player-card">
-      <button className="back-btn" onClick={onBack}>← Back to library</button>
+  const inner = (
+    <>
+      <button className="back-btn" onClick={onBack}>{embedded ? '← Back to plan' : '← Back to library'}</button>
       <div className="exercise-demo-badge">🎓 Preview / Demo mode</div>
       <div className="exercise-player-header">
         <h2>{exercise?.title}</h2>
@@ -3200,8 +3200,11 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
           </button>
         </div>
       )}
-    </div>
+    </>
   )
+
+  if (embedded) return inner
+  return <div className="flow-card exercise-player-card">{inner}</div>
 }
 
 // ─── VocabCaptureBar ──────────────────────────────────────────
@@ -3525,6 +3528,7 @@ function AdminLessonStages({ adminUserId }) {
     return <ExerciseDemoPlayer
       exercise={demoExercise}
       questions={demoExercise.questions ?? []}
+      embedded={true}
       onBack={() => { setView('list'); setDemoExercise(null) }} />
   }
 
@@ -3784,7 +3788,9 @@ function AdminLessonStages({ adminUserId }) {
 
 // ─── LessonPlanView ───────────────────────────────────────────
 function LessonPlanView({ plan, exercises, onBack }) {
-  const [viewMode, setViewMode] = useState('teacher') // 'teacher' | 'student'
+  const [viewMode,      setViewMode]      = useState('teacher') // 'teacher' | 'student'
+  const [activeExercise, setActiveExercise] = useState(null)    // { exercise, questions }
+  const [loadingExId,    setLoadingExId]    = useState(null)
 
   const lessonStages = (plan.lesson_stages ?? [])
     .filter(s => (s.section ?? 'lesson') !== 'homework')
@@ -3802,6 +3808,28 @@ function LessonPlanView({ plan, exercises, onBack }) {
   }, {})
 
   const studentName = plan.profiles?.name || plan.profiles?.email || plan.manual_students?.name
+
+  const openExercise = async (exerciseId) => {
+    const ex = exercises.find(e => e.id === exerciseId)
+    if (!ex) return
+    setLoadingExId(exerciseId)
+    const full = await fetchExerciseWithQuestions(exerciseId)
+    setLoadingExId(null)
+    if (full) setActiveExercise(full)
+  }
+
+  if (activeExercise) {
+    return (
+      <div>
+        <button className="back-btn" onClick={() => setActiveExercise(null)}>← Back to plan</button>
+        <ExerciseDemoPlayer
+          exercise={activeExercise}
+          questions={activeExercise.questions ?? []}
+          embedded={true}
+          onBack={() => setActiveExercise(null)} />
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -3871,10 +3899,17 @@ function LessonPlanView({ plan, exercises, onBack }) {
             {group.items.map(stage => {
               const ex = exercises.find(e => e.id === stage.exercise_id)
               return (
-                <div key={stage.id} style={{ padding:'0.5rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem', fontSize:'0.9rem' }}>
-                  {ex ? ex.title : stage.title || 'Stage item'}
+                <div key={stage.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.6rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem' }}>
+                  <span style={{ flex:1, fontSize:'0.9rem' }}>{ex ? ex.title : stage.title || 'Stage item'}</span>
                   {viewMode === 'teacher' && stage.duration_minutes && (
-                    <span style={{ color:'var(--text-muted)', fontSize:'0.8rem', marginLeft:'0.5rem' }}>⏱ {stage.duration_minutes} min</span>
+                    <span style={{ color:'var(--text-muted)', fontSize:'0.8rem' }}>⏱ {stage.duration_minutes} min</span>
+                  )}
+                  {ex && (
+                    <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.3rem 0.65rem', whiteSpace:'nowrap' }}
+                      onClick={() => openExercise(ex.id)}
+                      disabled={loadingExId === ex.id}>
+                      {loadingExId === ex.id ? '…' : '▶ Open'}
+                    </button>
                   )}
                 </div>
               )
@@ -3893,10 +3928,19 @@ function LessonPlanView({ plan, exercises, onBack }) {
           {homeworkStages.map(stage => {
             const ex = exercises.find(e => e.id === stage.exercise_id)
             return (
-              <div key={stage.id} style={{ padding:'0.5rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem', fontSize:'0.9rem' }}>
-                {ex ? ex.title : stage.title || 'Homework exercise'}
-                {stage.content_text && (
-                  <span style={{ color:'var(--text-muted)', fontSize:'0.82rem', marginLeft:'0.5rem' }}>— {stage.content_text}</span>
+              <div key={stage.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.6rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem' }}>
+                <span style={{ flex:1, fontSize:'0.9rem' }}>
+                  {ex ? ex.title : stage.title || 'Homework exercise'}
+                  {stage.content_text && (
+                    <span style={{ color:'var(--text-muted)', fontSize:'0.82rem', marginLeft:'0.5rem' }}>— {stage.content_text}</span>
+                  )}
+                </span>
+                {ex && (
+                  <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.3rem 0.65rem', whiteSpace:'nowrap' }}
+                    onClick={() => openExercise(ex.id)}
+                    disabled={loadingExId === ex.id}>
+                    {loadingExId === ex.id ? '…' : '▶ Open'}
+                  </button>
                 )}
               </div>
             )
@@ -3920,6 +3964,10 @@ function AdminLessonPlans({ adminUserId }) {
   const [editingPlan,    setEditingPlan]    = useState(null)
   const [viewingPlan,    setViewingPlan]    = useState(null)
   const [deletingPlanId, setDeletingPlanId] = useState(null)
+
+  // Filters
+  const [filterEnglishLevel, setFilterEnglishLevel] = useState('')
+  const [filterLessonLevel,  setFilterLessonLevel]  = useState('')
 
   // Assign plan to student
   const [assigningPlanId, setAssigningPlanId] = useState(null)
@@ -4105,11 +4153,41 @@ function AdminLessonPlans({ adminUserId }) {
         )
       })()}
 
+      {/* Filter bar */}
+      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', marginBottom:'1rem', padding:'0.75rem', background:'var(--bg-darker)', borderRadius:'8px' }}>
+        <select value={filterEnglishLevel} onChange={e => setFilterEnglishLevel(e.target.value)}
+          style={{ fontSize:'0.85rem', padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--border)', background:'#fff' }}>
+          <option value="">All levels</option>
+          <option value="elementary">Elementary</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+        <select value={filterLessonLevel} onChange={e => setFilterLessonLevel(e.target.value)}
+          style={{ fontSize:'0.85rem', padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--border)', background:'#fff' }}>
+          <option value="">All lesson levels</option>
+          {Array.from({length: 12}, (_, i) => (
+            <option key={i+1} value={`Level ${i+1}`}>Level {i+1}</option>
+          ))}
+        </select>
+        {(filterEnglishLevel || filterLessonLevel) && (
+          <button className="btn-ghost" style={{ fontSize:'0.82rem', padding:'0.35rem 0.7rem' }}
+            onClick={() => { setFilterEnglishLevel(''); setFilterLessonLevel('') }}>✕ Clear filters</button>
+        )}
+      </div>
+
       {loading ? <p>Loading…</p> : plans.length === 0 ? (
         <div className="dashboard-empty"><p>No lesson plans yet.</p></div>
-      ) : (
+      ) : (() => {
+        const filteredPlans = plans.filter(p =>
+          (!filterEnglishLevel || p.english_level === filterEnglishLevel) &&
+          (!filterLessonLevel  || p.lesson_level  === filterLessonLevel)
+        )
+        return (
         <div className="plan-list">
-          {plans.map(p => {
+          {filteredPlans.length === 0 && (
+            <div className="dashboard-empty"><p>No plans match the current filters.</p></div>
+          )}
+          {filteredPlans.map(p => {
             const stageCount  = (p.lesson_stages ?? []).length
             const legacyCount = (p.lesson_plan_exercises ?? []).length
             const count       = stageCount > 0 ? stageCount : legacyCount
@@ -4130,6 +4208,8 @@ function AdminLessonPlans({ adminUserId }) {
                         )}
                       </span>
                     )}
+                    {p.english_level && <span className="admin-level-chip" style={{textTransform:'capitalize'}}>{p.english_level}</span>}
+                    {p.lesson_level  && <span className="admin-level-chip">{p.lesson_level}</span>}
                     {p.scheduled_at && (
                       <span className="admin-level-chip" style={{ color: 'var(--gold)' }}>
                         📅 {new Date(p.scheduled_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
@@ -4192,7 +4272,8 @@ function AdminLessonPlans({ adminUserId }) {
             )
           })}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
@@ -5657,6 +5738,8 @@ function LessonStageBuilder({
   const [lessonAim,       setLessonAim]       = useState(initialPlan?.lesson_aim       ?? '')
   const [teachingPoint,   setTeachingPoint]   = useState(initialPlan?.teaching_point   ?? '')
   const [langAnalysis,    setLangAnalysis]    = useState(initialPlan?.language_analysis ?? '')
+  const [englishLevel,    setEnglishLevel]    = useState(initialPlan?.english_level    ?? '')
+  const [lessonLevel,     setLessonLevel]     = useState(initialPlan?.lesson_level     ?? '')
   const [scheduledAt,     setScheduledAt]     = useState(() => {
     if (!initialPlan?.scheduled_at) return ''
     const d = new Date(initialPlan.scheduled_at)
@@ -5707,6 +5790,8 @@ function LessonStageBuilder({
       if (draft.scheduledAt)   setScheduledAt(draft.scheduledAt)
       if (draft.studentType)   setStudentType(draft.studentType)
       if (draft.studentId)     setStudentId(draft.studentId)
+      if (draft.englishLevel)  setEnglishLevel(draft.englishLevel)
+      if (draft.lessonLevel)   setLessonLevel(draft.lessonLevel)
       if (draft.stageGroups && draft.stageGroups.length > 0) setStageGroups(draft.stageGroups)
       setDraftRestored(true)
     } catch { /* corrupt draft — ignore */ }
@@ -5720,12 +5805,13 @@ function LessonStageBuilder({
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
           title, lessonAim, teachingPoint, langAnalysis,
           scheduledAt, studentType, studentId, stageGroups,
+          englishLevel, lessonLevel,
           savedAt: Date.now(),
         }))
       } catch { /* storage full — ignore */ }
     }, 300)
     return () => clearTimeout(t)
-  }, [title, lessonAim, teachingPoint, langAnalysis, scheduledAt, studentType, studentId, stageGroups]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [title, lessonAim, teachingPoint, langAnalysis, scheduledAt, studentType, studentId, stageGroups, englishLevel, lessonLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Browser back-button support: push a history entry when picker opens,
   // and close it when the user presses ← browser back.
@@ -5854,6 +5940,8 @@ function LessonStageBuilder({
       teachingPoint:    teachingPoint,
       languageAnalysis: langAnalysis,
       scheduledAt:      scheduledAt ? new Date(scheduledAt).toISOString() : null,
+      englishLevel:     englishLevel || null,
+      lessonLevel:      lessonLevel  || null,
     }
     const id = isEdit
       ? await updateLessonPlanWithStages(initialPlan.id, title, null, allStages, meta)
@@ -5908,9 +5996,34 @@ function LessonStageBuilder({
         </div>
       )}
 
+      {/* ── Level ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">📊 Level</h4>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div className="form-field" style={{ flex: 1, minWidth: '180px' }}>
+            <label>English level</label>
+            <select value={englishLevel} onChange={e => setEnglishLevel(e.target.value)}>
+              <option value="">— Any level —</option>
+              <option value="elementary">Elementary</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+          <div className="form-field" style={{ flex: 1, minWidth: '180px' }}>
+            <label>Lesson level</label>
+            <select value={lessonLevel} onChange={e => setLessonLevel(e.target.value)}>
+              <option value="">— Any level —</option>
+              {Array.from({length: 12}, (_, i) => (
+                <option key={i+1} value={`Level ${i+1}`}>Level {i+1}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* ── Student ── */}
       <div className="builder-section">
-        <h4 className="builder-section-title">👤 Student</h4>
+        <h4 className="builder-section-title">👤 Student <span style={{fontWeight:400, fontSize:'0.82rem', color:'var(--text-muted)'}}>— optional</span></h4>
         <select value={studentId ? `${studentType}:${studentId}` : ''}
           onChange={e => {
             const val = e.target.value

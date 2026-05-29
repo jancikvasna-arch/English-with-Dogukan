@@ -441,6 +441,7 @@ export async function fetchAllLessonPlans() {
     .select(`
       id, title, description, created_at,
       student_id, manual_student_id, lesson_aim, teaching_point, language_analysis, scheduled_at,
+      english_level, lesson_level,
       profiles:student_id ( id, name, email, english_level ),
       manual_students:manual_student_id ( id, name, email, english_level ),
       lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, exercises ( id, title, course ) ),
@@ -832,6 +833,8 @@ export async function createLessonPlanWithStages(title, desc, createdBy, stages,
     teaching_point:    meta.teachingPoint        || null,
     language_analysis: meta.languageAnalysis     || null,
     scheduled_at:      meta.scheduledAt          || null,
+    english_level:     meta.englishLevel         || null,
+    lesson_level:      meta.lessonLevel          || null,
   })
   if (planErr) { console.error('[supabase] createLessonPlanWithStages:', planErr); return null }
   if (stages.length > 0) {
@@ -854,6 +857,8 @@ export async function updateLessonPlanWithStages(planId, title, desc, stages, me
       teaching_point:    meta.teachingPoint        || null,
       language_analysis: meta.languageAnalysis     || null,
       scheduled_at:      meta.scheduledAt          || null,
+      english_level:     meta.englishLevel         || null,
+      lesson_level:      meta.lessonLevel          || null,
     }).eq('id', planId)
   if (planErr) { console.error('[supabase] updateLessonPlanWithStages:', planErr); return null }
   const ok = await _saveStages(planId, stages)
