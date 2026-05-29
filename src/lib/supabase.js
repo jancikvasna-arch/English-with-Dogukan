@@ -1166,3 +1166,29 @@ export async function fetchAllReferrals() {
     .order('created_at', { ascending: false })
   return data ?? []
 }
+
+// ─── Prospects ────────────────────────────────────────────────
+
+export async function createProspect({ name, email, phone, message, source }) {
+  const { error } = await supabase
+    .from('prospects')
+    .insert({ name, email, phone: phone || null, message: message || null, source: source || 'consultation_booking' })
+  return !error
+}
+
+export async function fetchAllProspects() {
+  const { data } = await supabase
+    .from('prospects')
+    .select('*')
+    .neq('status', 'converted')
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
+export async function updateProspectStatus(id, status, adminNotes) {
+  const update = { status }
+  if (adminNotes !== undefined) update.admin_notes = adminNotes
+  if (status === 'converted') update.converted_at = new Date().toISOString()
+  const { error } = await supabase.from('prospects').update(update).eq('id', id)
+  return !error
+}

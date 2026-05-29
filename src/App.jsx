@@ -20,6 +20,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyVocabulary, addVocabularyWord, deleteVocabularyWord,
   fetchMyReferralCode, fetchMyReferrals, lookupReferralCode, logReferral,
   markDiscountApplied, fetchAllReferrals,
+  createProspect, fetchAllProspects, updateProspectStatus,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -544,9 +545,10 @@ async function detectImageBlanks(dataUrl) {
   URL.revokeObjectURL(blobUrl)
   await worker.terminate()
 
-  // Words that look like blank underlines: 2+ underscores, dashes, em-dashes, equals
-  // Match underscores/dashes (lines), dots/middle-dots (dotted blanks), or mixed
-  const BLANK_RE = /^[_\-—=]{1,}$|^[.·•]{2,}$|^[_\-]{1,}[\s_\-]*[_\-]{1,}$/
+  // Words that look like blank underlines: underscores, dashes, em-dashes, equals,
+  // dots (with or without spaces between them), or any mix of blank-like characters.
+  // Also catches ". . . ." and "- - -" patterns from OCR of dotted/dashed textbook blanks.
+  const BLANK_RE = /^[_\-—=]{1,}$|^[.·•]{1,}$|^[_\-]{1,}[\s_\-]*[_\-]{1,}$|^([.·•]\s*){2,}$|^([\-—_=]\s*){2,}$/
   return (data.words || [])
     .filter(w => BLANK_RE.test(w.text.trim()))
     .map(w => ({
@@ -591,7 +593,15 @@ function parseOcrIntoQuestions(rawText, type) {
 
   return items.map(text => {
     const q = newQ(type)
-    q.prompt = text.replace(/_{1,}/g, '___')
+    // Normalise all common blank markers to ___ regardless of whether the
+    // teacher used underscores, dots, dashes, em-dashes, or spaced dots/dashes.
+    q.prompt = text
+      .replace(/_{2,}/g, '___')               // ________
+      .replace(/\.{3,}/g, '___')              // ......
+      .replace(/([.·•]\s*){3,}/g, '___')      // . . . . .
+      .replace(/—{1,}|-{3,}/g, '___')         // ——— or ---
+      .replace(/([\-—]\s*){3,}/g, '___')      // - - - -
+      .replace(/\s{5,}/g, ' ___ ')            // 5+ spaces (tab-stop gap in pasted text)
     return q
   })
 }
@@ -1207,10 +1217,24 @@ function Questionnaire({ onSubmit, onBack }) {
 // ─── ConsultationScreen ───────────────────────────────────────
 function ConsultationScreen({ onContinue, onBack }) {
   const [opened, setOpened] = useState(false)
+  const [captureName, setCaptureName] = useState('')
+  const [captureEmail, setCaptureEmail] = useState('')
+  const [captureSubmitted, setCaptureSubmitted] = useState(false)
+  const [captureSaving, setCaptureSaving] = useState(false)
 
   const handleOpen = () => {
     window.open(CALENDLY_CONSULTATION, '_blank')
     setOpened(true)
+  }
+
+  const handleCaptureSubmit = async (e) => {
+    e.preventDefault()
+    if (!captureName.trim() || !captureEmail.trim()) return
+    setCaptureSaving(true)
+    await createProspect({ name: captureName.trim(), email: captureEmail.trim() })
+    setCaptureSaving(false)
+    setCaptureSubmitted(true)
+    handleOpen()
   }
 
   return (
@@ -1224,9 +1248,22 @@ function ConsultationScreen({ onContinue, onBack }) {
       </p>
 
       {!opened ? (
-        <button className="btn-gold btn-full btn-lg" onClick={handleOpen}>
-          Choose a time →
-        </button>
+        <form onSubmit={handleCaptureSubmit} className="booking-form" style={{ marginTop: '1.25rem' }}>
+          <div className="form-field">
+            <label>Your name <span className="required-star">*</span></label>
+            <input type="text" value={captureName} onChange={e => setCaptureName(e.target.value)}
+              placeholder="e.g. Maria García" required autoFocus />
+          </div>
+          <div className="form-field">
+            <label>Your email <span className="required-star">*</span></label>
+            <input type="email" value={captureEmail} onChange={e => setCaptureEmail(e.target.value)}
+              placeholder="e.g. maria@example.com" required />
+          </div>
+          <button type="submit" className="btn-gold btn-full btn-lg"
+            disabled={captureSaving || !captureName.trim() || !captureEmail.trim()}>
+            {captureSaving ? 'Saving…' : 'Choose a time →'}
+          </button>
+        </form>
       ) : (
         <div className="consultation-booked">
           <div className="booked-check">✓</div>
@@ -5719,6 +5756,24 @@ function LessonStageBuilder({
     setStageGroups(p => p.map(g => g.number === num ? { ...g, items: [...g.items, item] } : g))
   const removeItemFromGroup = (num, itemId) =>
     setStageGroups(p => p.map(g => g.number === num ? { ...g, items: g.items.filter(i => i.id !== itemId) } : g))
+  const moveStageUp = (num) => {
+    setStageGroups(prev => {
+      const idx = prev.findIndex(g => g.number === num)
+      if (idx <= 0) return prev
+      const next = [...prev]
+      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+      return next.map((g, i) => ({ ...g, number: i + 1 }))
+    })
+  }
+  const moveStageDown = (num) => {
+    setStageGroups(prev => {
+      const idx = prev.findIndex(g => g.number === num)
+      if (idx < 0 || idx >= prev.length - 1) return prev
+      const next = [...prev]
+      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+      return next.map((g, i) => ({ ...g, number: i + 1 }))
+    })
+  }
   const updateItemInGroup = (num, itemId, field, val) =>
     setStageGroups(p => p.map(g => g.number === num
       ? { ...g, items: g.items.map(i => i.id === itemId ? { ...i, [field]: val } : i) }
@@ -5881,7 +5936,7 @@ function LessonStageBuilder({
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>🔬 Language analysis</label>
-          <textarea className="writing-input" rows={2}
+          <textarea className="writing-input" rows={8}
             placeholder="e.g. Form: S + V(s) + O. Meaning: habitual actions. Pronunciation: /s/ /z/ /ɪz/ endings."
             value={langAnalysis} onChange={e => setLangAnalysis(e.target.value)} />
         </div>
@@ -5903,6 +5958,20 @@ function LessonStageBuilder({
                 placeholder="Stage name (optional, e.g. Warm-up)"
                 value={group.name}
                 onChange={e => updateGroupName(group.number, e.target.value)} />
+              <button type="button" className="btn-ghost"
+                style={{ fontSize: '0.78rem', padding: '0.22rem 0.45rem', flexShrink: 0 }}
+                disabled={group.number === 1}
+                onClick={() => moveStageUp(group.number)}
+                title="Move stage up">
+                ▲
+              </button>
+              <button type="button" className="btn-ghost"
+                style={{ fontSize: '0.78rem', padding: '0.22rem 0.45rem', flexShrink: 0 }}
+                disabled={group.number === stageGroups.length}
+                onClick={() => moveStageDown(group.number)}
+                title="Move stage down">
+                ▼
+              </button>
               <button type="button" className="btn-ghost"
                 style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#e05c5c', flexShrink: 0 }}
                 onClick={() => removeStageGroup(group.number)}>
@@ -6637,6 +6706,565 @@ function AdminBooks({ adminUserId }) {
   )
 }
 
+// ─── AdminExerciseLibrary ─────────────────────────────────────
+
+const EX_TYPES = [
+  { value: 'multiple_choice',    label: 'Multiple Choice',               emoji: '🔘' },
+  { value: 'fill_blank',         label: 'Fill in the Blanks (Typed)',     emoji: '✍️' },
+  { value: 'fill_blank_dropdown',label: 'Fill in the Blanks (Word Bank)', emoji: '📋' },
+  { value: 'matching',           label: 'Match Words',                    emoji: '🔗' },
+  { value: 'ordering',           label: 'Order Sentences / Words',        emoji: '🔢' },
+  { value: 'true_false',         label: 'True or False',                  emoji: '✅' },
+  { value: 'listening',          label: 'Listening',                      emoji: '🎧' },
+]
+
+const TYPE_COLORS = {
+  multiple_choice:    { bg: '#dbeafe', color: '#1d4ed8' },
+  fill_blank:         { bg: '#fce7f3', color: '#9d174d' },
+  fill_blank_dropdown:{ bg: '#ede9fe', color: '#6d28d9' },
+  matching:           { bg: '#d1fae5', color: '#065f46' },
+  ordering:           { bg: '#fef3c7', color: '#92400e' },
+  true_false:         { bg: '#dcfce7', color: '#166534' },
+  listening:          { bg: '#e0f2fe', color: '#075985' },
+}
+
+function TypeBadge({ type }) {
+  const meta  = EX_TYPES.find(t => t.value === type)
+  const style = TYPE_COLORS[type] || { bg: '#f3f4f6', color: '#374151' }
+  return (
+    <span style={{
+      display: 'inline-block', borderRadius: '0.9rem', padding: '0.18rem 0.65rem',
+      fontSize: '0.78rem', fontWeight: 600,
+      background: style.bg, color: style.color,
+    }}>
+      {meta ? `${meta.emoji} ${meta.label}` : type}
+    </span>
+  )
+}
+
+/* ── individual creation forms ────────────────────────────── */
+
+function ExFormMultipleChoice({ title, instructions, onChange }) {
+  const [prompt,   setPrompt]   = useState('')
+  const [options,  setOptions]  = useState(['', '', '', ''])
+  const [correct,  setCorrect]  = useState(0)
+
+  useEffect(() => {
+    const q = { type: 'multiple_choice', prompt, options, correct_answer: String(correct) }
+    onChange({ questions: [q] })
+  }, [prompt, options, correct])
+
+  const setOpt = (i, v) => setOptions(p => p.map((o, idx) => idx === i ? v : o))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div className="form-field">
+        <label>Prompt / question</label>
+        <textarea rows={3} value={prompt} onChange={e => setPrompt(e.target.value)}
+          placeholder="e.g. Which sentence uses the past perfect correctly?" className="writing-input" />
+      </div>
+      <div className="form-field">
+        <label>Options (select the correct one)</label>
+        {['A', 'B', 'C', 'D'].map((letter, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+            <input type="radio" name="correct" checked={correct === i} onChange={() => setCorrect(i)}
+              style={{ accentColor: '#006699', cursor: 'pointer', width: '16px', height: '16px' }} />
+            <span style={{ fontWeight: 600, minWidth: '20px', color: 'var(--text-muted)' }}>{letter}</span>
+            <input type="text" value={options[i]} onChange={e => setOpt(i, e.target.value)}
+              placeholder={`Option ${letter}`}
+              style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '6px', padding: '0.45rem 0.7rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ExFormFillBlank({ title, instructions, onChange, dropdown }) {
+  const [text,     setText]     = useState('')
+  const [wordBank, setWordBank] = useState('')
+
+  useEffect(() => {
+    const sentences = text.split('\n').filter(s => s.trim())
+    const questions = sentences.map((s, i) => ({
+      type: dropdown ? 'fill_blank_dropdown' : 'fill_blank',
+      prompt: s.trim(),
+      options: dropdown && wordBank ? wordBank.split(',').map(w => w.trim()).filter(Boolean) : null,
+      correct_answer: null,
+    }))
+    onChange({ questions })
+  }, [text, wordBank, dropdown])
+
+  const preview = text.split('\n').filter(s => s.trim()).map((s, si) => {
+    const parts = s.split('___')
+    return (
+      <div key={si} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+        {parts.map((p, pi) => (
+          <span key={pi}>
+            {p}
+            {pi < parts.length - 1 && (
+              dropdown
+                ? <select style={{ margin: '0 0.15rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.1rem 0.3rem', background: 'var(--bg-card)', fontSize: '0.85rem' }}>
+                    <option value="">Choose…</option>
+                    {wordBank.split(',').map(w => w.trim()).filter(Boolean).map(w => <option key={w}>{w}</option>)}
+                  </select>
+                : <input type="text" placeholder="____" readOnly
+                    style={{ width: '80px', margin: '0 0.15rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.1rem 0.3rem', background: '#fffef8', fontSize: '0.85rem' }} />
+            )}
+          </span>
+        ))}
+      </div>
+    )
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div className="form-field">
+        <label>Exercise text</label>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.4rem' }}>
+          Use <code>___</code> (three underscores) to mark each blank. One sentence per line.
+        </p>
+        <textarea rows={6} value={text} onChange={e => setText(e.target.value)} className="writing-input"
+          placeholder={"She ___ to the market yesterday.\nThey ___ studying when I called."} />
+      </div>
+      {dropdown && (
+        <div className="form-field">
+          <label>Word bank (comma-separated)</label>
+          <input type="text" value={wordBank} onChange={e => setWordBank(e.target.value)}
+            placeholder="went, was, are, had gone, were"
+            style={{ width: '100%', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+        </div>
+      )}
+      {text.trim() && (
+        <div style={{ background: '#fffef8', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.85rem 1rem' }}>
+          <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.6rem' }}>Preview</p>
+          {preview}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExFormMatching({ onChange }) {
+  const [pairs, setPairs] = useState([{ left: '', right: '' }])
+
+  useEffect(() => {
+    const validPairs = pairs.filter(p => p.left.trim() && p.right.trim())
+    const q = {
+      type: 'matching',
+      prompt: 'Match each item on the left with its pair on the right.',
+      options: validPairs,
+      correct_answer: JSON.stringify(Object.fromEntries(validPairs.map(p => [p.left, p.right]))),
+    }
+    onChange({ questions: validPairs.length ? [q] : [] })
+  }, [pairs])
+
+  const setPair = (i, side, v) => setPairs(p => p.map((pr, idx) => idx === i ? { ...pr, [side]: v } : pr))
+  const addPair   = () => setPairs(p => [...p, { left: '', right: '' }])
+  const removePair = (i) => setPairs(p => p.filter((_, idx) => idx !== i))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      <div className="form-field" style={{ marginBottom: 0 }}>
+        <label>Pairs</label>
+      </div>
+      {pairs.map((pr, i) => (
+        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <input type="text" value={pr.left}  onChange={e => setPair(i, 'left',  e.target.value)}
+            placeholder="Left side"
+            style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '6px', padding: '0.45rem 0.7rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>↔</span>
+          <input type="text" value={pr.right} onChange={e => setPair(i, 'right', e.target.value)}
+            placeholder="Right side"
+            style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '6px', padding: '0.45rem 0.7rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+          {pairs.length > 1 && (
+            <button onClick={() => removePair(i)} className="btn-ghost"
+              style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', color: '#e05c5c' }}>✕</button>
+          )}
+        </div>
+      ))}
+      <button onClick={addPair} className="btn-ghost"
+        style={{ alignSelf: 'flex-start', fontSize: '0.85rem', padding: '0.35rem 0.8rem' }}>
+        + Add pair
+      </button>
+    </div>
+  )
+}
+
+function ExFormOrdering({ onChange }) {
+  const [mode,     setMode]     = useState('sentences') // 'sentences' | 'words'
+  const [text,     setText]     = useState('')
+
+  useEffect(() => {
+    if (!text.trim()) { onChange({ questions: [] }); return }
+    let items
+    if (mode === 'words') {
+      items = text.trim().split(/\s+/).filter(Boolean)
+    } else {
+      items = text.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    }
+    const shuffled = [...items].sort(() => 0.5 - Math.random())
+    const q = {
+      type: 'ordering',
+      prompt: mode === 'words' ? 'Put the words in the correct order.' : 'Put the sentences in the correct order.',
+      options: shuffled,
+      correct_answer: JSON.stringify(items),
+    }
+    onChange({ questions: [q] })
+  }, [text, mode])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div className="form-field">
+        <label>Mode</label>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          {[['sentences', 'Order sentences (one per line)'], ['words', 'Order words in one sentence']].map(([v, lbl]) => (
+            <label key={v} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input type="radio" name="order-mode" value={v} checked={mode === v} onChange={() => setMode(v)}
+                style={{ accentColor: '#006699' }} />
+              {lbl}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="form-field">
+        <label>{mode === 'words' ? 'Sentence (correct order)' : 'Sentences in correct order (one per line)'}</label>
+        <textarea rows={mode === 'words' ? 2 : 5} value={text} onChange={e => setText(e.target.value)}
+          className="writing-input"
+          placeholder={mode === 'words' ? 'She had already left when I arrived.' : 'First, boil the water.\nThen add the pasta.\nFinally, drain and serve.'} />
+      </div>
+    </div>
+  )
+}
+
+function ExFormTrueFalse({ onChange }) {
+  const [statements, setStatements] = useState([{ text: '', answer: 'true' }])
+
+  useEffect(() => {
+    const valid = statements.filter(s => s.text.trim())
+    const questions = valid.map(s => ({
+      type: 'true_false',
+      prompt: s.text.trim(),
+      options: ['True', 'False'],
+      correct_answer: s.answer,
+    }))
+    onChange({ questions })
+  }, [statements])
+
+  const setStmt = (i, field, v) => setStatements(p => p.map((s, idx) => idx === i ? { ...s, [field]: v } : s))
+  const addStmt    = () => setStatements(p => [...p, { text: '', answer: 'true' }])
+  const removeStmt = (i) => setStatements(p => p.filter((_, idx) => idx !== i))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      <div className="form-field" style={{ marginBottom: 0 }}>
+        <label>Statements</label>
+      </div>
+      {statements.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', background: '#fffef8', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.65rem 0.75rem' }}>
+          <span style={{ fontWeight: 600, minWidth: '22px', color: 'var(--text-muted)', paddingTop: '0.1rem' }}>{i + 1}.</span>
+          <textarea rows={2} value={s.text} onChange={e => setStmt(i, 'text', e.target.value)}
+            placeholder="Enter a statement…"
+            style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)', resize: 'vertical' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '80px' }}>
+            {['true', 'false'].map(v => (
+              <label key={v} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.88rem' }}>
+                <input type="radio" name={`tf-${i}`} value={v} checked={s.answer === v} onChange={() => setStmt(i, 'answer', v)}
+                  style={{ accentColor: '#006699' }} />
+                {v === 'true' ? 'True' : 'False'}
+              </label>
+            ))}
+          </div>
+          {statements.length > 1 && (
+            <button onClick={() => removeStmt(i)} className="btn-ghost"
+              style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem', color: '#e05c5c' }}>✕</button>
+          )}
+        </div>
+      ))}
+      <button onClick={addStmt} className="btn-ghost"
+        style={{ alignSelf: 'flex-start', fontSize: '0.85rem', padding: '0.35rem 0.8rem' }}>
+        + Add statement
+      </button>
+    </div>
+  )
+}
+
+function ExFormListening({ onChange }) {
+  const [audioUrl,  setAudioUrl]  = useState('')
+  const [questions, setQuestions] = useState([{ prompt: '', type: 'open', options: ['', '', '', ''], correct: 0 }])
+
+  useEffect(() => {
+    const qs = questions.filter(q => q.prompt.trim()).map(q => ({
+      type: q.type === 'multiple_choice' ? 'multiple_choice' : 'open',
+      prompt: q.prompt.trim(),
+      options: q.type === 'multiple_choice' ? q.options.filter(Boolean) : null,
+      correct_answer: q.type === 'multiple_choice' ? String(q.correct) : null,
+      hint: audioUrl || null,
+    }))
+    onChange({ questions: qs, audioUrl })
+  }, [audioUrl, questions])
+
+  const setQ = (i, field, v) => setQuestions(p => p.map((q, idx) => idx === i ? { ...q, [field]: v } : q))
+  const setOpt = (qi, oi, v) => setQuestions(p => p.map((q, idx) => idx === qi
+    ? { ...q, options: q.options.map((o, oidx) => oidx === oi ? v : o) } : q))
+  const addQ    = () => setQuestions(p => [...p, { prompt: '', type: 'open', options: ['', '', '', ''], correct: 0 }])
+  const removeQ = (i) => setQuestions(p => p.filter((_, idx) => idx !== i))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div className="form-field">
+        <label>Audio URL</label>
+        <input type="url" value={audioUrl} onChange={e => setAudioUrl(e.target.value)}
+          placeholder="https://…/audio.mp3"
+          style={{ width: '100%', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+      </div>
+      <div className="form-field" style={{ marginBottom: 0 }}>
+        <label>Questions</label>
+      </div>
+      {questions.map((q, i) => (
+        <div key={i} style={{ background: '#fffef8', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.75rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-muted)', paddingTop: '0.1rem', minWidth: '22px' }}>Q{i + 1}</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <textarea rows={2} value={q.prompt} onChange={e => setQ(i, 'prompt', e.target.value)}
+                placeholder="Question text…"
+                style={{ border: '1px solid var(--border)', borderRadius: '6px', padding: '0.4rem 0.6rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)', resize: 'vertical' }} />
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                {['open', 'multiple_choice'].map(v => (
+                  <label key={v} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                    <input type="radio" name={`lq-type-${i}`} value={v} checked={q.type === v} onChange={() => setQ(i, 'type', v)}
+                      style={{ accentColor: '#006699' }} />
+                    {v === 'open' ? 'Open answer' : 'Multiple choice'}
+                  </label>
+                ))}
+              </div>
+              {q.type === 'multiple_choice' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  {['A', 'B', 'C', 'D'].map((ltr, oi) => (
+                    <div key={oi} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <input type="radio" name={`lq-correct-${i}`} checked={q.correct === oi} onChange={() => setQ(i, 'correct', oi)}
+                        style={{ accentColor: '#006699' }} />
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', minWidth: '18px' }}>{ltr}</span>
+                      <input type="text" value={q.options[oi]} onChange={e => setOpt(i, oi, e.target.value)}
+                        placeholder={`Option ${ltr}`}
+                        style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '5px', padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {questions.length > 1 && (
+              <button onClick={() => removeQ(i)} className="btn-ghost"
+                style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem', color: '#e05c5c' }}>✕</button>
+            )}
+          </div>
+        </div>
+      ))}
+      <button onClick={addQ} className="btn-ghost"
+        style={{ alignSelf: 'flex-start', fontSize: '0.85rem', padding: '0.35rem 0.8rem' }}>
+        + Add question
+      </button>
+    </div>
+  )
+}
+
+/* ── main component ──────────────────────────────────────────── */
+
+function AdminExerciseLibrary({ adminUserId }) {
+  const [exercises,  setExercises]  = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [view,       setView]       = useState('list')   // 'list' | 'type-select' | 'form'
+  const [exType,     setExType]     = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+  const [saving,     setSaving]     = useState(false)
+  const [saveError,  setSaveError]  = useState(null)
+
+  // shared form state
+  const [formTitle,        setFormTitle]        = useState('')
+  const [formInstructions, setFormInstructions] = useState('')
+  const [formQuestions,    setFormQuestions]    = useState([])
+  const [formAudioUrl,     setFormAudioUrl]     = useState('')
+
+  const load = () => {
+    setLoading(true)
+    fetchAllExercises().then(data => { setExercises(data); setLoading(false) })
+  }
+
+  useEffect(() => { load() }, [])
+
+  const startCreate = () => { setView('type-select') }
+
+  const selectType = (type) => {
+    setExType(type)
+    setFormTitle('')
+    setFormInstructions('')
+    setFormQuestions([])
+    setFormAudioUrl('')
+    setSaveError(null)
+    setView('form')
+  }
+
+  const handleFormChange = ({ questions, audioUrl }) => {
+    if (questions !== undefined) setFormQuestions(questions)
+    if (audioUrl  !== undefined) setFormAudioUrl(audioUrl)
+  }
+
+  const handleSave = async () => {
+    if (!formTitle.trim()) { setSaveError('Title is required.'); return }
+    if (formQuestions.length === 0) { setSaveError('Add at least one question before saving.'); return }
+    setSaving(true); setSaveError(null)
+    const exMeta = {
+      title:             formTitle.trim(),
+      description:       formInstructions.trim() || null,
+      audioUrl:          formAudioUrl || null,
+      stageType:         exType === 'listening' ? 'listening' : 'controlled_exercise',
+    }
+    const id = await createExerciseWithQuestions(exMeta, formQuestions)
+    setSaving(false)
+    if (!id) { setSaveError('Failed to save exercise. Please try again.'); return }
+    load()
+    setView('list')
+  }
+
+  const handleDelete = async (id) => {
+    const ok = await deleteExercise(id)
+    if (ok) { setExercises(p => p.filter(e => e.id !== id)); setDeletingId(null) }
+  }
+
+  if (loading) return <div className="dashboard-loading" style={{ padding: '2rem' }}>Loading exercises…</div>
+
+  /* ── type selector ── */
+  if (view === 'type-select') return (
+    <div style={{ marginTop: '1rem' }}>
+      <button className="btn-ghost" style={{ fontSize: '0.88rem', marginBottom: '1rem' }}
+        onClick={() => setView('list')}>← Back</button>
+      <h3 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: '1rem' }}>Choose exercise type</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.85rem' }}>
+        {EX_TYPES.map(t => (
+          <button key={t.value} onClick={() => selectType(t.value)}
+            style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem',
+              padding: '1.25rem 1rem', background: 'var(--bg-card)',
+              border: '1.5px solid var(--border)', borderRadius: '10px',
+              cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s',
+              fontSize: '0.9rem', fontWeight: 600, color: 'var(--text)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#006699'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,102,153,0.12)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none' }}>
+            <span style={{ fontSize: '2rem' }}>{t.emoji}</span>
+            <span style={{ textAlign: 'center', lineHeight: 1.3 }}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  /* ── creation form ── */
+  if (view === 'form') {
+    const typeMeta = EX_TYPES.find(t => t.value === exType)
+    return (
+      <div style={{ marginTop: '1rem' }}>
+        <button className="btn-ghost" style={{ fontSize: '0.88rem', marginBottom: '1rem' }}
+          onClick={() => setView('type-select')}>← Back</button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>{typeMeta?.emoji}</span>
+          <h3 style={{ fontWeight: 700, fontSize: '1.05rem', margin: 0 }}>New {typeMeta?.label} exercise</h3>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '700px' }}>
+          {/* Shared fields */}
+          <div className="form-field">
+            <label>Title <span style={{ color: '#e05c5c' }}>*</span></label>
+            <input type="text" value={formTitle} onChange={e => setFormTitle(e.target.value)}
+              placeholder="e.g. Past Simple — Question Forms"
+              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.5rem 0.75rem', fontSize: '0.9rem', background: 'var(--bg-card)', color: 'var(--text)' }} />
+          </div>
+          <div className="form-field">
+            <label>Instructions <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <textarea rows={2} value={formInstructions} onChange={e => setFormInstructions(e.target.value)}
+              placeholder="e.g. Choose the correct answer for each question."
+              className="writing-input" />
+          </div>
+
+          {/* Type-specific form */}
+          {exType === 'multiple_choice'     && <ExFormMultipleChoice onChange={handleFormChange} />}
+          {exType === 'fill_blank'          && <ExFormFillBlank onChange={handleFormChange} dropdown={false} />}
+          {exType === 'fill_blank_dropdown' && <ExFormFillBlank onChange={handleFormChange} dropdown={true} />}
+          {exType === 'matching'            && <ExFormMatching onChange={handleFormChange} />}
+          {exType === 'ordering'            && <ExFormOrdering onChange={handleFormChange} />}
+          {exType === 'true_false'          && <ExFormTrueFalse onChange={handleFormChange} />}
+          {exType === 'listening'           && <ExFormListening onChange={handleFormChange} />}
+
+          {saveError && (
+            <div style={{ color: '#e05c5c', fontSize: '0.88rem', background: '#fff5f5', border: '1px solid #fecaca', borderRadius: '6px', padding: '0.5rem 0.75rem' }}>
+              {saveError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.75rem', paddingTop: '0.25rem' }}>
+            <button className="btn-gold" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : '💾 Save exercise'}
+            </button>
+            <button className="btn-ghost" onClick={() => setView('list')} disabled={saving}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /* ── list view ── */
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1.05rem' }}>
+          Exercise Library <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.9rem' }}>({exercises.length})</span>
+        </h3>
+        <button className="btn-gold" onClick={startCreate}>＋ Create exercise</button>
+      </div>
+
+      {exercises.length === 0 ? (
+        <div className="dashboard-empty">
+          <p>No exercises yet. Create your first one above.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+          {exercises.map(ex => {
+            // Derive exercise type from first question's type (exercises table has no top-level type)
+            const typeHint = ex.stage_type === 'listening' ? 'listening' : null
+            return (
+              <div key={ex.id} className="admin-student-row"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span style={{ flex: 1, fontWeight: 500, minWidth: '160px' }}>{ex.title}</span>
+                <TypeBadge type={typeHint || ex.stage_type || 'controlled_exercise'} />
+                {ex.books?.title && (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📚 {ex.books.title}</span>
+                )}
+                <div style={{ display: 'flex', gap: '0.4rem', marginLeft: 'auto' }}>
+                  {deletingId === ex.id ? (
+                    <>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                        onClick={() => handleDelete(ex.id)}>Confirm delete</button>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => setDeletingId(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="btn-ghost"
+                      style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
+                      onClick={() => setDeletingId(ex.id)}>Delete</button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────
 function AdminPanel({ user, onSignOut }) {
   const [adminEmail,    setAdminEmail]    = useState('')
@@ -6678,6 +7306,11 @@ function AdminPanel({ user, onSignOut }) {
   const [allReferrals,        setAllReferrals]        = useState([])
   const [referralsLoading,    setReferralsLoading]    = useState(false)
 
+  // Prospects state
+  const [prospects,           setProspects]           = useState([])
+  const [prospectsLoading,    setProspectsLoading]    = useState(false)
+  const [prospectCount,       setProspectCount]       = useState(0)
+
   useEffect(() => {
     if (!isAdmin || !supabase) return
     setDataLoading(true)
@@ -6685,6 +7318,11 @@ function AdminPanel({ user, onSignOut }) {
       setStudents(authData)
       setManualStudents(manualData)
       setDataLoading(false)
+    })
+    // Load initial prospect count for badge
+    fetchAllProspects().then(data => {
+      setProspects(data)
+      setProspectCount(data.filter(p => p.status === 'new').length)
     })
   }, [isAdmin])
 
@@ -6695,6 +7333,17 @@ function AdminPanel({ user, onSignOut }) {
     fetchAllReferrals().then(data => {
       setAllReferrals(data)
       setReferralsLoading(false)
+    })
+  }, [adminTab, isAdmin])
+
+  // Load prospects when Prospects tab is opened
+  useEffect(() => {
+    if (adminTab !== 'prospects' || !isAdmin) return
+    setProspectsLoading(true)
+    fetchAllProspects().then(data => {
+      setProspects(data)
+      setProspectCount(data.filter(p => p.status === 'new').length)
+      setProspectsLoading(false)
     })
   }, [adminTab, isAdmin])
 
@@ -6727,6 +7376,31 @@ function AdminPanel({ user, onSignOut }) {
     if (data.user?.email !== ADMIN_EMAIL) {
       await supabase.auth.signOut()
       setLoginError('This account does not have admin access.')
+    }
+  }
+
+  const handleConvertProspect = async (prospect) => {
+    const created = await createManualStudent({
+      name: prospect.name,
+      email: prospect.email,
+      createdBy: user.id,
+    })
+    if (created) {
+      setManualStudents(prev => [created, ...prev])
+      await updateProspectStatus(prospect.id, 'converted')
+      setProspects(prev => prev.filter(p => p.id !== prospect.id))
+      setProspectCount(prev => Math.max(0, prev - (prospect.status === 'new' ? 1 : 0)))
+    }
+  }
+
+  const handleProspectStatusChange = async (prospect, newStatus) => {
+    const ok = await updateProspectStatus(prospect.id, newStatus)
+    if (ok) {
+      setProspects(prev => {
+        const updated = prev.map(p => p.id === prospect.id ? { ...p, status: newStatus } : p)
+        setProspectCount(updated.filter(p => p.status === 'new').length)
+        return updated
+      })
     }
   }
 
@@ -7025,6 +7699,11 @@ function AdminPanel({ user, onSignOut }) {
           👥 Students
           {pendingCount > 0 && <span className="admin-tab-badge">{pendingCount}</span>}
         </button>
+        <button className={`admin-tab ${adminTab === 'prospects' ? 'active' : ''}`}
+          onClick={() => setAdminTab('prospects')}>
+          🔍 Prospects
+          {prospectCount > 0 && <span className="admin-tab-badge">{prospectCount}</span>}
+        </button>
         <button className={`admin-tab ${adminTab === 'stages' ? 'active' : ''}`}
           onClick={() => setAdminTab('stages')}>
           📚 Lesson Stages
@@ -7036,6 +7715,10 @@ function AdminPanel({ user, onSignOut }) {
         <button className={`admin-tab ${adminTab === 'books' ? 'active' : ''}`}
           onClick={() => setAdminTab('books')}>
           📖 Books
+        </button>
+        <button className={`admin-tab ${adminTab === 'exercises' ? 'active' : ''}`}
+          onClick={() => setAdminTab('exercises')}>
+          📝 Exercise Library
         </button>
         <button className={`admin-tab ${adminTab === 'referrals' ? 'active' : ''}`}
           onClick={() => setAdminTab('referrals')}>
@@ -7051,6 +7734,9 @@ function AdminPanel({ user, onSignOut }) {
 
       {/* Books tab */}
       {adminTab === 'books' && <AdminBooks adminUserId={user?.id} />}
+
+      {/* Exercise Library tab */}
+      {adminTab === 'exercises' && <AdminExerciseLibrary adminUserId={user?.id} />}
 
       {/* Referrals tab */}
       {adminTab === 'referrals' && (
@@ -7092,6 +7778,78 @@ function AdminPanel({ user, onSignOut }) {
                         >
                           {ref.discount_applied ? 'Discount given ✓' : 'Mark discount given'}
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Prospects tab */}
+      {adminTab === 'prospects' && (
+        <div style={{ marginTop: '1rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.85rem' }}>Prospects</h3>
+          {prospectsLoading ? (
+            <div className="dashboard-loading">Loading prospects…</div>
+          ) : prospects.length === 0 ? (
+            <p className="dashboard-empty-small">No prospects yet. They'll appear here when someone fills in the consultation booking form.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e8e3d8', textAlign: 'left' }}>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Name</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Email</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Phone</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prospects.map(p => (
+                    <tr key={p.id} style={{ borderBottom: '1px solid #f0ece4' }}>
+                      <td style={{ padding: '0.55rem 0.75rem' }}><strong>{p.name}</strong></td>
+                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{p.email}</td>
+                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{p.phone || '—'}</td>
+                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td style={{ padding: '0.55rem 0.75rem' }}>
+                        <span style={{
+                          display: 'inline-block', borderRadius: '0.9rem', padding: '0.18rem 0.6rem',
+                          fontSize: '0.78rem', fontWeight: 600,
+                          background: p.status === 'new' ? '#dbeafe' : p.status === 'contacted' ? '#fef9c3' : p.status === 'converted' ? '#dcfce7' : '#e5e7eb',
+                          color: p.status === 'new' ? '#1d4ed8' : p.status === 'contacted' ? '#92400e' : p.status === 'converted' ? '#166534' : '#6b7280',
+                        }}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.55rem 0.75rem' }}>
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          {p.status !== 'contacted' && (
+                            <button className="btn-ghost"
+                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                              onClick={() => handleProspectStatusChange(p, 'contacted')}>
+                              Mark contacted
+                            </button>
+                          )}
+                          {p.status !== 'declined' && (
+                            <button className="btn-ghost"
+                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#9ca3af' }}
+                              onClick={() => handleProspectStatusChange(p, 'declined')}>
+                              Decline
+                            </button>
+                          )}
+                          <button className="btn-gold"
+                            style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem' }}
+                            onClick={() => handleConvertProspect(p)}>
+                            Convert to student
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
