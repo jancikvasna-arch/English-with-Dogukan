@@ -443,7 +443,7 @@ export async function fetchAllLessonPlans() {
       student_id, manual_student_id, lesson_aim, teaching_point, language_analysis, scheduled_at,
       profiles:student_id ( id, name, email, english_level ),
       manual_students:manual_student_id ( id, name, email, english_level ),
-      lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, exercises ( id, title, course ) ),
+      lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, exercises ( id, title, course ) ),
       lesson_plan_exercises ( order_index, exercises ( id, title, course ) )
     `)
     .order('created_at', { ascending: false })
@@ -768,6 +768,7 @@ export async function duplicateLessonPlan(planId, createdBy) {
         content_text:     s.content_text,
         content_images:   s.content_images,
         audio_url:        s.audio_url,
+        section:          s.section || 'lesson',
       }))
     const { error: stageErr } = await supabase.from('lesson_stages').insert(stageRows)
     if (stageErr) { console.error('[supabase] duplicateLessonPlan stages:', stageErr); return null }
@@ -808,6 +809,7 @@ async function _saveStages(planId, stages) {
       content_text:     s.contentText  || null,
       content_images:   s.contentImages?.length ? s.contentImages : null,
       audio_url:        s.audioUrl     || null,
+      section:          s.section      || 'lesson',
     }
   })
   const { error } = await supabase.from('lesson_stages').insert(rows)

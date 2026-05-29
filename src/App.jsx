@@ -3119,13 +3119,16 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
       )}
 
       <div className="exercise-questions">
-        {questions.every(q => q.type === 'listening' || q.type === 'viewing') && questions.length > 0 && (
+        {(!questions || questions.length === 0) && (
+          <p style={{ color: 'var(--text-muted)' }}>This exercise has no questions yet.</p>
+        )}
+        {questions && questions.every(q => q.type === 'listening' || q.type === 'viewing') && questions.length > 0 && (
           <div className="verbal-activity-note">
             {questions[0].type === 'listening' ? '🎧' : '🎥'}
             <span>{questions[0].type === 'listening' ? 'Listening activity — verbal discussion.' : 'Viewing activity — verbal discussion.'}</span>
           </div>
         )}
-        {questions.map((q, idx) => {
+        {(questions || []).map((q, idx) => {
           if (q.type === 'listening' || q.type === 'viewing') return null
           const result = getResult(q)
 
@@ -3196,6 +3199,9 @@ function ExerciseDemoPlayer({ exercise, questions, onBack }) {
                   answer={answers[q.id] || null}
                   onChange={val => setAnswer(q.id, val)}
                 />
+              )}
+              {!['multiple_choice','true_false','matching','free_text','word_choice','fill_blank','listening','viewing'].includes(q.type) && (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.87rem' }}>Preview not available for this exercise type.</p>
               )}
             </div>
           )
@@ -3379,7 +3385,7 @@ function AdminLessonStages({ adminUserId }) {
   const [labels,      setLabels]      = useState([])
   const [books,       setBooks]       = useState([])
   const [loading,     setLoading]     = useState(true)
-  const [exTab,          setExTab]          = useState('assignments')
+  const [exTab,          setExTab]          = useState('library')
   const [view,           setView]           = useState('list') // 'list'|'review'|'create-stage'|'edit-exercise'
   const [reviewing,      setReviewing]      = useState(null)
   const [editingExercise,setEditingExercise]= useState(null)
@@ -3471,7 +3477,8 @@ function AdminLessonStages({ adminUserId }) {
 
   const openDemo = async (ex) => {
     const full = await fetchExerciseWithQuestions(ex.id)
-    if (full) { setDemoExercise(full); setView('demo-exercise') }
+    if (!full) { alert('Could not load exercise. It may have been deleted or there was a connection error.'); return }
+    setDemoExercise(full); setView('demo-exercise')
   }
 
   const handleDeleteExercise = async (id) => {
@@ -3536,136 +3543,8 @@ function AdminLessonStages({ adminUserId }) {
       onBack={() => { setView('list'); setDemoExercise(null) }} />
   }
 
-  const submitted = assignments.filter(a => a.status === 'submitted')
-  const pending   = assignments.filter(a => a.status !== 'submitted')
-
   return (
     <div>
-      {/* Sub-tabs */}
-      <div className="admin-tabs" style={{ marginTop: 0 }}>
-        {[['assignments','📋 Assignments'],['library','📚 Library']].map(([k, label]) => (
-          <button key={k} className={`admin-tab ${exTab === k ? 'active' : ''}`} onClick={() => setExTab(k)}>{label}</button>
-        ))}
-      </div>
-
-      {/* ── Assignments tab ── */}
-      {exTab === 'assignments' && (
-        <div>
-          <div className="admin-exercises-toolbar">
-            <h3 style={{ margin: 0 }}>Assignments</h3>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
-                onClick={refreshAssignments} disabled={refreshing}>
-                {refreshing ? '…' : '↺ Refresh'}
-              </button>
-              <button className="btn-gold" onClick={() => setShowAssign(v => !v)}>
-                {showAssign ? '← Cancel' : '+ Assign'}
-              </button>
-            </div>
-          </div>
-
-          {showAssign && (
-            <form className="admin-assign-form" onSubmit={handleAssign}>
-              <div className="form-field">
-                <label>Student</label>
-                <select value={aStudentId} onChange={e => setAStudentId(e.target.value)} required>
-                  <option value="">Select a student…</option>
-                  {students.map(s => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Exercise</label>
-                <select value={aExerciseId} onChange={e => setAExerciseId(e.target.value)} required>
-                  <option value="">Select an exercise…</option>
-                  {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Type</label>
-                <div className="radio-group" style={{ flexDirection: 'row', gap: '0.75rem' }}>
-                  {['homework','in_class'].map(m => (
-                    <button key={m} type="button"
-                      className={`radio-option ${aMode === m ? 'selected' : ''}`}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                      onClick={() => setAMode(m)}>
-                      {m === 'homework' ? '🏠 Homework' : '🎓 In class'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="form-field">
-                <label>Note for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-                <input type="text" placeholder="e.g. Please complete before Friday's lesson"
-                  value={aNote} onChange={e => setANote(e.target.value)} />
-              </div>
-              {assignError && <div className="auth-error">{assignError}</div>}
-              <button type="submit" className="btn-gold btn-full" disabled={assigning}>
-                {assigning ? 'Assigning…' : 'Assign exercise →'}
-              </button>
-            </form>
-          )}
-
-          {loading ? <div className="dashboard-loading">Loading…</div> : (
-            <>
-              {submitted.length > 0 && (
-                <div className="admin-asgn-section">
-                  <div className="admin-asgn-section-title">
-                    <span className="admin-review-chip">✓ Completed — open to add comments</span>
-                    <span>{submitted.length}</span>
-                  </div>
-                  {submitted.map(a => {
-                    const stu = students.find(s => s.id === a.student_id)
-                    return (
-                      <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
-                        <div className="admin-student-info">
-                          <strong>{stu?.name || stu?.email || 'Student'}</strong>
-                          <span className="admin-student-email">{a.exercises?.title}</span>
-                        </div>
-                        <div className="admin-student-meta">
-                          <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
-                          <span className="admin-date-chip">{new Date(a.submitted_at).toLocaleDateString('en-GB')}</span>
-                        </div>
-                        <span className="admin-arrow">›</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-              {pending.length > 0 && (
-                <div className="admin-asgn-section">
-                  <div className="admin-asgn-section-title">
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assigned — awaiting student</span>
-                    <span>{pending.length}</span>
-                  </div>
-                  {pending.map(a => {
-                    const stu = students.find(s => s.id === a.student_id)
-                    return (
-                      <button key={a.id} className="admin-student-row" onClick={() => openReview(a)}>
-                        <div className="admin-student-info">
-                          <strong>{stu?.name || stu?.email || 'Student'}</strong>
-                          <span className="admin-student-email">{a.exercises?.title}</span>
-                        </div>
-                        <div className="admin-student-meta">
-                          <span className="admin-level-chip">{a.mode === 'homework' ? '🏠' : '🎓'} {a.mode}</span>
-                          <span className="admin-date-chip">Assigned {new Date(a.assigned_at).toLocaleDateString('en-GB')}</span>
-                        </div>
-                        <span className="admin-arrow">›</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-              {assignments.length === 0 && (
-                <div className="dashboard-empty">
-                  <p>No exercises assigned yet.</p>
-                  <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Create exercises in the Library, then assign them here.</p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       {/* ── Library tab ── */}
       {exTab === 'library' && (() => {
         const typeFiltered = filterStageType
@@ -3918,6 +3797,131 @@ function AdminLessonStages({ adminUserId }) {
   )
 }
 
+// ─── LessonPlanView ───────────────────────────────────────────
+function LessonPlanView({ plan, exercises, onBack }) {
+  const [viewMode, setViewMode] = useState('teacher') // 'teacher' | 'student'
+
+  const lessonStages = (plan.lesson_stages ?? [])
+    .filter(s => (s.section ?? 'lesson') !== 'homework')
+    .sort((a, b) => (a.stage_number || 0) - (b.stage_number || 0) || a.order_index - b.order_index)
+
+  const homeworkStages = (plan.lesson_stages ?? [])
+    .filter(s => (s.section ?? 'lesson') === 'homework')
+
+  // Group lesson stages by stage_number
+  const stageGroups = lessonStages.reduce((acc, s) => {
+    const num = s.stage_number ?? 1
+    if (!acc[num]) acc[num] = { number: num, name: s.stage_name, items: [] }
+    acc[num].items.push(s)
+    return acc
+  }, {})
+
+  const studentName = plan.profiles?.name || plan.profiles?.email || plan.manual_students?.name
+
+  return (
+    <div>
+      {/* Header row */}
+      <div style={{ display:'flex', alignItems:'center', gap:'1rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+        <button className="back-btn" onClick={onBack}>← Back to plans</button>
+        <div style={{ display:'flex', gap:'0.5rem', marginLeft:'auto', flexWrap:'wrap' }}>
+          <button className="btn-ghost"
+            style={{ fontSize:'0.85rem', ...(viewMode==='teacher' ? {background:'var(--gold)', color:'#fff', borderColor:'var(--gold)'} : {}) }}
+            onClick={() => setViewMode('teacher')}>👨‍🏫 Teacher view</button>
+          <button className="btn-ghost"
+            style={{ fontSize:'0.85rem', ...(viewMode==='student' ? {background:'var(--gold)', color:'#fff', borderColor:'var(--gold)'} : {}) }}
+            onClick={() => setViewMode('student')}>👤 Student view</button>
+          {viewMode === 'teacher' && (
+            <button className="btn-ghost" style={{ fontSize:'0.85rem' }} onClick={() => window.print()}>🖨 Print</button>
+          )}
+        </div>
+      </div>
+
+      {/* Plan title */}
+      <h2 style={{ margin:'0 0 0.5rem', fontSize:'1.4rem' }}>{plan.title}</h2>
+
+      {/* Metadata chips */}
+      <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'1rem' }}>
+        {studentName && (
+          <span className="admin-level-chip">👤 {studentName}</span>
+        )}
+        {plan.scheduled_at && (
+          <span className="admin-level-chip" style={{ color:'var(--gold)' }}>
+            📅 {new Date(plan.scheduled_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+          </span>
+        )}
+      </div>
+
+      {/* Teacher-only metadata section */}
+      {viewMode === 'teacher' && (plan.lesson_aim || plan.teaching_point || plan.language_analysis) && (
+        <div style={{ background:'#FFFBF0', border:'1px solid #f0e8c8', borderRadius:'10px', padding:'1rem', marginBottom:'1.25rem' }}>
+          {plan.lesson_aim && (
+            <>
+              <strong>🎯 Lesson aim</strong>
+              <p style={{ margin:'0.25rem 0 0.75rem', whiteSpace:'pre-wrap' }}>{plan.lesson_aim}</p>
+            </>
+          )}
+          {plan.teaching_point && (
+            <>
+              <strong>✏️ Teaching point</strong>
+              <p style={{ margin:'0.25rem 0 0.75rem', whiteSpace:'pre-wrap' }}>{plan.teaching_point}</p>
+            </>
+          )}
+          {plan.language_analysis && (
+            <>
+              <strong>🔬 Language analysis</strong>
+              <p style={{ margin:'0.25rem 0', whiteSpace:'pre-wrap' }}>{plan.language_analysis}</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Lesson stages */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">📌 Lesson stages</h4>
+        {Object.values(stageGroups).map(group => (
+          <div key={group.number} style={{ marginBottom:'1rem' }}>
+            <div style={{ fontWeight:600, marginBottom:'0.4rem', color:'var(--gold)' }}>
+              Stage {group.number}{group.name ? ` — ${group.name}` : ''}
+            </div>
+            {group.items.map(stage => {
+              const ex = exercises.find(e => e.id === stage.exercise_id)
+              return (
+                <div key={stage.id} style={{ padding:'0.5rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem', fontSize:'0.9rem' }}>
+                  {ex ? ex.title : stage.title || 'Stage item'}
+                  {viewMode === 'teacher' && stage.duration_minutes && (
+                    <span style={{ color:'var(--text-muted)', fontSize:'0.8rem', marginLeft:'0.5rem' }}>⏱ {stage.duration_minutes} min</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+        {Object.keys(stageGroups).length === 0 && (
+          <p style={{ color:'var(--text-muted)', fontSize:'0.88rem' }}>No stages yet.</p>
+        )}
+      </div>
+
+      {/* Homework section */}
+      {homeworkStages.length > 0 && (
+        <div className="builder-section" style={{ marginTop:'1rem' }}>
+          <h4 className="builder-section-title">📚 Homework</h4>
+          {homeworkStages.map(stage => {
+            const ex = exercises.find(e => e.id === stage.exercise_id)
+            return (
+              <div key={stage.id} style={{ padding:'0.5rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem', fontSize:'0.9rem' }}>
+                {ex ? ex.title : stage.title || 'Homework exercise'}
+                {stage.content_text && (
+                  <span style={{ color:'var(--text-muted)', fontSize:'0.82rem', marginLeft:'0.5rem' }}>— {stage.content_text}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminLessonPlans ─────────────────────────────────────────
 function AdminLessonPlans({ adminUserId }) {
   const [exercises,      setExercises]      = useState([])
@@ -3927,8 +3931,9 @@ function AdminLessonPlans({ adminUserId }) {
   const [authStudents,   setAuthStudents]   = useState([])
   const [manualStudents, setManualStudents] = useState([])
   const [loading,        setLoading]        = useState(true)
-  const [view,           setView]           = useState('list') // 'list' | 'create' | 'edit'
+  const [view,           setView]           = useState('list') // 'list' | 'create' | 'edit' | 'view'
   const [editingPlan,    setEditingPlan]    = useState(null)
+  const [viewingPlan,    setViewingPlan]    = useState(null)
   const [deletingPlanId, setDeletingPlanId] = useState(null)
 
   // Assign plan to student
@@ -3999,6 +4004,7 @@ function AdminLessonPlans({ adminUserId }) {
       if (view !== 'list') {
         setView('list')
         setEditingPlan(null)
+        setViewingPlan(null)
       }
     }
     window.addEventListener('popstate', handlePop)
@@ -4019,6 +4025,12 @@ function AdminLessonPlans({ adminUserId }) {
       initialPlan={editingPlan}
       onCancel={() => { setView('list'); setEditingPlan(null) }}
       onSaved={(newExs) => { reloadAll(); setView('list'); setEditingPlan(null) }} />
+  }
+  if (view === 'view' && viewingPlan) {
+    return <LessonPlanView
+      plan={viewingPlan}
+      exercises={exercises}
+      onBack={() => { setView('list'); setViewingPlan(null) }} />
   }
 
   return (
@@ -4165,6 +4177,8 @@ function AdminLessonPlans({ adminUserId }) {
                     {assigningPlanId === p.id ? '✕ Cancel' : 'Assign →'}
                   </button>
                   <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
+                    onClick={() => { setViewingPlan(p); setView('view') }}>View</button>
+                  <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
                     onClick={() => { setEditingPlan(p); setView('edit') }}>Edit</button>
                   <button className="btn-ghost" style={{ fontSize: '0.85rem' }}
                     onClick={async () => {
@@ -4274,7 +4288,10 @@ function initStagesFromPlan(plan) {
 /** Convert a lesson plan's lesson_stages into grouped stage structure for the builder. */
 function initStageGroupsFromPlan(plan) {
   if (!plan) return [{ number: 1, name: '', items: [] }]
-  const stages = (plan.lesson_stages ?? []).slice().sort((a, b) => a.order_index - b.order_index)
+  // Only include lesson-section stages (not homework) in the stage builder
+  const stages = (plan.lesson_stages ?? [])
+    .filter(s => (s.section ?? 'lesson') !== 'homework')
+    .slice().sort((a, b) => a.order_index - b.order_index)
   if (stages.length === 0) {
     // Legacy: load from lesson_plan_exercises
     const legacyItems = (plan.lesson_plan_exercises ?? [])
@@ -5665,6 +5682,22 @@ function LessonStageBuilder({
   // Numbered stage groups
   const [stageGroups,  setStageGroups]  = useState(() => initStageGroupsFromPlan(initialPlan))
 
+  // Homework items (flat list, separate from lesson stages)
+  const [homeworkItems, setHomeworkItems] = useState(() => {
+    if (!initialPlan) return []
+    return (initialPlan.lesson_stages ?? [])
+      .filter(s => (s.section ?? 'lesson') === 'homework')
+      .map(s => ({
+        id:         s.id,
+        exerciseId: s.exercise_id || '',
+        note:       s.content_text || '',
+      }))
+  })
+
+  const addHomeworkItem    = () => setHomeworkItems(prev => [...prev, { id: crypto.randomUUID(), exerciseId: '', note: '' }])
+  const removeHomeworkItem = (id) => setHomeworkItems(prev => prev.filter(h => h.id !== id))
+  const updateHomeworkItem = (id, field, val) => setHomeworkItems(prev => prev.map(h => h.id === id ? { ...h, [field]: val } : h))
+
   // Exercise picker/creator overlay: null | { groupNumber, mode: 'pick'|'create' }
   const [pickerCtx,    setPickerCtx]    = useState(null)
   // All exercises including ones created inline during this session
@@ -5809,8 +5842,26 @@ function LessonStageBuilder({
     if (!title.trim()) return
     setSaving(true); setErr(null)
     const flatItems = stageGroups.flatMap(g =>
-      g.items.map(item => ({ ...item, stageNumber: g.number, stageName: g.name || null }))
+      g.items.map(item => ({ ...item, stageNumber: g.number, stageName: g.name || null, section: 'lesson' }))
     )
+    // Append homework items as flat stages with section:'homework'
+    const hwItems = homeworkItems
+      .filter(hw => hw.exerciseId)
+      .map((hw, i) => ({
+        id:              hw.id,
+        type:            'controlled_exercise',
+        title:           '',
+        durationMinutes: null,
+        customDuration:  '',
+        exerciseId:      hw.exerciseId,
+        contentText:     hw.note || '',
+        audioUrl:        '',
+        contentImages:   [],
+        stageNumber:     null,
+        stageName:       null,
+        section:         'homework',
+      }))
+    const allStages = [...flatItems, ...hwItems]
     const meta = {
       studentId:        studentType === 'profile' ? studentId : null,
       manualStudentId:  studentType === 'manual'  ? studentId : null,
@@ -5820,8 +5871,8 @@ function LessonStageBuilder({
       scheduledAt:      scheduledAt ? new Date(scheduledAt).toISOString() : null,
     }
     const id = isEdit
-      ? await updateLessonPlanWithStages(initialPlan.id, title, null, flatItems, meta)
-      : await createLessonPlanWithStages(title, null, adminUserId, flatItems, meta)
+      ? await updateLessonPlanWithStages(initialPlan.id, title, null, allStages, meta)
+      : await createLessonPlanWithStages(title, null, adminUserId, allStages, meta)
     setSaving(false)
     if (id) {
       // Clear the auto-saved draft now that it's been saved to the DB
@@ -6050,6 +6101,34 @@ function LessonStageBuilder({
             + Add Stage {stageGroups.length > 0 ? stageGroups.length + 1 : 1}
           </button>
         )}
+      </div>
+
+      {/* ── Homework ── */}
+      <div className="builder-section" style={{ marginTop: '1.5rem' }}>
+        <h4 className="builder-section-title">📚 Homework</h4>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 0.75rem' }}>
+          Exercises assigned to the student to complete after the lesson.
+        </p>
+        {homeworkItems.map((hw) => {
+          const ex = exercises.find(e => e.id === hw.exerciseId)
+          return (
+            <div key={hw.id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.75rem', background:'#fff', borderRadius:'8px', border:'1px solid #e8e3d8', marginBottom:'0.5rem' }}>
+              <span style={{ flex:1, fontSize:'0.9rem' }}>{ex ? ex.title : 'Select exercise…'}</span>
+              <select value={hw.exerciseId} onChange={e => updateHomeworkItem(hw.id, 'exerciseId', e.target.value)}
+                style={{ fontSize:'0.85rem', padding:'0.3rem 0.5rem', borderRadius:'6px', border:'1px solid #d4d0c8', background:'#fff' }}>
+                <option value="">Choose exercise…</option>
+                {exercises.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+              </select>
+              <input type="text" placeholder="Note (optional)" value={hw.note}
+                onChange={e => updateHomeworkItem(hw.id, 'note', e.target.value)}
+                style={{ fontSize:'0.82rem', padding:'0.3rem 0.5rem', borderRadius:'6px', border:'1px solid #d4d0c8', width:'160px' }} />
+              <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.5rem', color:'#e05c5c' }}
+                onClick={() => removeHomeworkItem(hw.id)}>✕</button>
+            </div>
+          )
+        })}
+        <button className="btn-ghost" style={{ fontSize:'0.85rem', marginTop:'0.25rem' }}
+          onClick={addHomeworkItem}>+ Add homework exercise</button>
       </div>
 
       {err && <div className="auth-error" style={{ marginTop: '0.75rem' }}>{err}</div>}
@@ -7706,7 +7785,7 @@ function AdminPanel({ user, onSignOut }) {
         </button>
         <button className={`admin-tab ${adminTab === 'stages' ? 'active' : ''}`}
           onClick={() => setAdminTab('stages')}>
-          📚 Lesson Stages
+          📝 Exercise Library
         </button>
         <button className={`admin-tab ${adminTab === 'plans' ? 'active' : ''}`}
           onClick={() => setAdminTab('plans')}>
@@ -7715,10 +7794,6 @@ function AdminPanel({ user, onSignOut }) {
         <button className={`admin-tab ${adminTab === 'books' ? 'active' : ''}`}
           onClick={() => setAdminTab('books')}>
           📖 Books
-        </button>
-        <button className={`admin-tab ${adminTab === 'exercises' ? 'active' : ''}`}
-          onClick={() => setAdminTab('exercises')}>
-          📝 Exercise Library
         </button>
         <button className={`admin-tab ${adminTab === 'referrals' ? 'active' : ''}`}
           onClick={() => setAdminTab('referrals')}>
@@ -7735,8 +7810,6 @@ function AdminPanel({ user, onSignOut }) {
       {/* Books tab */}
       {adminTab === 'books' && <AdminBooks adminUserId={user?.id} />}
 
-      {/* Exercise Library tab */}
-      {adminTab === 'exercises' && <AdminExerciseLibrary adminUserId={user?.id} />}
 
       {/* Referrals tab */}
       {adminTab === 'referrals' && (
