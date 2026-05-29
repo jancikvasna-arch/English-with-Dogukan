@@ -1443,6 +1443,46 @@ function PlacementTest({ onSubmit, onBack }) {
   )
 }
 
+// ─── PlacementTestFrame ───────────────────────────────────────
+// Renders the new 45-question test in an iframe and listens for
+// the postMessage that fires when the student completes it.
+function PlacementTestFrame({ userId, onComplete }) {
+  useEffect(() => {
+    const handler = async (event) => {
+      if (event.data?.type !== 'PLACEMENT_TEST_COMPLETE') return
+      const p = event.data.payload
+      const resultData = {
+        level: p.cefr.replace('/','_'),   // 'C1/C2' → 'C1_C2' (normalise for DB)
+        level_name: p.level,
+        grammar_score: p.grammarScore,
+        vocabulary_score: p.vocabScore,
+        reading_score: p.tenseScore,     // reuse reading_score column for tense%
+        overall_score: p.overallScore,
+        writing_answer: p.writingAnswers.map(w => w.tag + ': ' + w.answer).join('\n\n'),
+        teacher_notes: JSON.stringify(p),
+        recommended_course: p.level,
+        strengths: [],
+        areas_to_improve: [],
+      }
+      await savePlacementResult(resultData, null, userId)
+      onComplete(p)
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [userId, onComplete])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <iframe
+        src="/placement-test.html"
+        title="English Placement Test"
+        style={{ width: '100%', minHeight: '800px', border: 'none', borderRadius: '0.75rem' }}
+        sandbox="allow-scripts allow-same-origin allow-forms"
+      />
+    </div>
+  )
+}
+
 // ─── Grading ──────────────────────────────────────────────────
 function Grading({ answers, onDone }) {
   useEffect(() => {
@@ -1779,6 +1819,7 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
 // ─── Access level helpers ─────────────────────────────────────
 const ACCESS_META = {
   pending:        { label: 'Awaiting approval',   color: '#94a3b8', desc: 'Dogukan will approve your account shortly.' },
+  test_approved:  { label: 'Placement test',       color: '#a78bfa', desc: 'Take your placement test below to get started.' },
   trial:          { label: 'Trial access',         color: '#60a5fa', desc: 'You have full access during your trial.' },
   pay_per_lesson: { label: 'Pay per lesson',       color: '#4ade80', desc: 'Active — book your next lesson anytime.' },
   bundle_12:      { label: 'Bundle — 12 lessons',  color: '#d4a853', desc: 'Track your progress across all 12 lessons below.' },
@@ -1834,6 +1875,8 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [referralCode,    setReferralCode]    = useState(null)
   const [myReferrals,     setMyReferrals]     = useState([])
   const [referralCopied,  setReferralCopied]  = useState(false)
+  const [takingTest,    setTakingTest]    = useState(false)
+  const [testDoneData,  setTestDoneData]  = useState(null) // payload from postMessage
 
   // Lesson plans assigned to this student (full plan view with notes)
   const [myPlans,             setMyPlans]             = useState([])
@@ -2069,12 +2112,32 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     )
   }
 
+  if (takingTest) {
+    return (
+      <div className="flow-card dashboard-card">
+        <button className="back-btn" onClick={() => setTakingTest(false)} style={{ marginBottom: '0.75rem' }}>
+          ← Back to dashboard
+        </button>
+        <PlacementTestFrame
+          userId={user.id}
+          onComplete={(data) => {
+            setTestDoneData(data)
+            setResult({ cefr_level: data.cefr, overall_score: data.overallScore, writing_reviewed: false })
+            setTakingTest(false)
+          }}
+        />
+      </div>
+    )
+  }
+
   const name = profile?.name || user.user_metadata?.name || user.email?.split('@')[0]
   const levelColors = { A1: '#94a3b8', A2: '#60a5fa', B1: '#3b82f6', B2: '#6366f1', C1: '#d4a853', C2: '#f59e0b' }
   const color = result ? (levelColors[result.cefr_level] || '#d4a853') : '#d4a853'
   const accessLevel = profile?.access_level || 'pending'
   const completedCount = lessons.filter(l => l.status === 'completed').length
-  const isPending = accessLevel === 'pending'
+  const isPending      = accessLevel === 'pending'
+  const isTestApproved = accessLevel === 'test_approved'
+  const hasTestResult  = !!result
 
   return (
     <div className="flow-card dashboard-card">
@@ -2146,6 +2209,27 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                   {nextLesson.teacher_notes_public && (
                     <p className="upcoming-lesson-note">📝 {nextLesson.teacher_notes_public}</p>
                   )}
+                </div>
+              )}
+
+              {/* ── Placement test CTA (test_approved, no result yet) ── */}
+              {isTestApproved && !hasTestResult && (
+                <div style={{ background: 'linear-gradient(135deg, #f3f0ff 0%, #ede9fe 100%)', border: '1.5px solid #c4b5fd', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.25rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎓</div>
+                  <h3 style={{ margin: '0 0 0.4rem', fontSize: '1.1rem' }}>Your placement test is ready</h3>
+                  <p className="flow-sub" style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>
+                    This 45-minute test helps Dogukan plan your lessons. Answer as best you can — there are no penalties for guessing.
+                  </p>
+                  <button className="btn-gold" onClick={() => setTakingTest(true)}>
+                    Start placement test →
+                  </button>
+                </div>
+              )}
+              {isTestApproved && hasTestResult && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                  <p style={{ margin: 0, fontSize: '0.95rem' }}>
+                    ✅ <strong>Placement test complete!</strong> — Dogukan will review your results and confirm your free lesson soon.
+                  </p>
                 </div>
               )}
 
@@ -8159,6 +8243,7 @@ function AdminPanel({ user, onSignOut }) {
             <select className="admin-access-select" value={accessLevel}
               onChange={e => setAccessLevel(e.target.value)}>
               <option value="pending">Pending approval</option>
+              <option value="test_approved">Placement test access</option>
               <option value="trial">Trial access</option>
               <option value="pay_per_lesson">Pay per lesson</option>
               <option value="bundle_12">Bundle — 12 lessons</option>
@@ -8172,8 +8257,14 @@ function AdminPanel({ user, onSignOut }) {
           </div>
           {selected.access_level === 'pending' && (
             <button className="btn-gold" style={{ marginTop: '0.6rem', fontSize: '0.85rem' }}
+              onClick={() => handleAccessSave('test_approved')} disabled={accessSaving}>
+              ✓ Approve for placement test
+            </button>
+          )}
+          {selected.access_level === 'test_approved' && result && (
+            <button className="btn-gold" style={{ marginTop: '0.6rem', fontSize: '0.85rem' }}
               onClick={() => handleAccessSave('trial')} disabled={accessSaving}>
-              ✓ Approve — grant trial access
+              ✓ Approve free lesson
             </button>
           )}
         </div>
@@ -8209,6 +8300,23 @@ function AdminPanel({ user, onSignOut }) {
                 ? <span className="reviewed-badge">✓ Writing reviewed</span>
                 : <span className="pending-badge">Writing pending</span>}
             </div>
+            {result.grammar_score != null && (
+              <div style={{ marginTop: '0.6rem', fontSize: '0.88rem', color: 'var(--text-muted)', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <span>Grammar: <strong>{result.grammar_score}%</strong></span>
+                <span>Vocabulary: <strong>{result.vocabulary_score}%</strong></span>
+                <span>Tenses: <strong>{result.reading_score}%</strong></span>
+              </div>
+            )}
+            {result.writing_answer && result.writing_answer.trim() && (
+              <details style={{ marginTop: '0.75rem' }}>
+                <summary style={{ cursor: 'pointer', fontSize: '0.88rem', color: 'var(--gold)', fontWeight: 600 }}>
+                  Writing answers ↓
+                </summary>
+                <pre style={{ marginTop: '0.5rem', whiteSpace: 'pre-wrap', fontSize: '0.84rem', background: 'var(--surface-2, #f8f8f8)', borderRadius: '6px', padding: '0.75rem', color: 'var(--text)' }}>
+                  {result.writing_answer}
+                </pre>
+              </details>
+            )}
           </div>
         ) : sub ? (
           <div className="admin-section">

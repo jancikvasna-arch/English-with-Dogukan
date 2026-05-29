@@ -1,0 +1,3 @@
+-- Placement test v2: 45-question iframe-based test
+-- No schema change required: teacher_notes column already stores JSON detail
+-- The new test_approved access level is handled entirely in application logic.

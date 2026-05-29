@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>English Placement Test</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #ffffff;
+  --bg-secondary: #f5f5f3;
+  --text-primary: #1a1a19;
+  --text-secondary: #5f5e5a;
+  --text-tertiary: #888780;
+  --border: rgba(0,0,0,0.12);
+  --border-medium: rgba(0,0,0,0.22);
+  --blue: #185FA5;
+  --blue-light: #e6f1fb;
+  --blue-dark: #0C447C;
+  --green: #3B6D11;
+  --green-light: #EAF3DE;
+  --purple: #3C3489;
+  --purple-light: #EEEDFE;
+  --amber: #854F0B;
+  --amber-light: #FAEEDA;
+  --red: #993C1D;
+  --red-light: #FAECE7;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1c;
+    --bg-secondary: #2c2c2a;
+    --text-primary: #f0efe8;
+    --text-secondary: #b4b2a9;
+    --text-tertiary: #888780;
+    --border: rgba(255,255,255,0.12);
+    --border-medium: rgba(255,255,255,0.22);
+    --blue: #85B7EB;
+    --blue-light: #042C53;
+    --blue-dark: #B5D4F4;
+    --green: #97C459;
+    --green-light: #173404;
+    --purple: #AFA9EC;
+    --purple-light: #26215C;
+    --amber: #EF9F27;
+    --amber-light: #412402;
+    --red: #F09595;
+    --red-light: #4A1B0C;
+  }
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  line-height: 1.6;
+}
+
+.container { max-width: 720px; margin: 0 auto; }
+
+.test-header { margin-bottom: 2rem; }
+.test-header h1 { font-size: 26px; font-weight: 600; margin-bottom: 6px; }
+.test-header p { font-size: 15px; color: var(--text-secondary); }
+
+.progress-wrap { margin-bottom: 1.5rem; }
+.progress-meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.progress-track { background: var(--border); border-radius: 4px; height: 6px; }
+.progress-fill { height: 100%; background: var(--blue); border-radius: 4px; transition: width 0.4s ease; }
+
+.section-label {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: var(--radius-md);
+  background: var(--bg-secondary); margin-bottom: 0.75rem;
+  border: 0.5px solid var(--border);
+}
+
+.question-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.25rem;
+}
+.question-num { font-size: 12px; color: var(--text-tertiary); margin-bottom: 8px; }
+.question-text { font-size: 16px; line-height: 1.7; margin-bottom: 1.25rem; }
+.question-text em { font-style: italic; color: var(--blue); }
+.question-text strong { font-weight: 600; }
+
+.options { display: flex; flex-direction: column; gap: 8px; }
+.option-btn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 16px; border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--bg);
+  cursor: pointer; text-align: left; font-size: 15px;
+  color: var(--text-primary); transition: background 0.15s, border-color 0.15s;
+  width: 100%; font-family: inherit;
+}
+.option-btn:hover { background: var(--bg-secondary); border-color: var(--border-medium); }
+.option-btn.selected { background: var(--blue-light); border-color: var(--blue); color: var(--blue-dark); }
+.option-letter {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  min-width: 20px; text-align: center; background: var(--bg-secondary);
+  border-radius: 4px; padding: 2px 5px;
+}
+.option-btn.selected .option-letter { background: var(--blue); color: #fff; }
+
+.text-input {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-md); font-size: 15px; color: var(--text-primary);
+  background: var(--bg); resize: vertical; font-family: inherit; line-height: 1.6;
+}
+.text-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(24,95,165,0.12); }
+.char-count { font-size: 12px; color: var(--text-tertiary); text-align: right; margin-top: 5px; }
+
+.nav-row { display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; gap: 12px; }
+.btn { padding: 11px 24px; border-radius: var(--radius-md); font-size: 15px; cursor: pointer; font-family: inherit; transition: all 0.15s; font-weight: 500; }
+.btn-secondary { background: var(--bg); border: 1px solid var(--border-medium); color: var(--text-primary); }
+.btn-secondary:hover { background: var(--bg-secondary); }
+.btn-primary { background: var(--blue); border: none; color: #fff; }
+.btn-primary:hover { background: var(--blue-dark); }
+.btn-primary:disabled { background: var(--bg-secondary); color: var(--text-tertiary); cursor: not-allowed; }
+
+.warning-msg {
+  background: var(--amber-light); color: var(--amber);
+  border: 1px solid; border-radius: var(--radius-md);
+  padding: 10px 14px; font-size: 13px; margin-bottom: 1rem; display: none;
+}
+
+/* Results */
+.results-wrap { padding-bottom: 2rem; }
+.results-title { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
+.results-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+.level-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 20px; border-radius: 999px;
+  font-size: 16px; font-weight: 600; margin-bottom: 1.75rem;
+}
+.level-beginner { background: var(--red-light); color: #712B13; }
+.level-elementary { background: var(--amber-light); color: #633806; }
+.level-lower-intermediate { background: var(--green-light); color: #27500A; }
+.level-upper-intermediate { background: var(--blue-light); color: #0C447C; }
+.level-advanced { background: var(--purple-light); color: #3C3489; }
+
+.answer-strip { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.answer-pip { width: 12px; height: 12px; border-radius: 50%; }
+.pip-correct { background: #639922; }
+.pip-wrong { background: #E24B4A; }
+.pip-empty { background: #D3D1C7; border: 1px solid #B4B2A9; }
+
+.result-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.25rem;
+}
+.result-card-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-secondary); margin-bottom: 1.25rem;
+}
+
+.matrix-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.matrix-table th, .matrix-table td { padding: 10px 8px; text-align: center; border: 1px solid var(--border); }
+.matrix-table th { background: var(--bg-secondary); font-weight: 600; font-size: 12px; color: var(--text-secondary); }
+.matrix-table td:first-child { text-align: left; padding-left: 14px; font-weight: 500; background: var(--bg-secondary); }
+.dot { width: 18px; height: 18px; border-radius: 50%; margin: 0 auto; }
+.dot-none { background: var(--bg-secondary); border: 1px solid var(--border-medium); }
+.dot-partial { background: #FAC775; }
+.dot-strong { background: #185FA5; }
+
+.skill-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.skill-row:last-child { border-bottom: none; }
+.skill-name { font-size: 14px; font-weight: 600; }
+.skill-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.skill-bar-wrap { flex: 1; margin: 0 16px; }
+.skill-bar-track { background: var(--bg-secondary); border-radius: 4px; height: 8px; border: 1px solid var(--border); }
+.skill-bar-fill { height: 100%; border-radius: 4px; }
+.skill-pct { font-size: 14px; font-weight: 600; min-width: 38px; text-align: right; }
+
+.diag-section { margin-bottom: 1.5rem; }
+.diag-section-title {
+  font-size: 14px; font-weight: 600; margin-bottom: 0.75rem;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+
+.sub-skill-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.sub-skill-row:last-child { border-bottom: none; }
+.sub-skill-name { font-size: 13px; font-weight: 500; min-width: 180px; flex-shrink: 0; }
+.sub-skill-bar-wrap { flex: 1; }
+.sub-skill-bar-track { background: var(--bg-secondary); border-radius: 3px; height: 6px; border: 1px solid var(--border); }
+.sub-skill-bar-fill { height: 100%; border-radius: 3px; }
+.sub-skill-score { font-size: 12px; color: var(--text-secondary); min-width: 36px; text-align: right; }
+
+.verdict-chip {
+  font-size: 11px; font-weight: 600; padding: 3px 9px;
+  border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+}
+.chip-strong { background: var(--green-light); color: #27500A; }
+.chip-partial { background: var(--amber-light); color: #633806; }
+.chip-weak { background: var(--red-light); color: #712B13; }
+.chip-na { background: var(--bg-secondary); color: var(--text-tertiary); border: 1px solid var(--border); }
+
+.insight-box {
+  border-radius: var(--radius-md); padding: 12px 14px;
+  font-size: 13px; line-height: 1.6; margin-top: 1rem;
+}
+.insight-knows { background: var(--green-light); color: #27500A; border-left: 3px solid #639922; }
+.insight-developing { background: var(--amber-light); color: #633806; border-left: 3px solid #EF9F27; }
+.insight-gaps { background: var(--red-light); color: #712B13; border-left: 3px solid #E24B4A; }
+.insight-title { font-weight: 600; margin-bottom: 4px; }
+.insight-list { margin: 0; padding-left: 16px; }
+.insight-list li { margin-bottom: 2px; }
+
+/* Intermediate spectrum */
+.spectrum-card {
+  background: var(--bg); border: 2px solid #378ADD;
+  border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.25rem;
+}
+.spectrum-card-eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #185FA5; margin-bottom: 4px;
+}
+.spectrum-card-title { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+.spectrum-card-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.6; }
+
+.spectrum-track-wrap { margin: 0.5rem 0 1.25rem; }
+.spectrum-labels {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500;
+}
+.spectrum-rail {
+  position: relative; height: 16px; border-radius: 8px;
+  background: linear-gradient(to right, #9FE1CB 0%, #5DCAA5 20%, #378ADD 50%, #185FA5 80%, #7F77DD 100%);
+  margin-bottom: 10px;
+}
+.spectrum-marker {
+  position: absolute; top: -5px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--bg); border: 3px solid #1a1a19;
+  transform: translateX(-50%);
+  transition: left 0.6s cubic-bezier(.34,1.56,.64,1);
+  display: flex; align-items: center; justify-content: center;
+}
+.spectrum-marker-inner { width: 10px; height: 10px; border-radius: 50%; background: #1a1a19; }
+.spectrum-tick-labels {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-tertiary); padding: 0 2px;
+}
+.spectrum-position-label {
+  text-align: center; font-size: 15px; font-weight: 600;
+  color: var(--text-primary); margin: 0.5rem 0 1.25rem;
+}
+.spectrum-evidence {
+  border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.25rem;
+}
+.spectrum-evidence-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.75rem; }
+.evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.evidence-col-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.evidence-list { list-style: none; padding: 0; margin: 0; }
+.evidence-list li { font-size: 12px; color: var(--text-secondary); padding: 3px 0; display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
+.ev-tick { color: #639922; font-weight: 700; flex-shrink: 0; }
+.ev-cross { color: #E24B4A; font-weight: 700; flex-shrink: 0; }
+.spectrum-desc {
+  font-size: 13px; line-height: 1.7; color: var(--text-primary);
+  background: var(--bg-secondary); border-radius: var(--radius-md);
+  padding: 12px 14px; margin-top: 1rem;
+}
+
+.result-desc { font-size: 14px; line-height: 1.7; }
+.result-note { font-size: 13px; color: var(--text-secondary); line-height: 1.7; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+
+@media (max-width: 600px) {
+  body { padding: 1rem 0.75rem; }
+  .nav-row { flex-direction: column-reverse; }
+  .btn { width: 100%; text-align: center; }
+  .matrix-table th, .matrix-table td { padding: 7px 4px; font-size: 11px; }
+  .sub-skill-name { min-width: 130px; font-size: 12px; }
+  .evidence-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- TEST SCREEN -->
+  <div id="test-screen">
+    <div class="test-header">
+      <h1>English Placement Test</h1>
+      <p>This test takes approximately 25 minutes. Answer all questions as best you can — there are no penalties for guessing. Your results and a detailed skills breakdown will appear at the end.</p>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-meta">
+        <span id="progress-label">Question 1 of 45</span>
+        <span id="section-name"></span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill" style="width:2%"></div>
+      </div>
+    </div>
+    <div id="warning-msg" class="warning-msg">Please select or type an answer before continuing.</div>
+    <div id="question-area"></div>
+    <div class="nav-row">
+      <button class="btn btn-secondary" id="btn-back" onclick="goBack()">← Back</button>
+      <button class="btn btn-primary" id="btn-next" onclick="goNext()">Next →</button>
+    </div>
+  </div>
+
+  <!-- RESULTS SCREEN -->
+  <div id="results-screen" style="display:none"></div>
+
+</div>
+<script>
+var Q = [
+  /* 1 */ {section:"Notices & signs",vocab:true,level:1,type:"mc",
+    prompt:"Where would you see this notice? <em>\"Please take a number and wait to be called.\"</em>",
+    options:["In a library","In a bank or post office","In a restaurant","In a car park"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 2 */ {section:"Notices & signs",vocab:true,level:1,type:"mc",
+    prompt:"Where would you see this sign? <em>\"No entry between 8am and 6pm. Residents only.\"</em>",
+    options:["In a supermarket","On a road or car park","In a hospital","In an airport"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 3 */ {section:"Notices & signs",vocab:true,level:2,type:"mc",
+    prompt:"You see a sign: <em>\"Alterations undertaken while you wait.\"</em> This sign is most likely in:",
+    options:["A dry cleaner's or tailor's","A pharmacy","A gym","A dentist's surgery"],answer:0,
+    tenseTag:null,grammarTag:null},
+  /* 4 */ {section:"Grammar — present & past",level:1,type:"mc",
+    prompt:"She _____ to work every day by bus.",
+    options:["go","goes","going","is go"],answer:1,
+    tenseTag:"present_simple",grammarTag:"subject_verb_agreement"},
+  /* 5 */ {section:"Grammar — present & past",level:1,type:"mc",
+    prompt:"They _____ television when the phone rang.",
+    options:["watched","were watching","have watched","had watch"],answer:1,
+    tenseTag:"past_continuous",grammarTag:"continuous_aspect"},
+  /* 6 */ {section:"Grammar — present & past",level:2,type:"mc",
+    prompt:"I _____ him since we were at school together.",
+    options:["know","knew","have known","had known"],answer:2,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_since_for"},
+  /* 7 */ {section:"Grammar — present & past",level:2,type:"mc",
+    prompt:"By the time we arrived, the film _____.",
+    options:["already started","has already started","had already started","already starts"],answer:2,
+    tenseTag:"past_perfect",grammarTag:"sequence_of_past_events"},
+  /* 8 */ {section:"Vocabulary — word meaning",vocab:true,level:1,type:"mc",
+    prompt:"Choose the word that means <strong>very tired</strong>:",
+    options:["exhausted","curious","nervous","cheerful"],answer:0,
+    tenseTag:null,grammarTag:null},
+  /* 9 */ {section:"Vocabulary — word meaning",vocab:true,level:2,type:"mc",
+    prompt:"Which word best completes the sentence? <em>The government announced a new _____ to reduce unemployment.</em>",
+    options:["initiative","incident","instance","instinct"],answer:0,
+    tenseTag:null,grammarTag:null},
+  /* 10 */ {section:"Vocabulary — word meaning",vocab:true,level:3,type:"mc",
+    prompt:"Choose the most precise synonym for <em>ambiguous</em>:",
+    options:["confusing","open to more than one interpretation","complicated","difficult to read"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 11 */ {section:"Vocabulary — word meaning",vocab:true,level:4,type:"mc",
+    prompt:"The director's speech was full of <em>platitudes</em>. This means the speech contained:",
+    options:["technical jargon","overused, empty phrases","controversial opinions","subtle humour"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 12 */ {section:"Grammar — questions & negatives",level:1,type:"mc",
+    prompt:"_____ she speak French?",
+    options:["Do","Does","Is","Has"],answer:1,
+    tenseTag:"present_simple",grammarTag:"auxiliary_do_does"},
+  /* 13 */ {section:"Grammar — questions & negatives",level:2,type:"mc",
+    prompt:"He suggested _____ to the cinema that evening.",
+    options:["to go","go","going","we go"],answer:2,
+    tenseTag:null,grammarTag:"verb_patterns_gerund_infinitive"},
+  /* 14 */ {section:"Grammar — questions & negatives",level:2,type:"mc",
+    prompt:"I'd rather you _____ here. It's disturbing me.",
+    options:["don't smoke","didn't smoke","won't smoke","not smoked"],answer:1,
+    tenseTag:null,grammarTag:"subjunctive_unreal_present"},
+  /* 15 */ {section:"Grammar — conditionals",level:2,type:"mc",
+    prompt:"If I _____ harder at school, I would have passed my exams.",
+    options:["worked","work","had worked","would work"],answer:2,
+    tenseTag:"past_perfect",grammarTag:"third_conditional"},
+  /* 16 */ {section:"Grammar — conditionals",level:3,type:"mc",
+    prompt:"She wouldn't mind _____ late if the project required it.",
+    options:["to stay","stay","staying","stayed"],answer:2,
+    tenseTag:null,grammarTag:"verb_patterns_gerund_infinitive"},
+  /* 17 */ {section:"Grammar — conditionals",level:3,type:"mc",
+    prompt:"Should the weather _____ worse, the match will be postponed.",
+    options:["become","becomes","becoming","have become"],answer:0,
+    tenseTag:null,grammarTag:"inverted_conditional"},
+  /* 18 */ {section:"Dialogue gap-fill",level:1,type:"mc",
+    prompt:"<strong>A:</strong> <em>Would you like a cup of tea?</em><br><strong>B:</strong> _____, please. No sugar.",
+    options:["Yes, I would","Yes, please","I like","I'd want"],answer:1,
+    tenseTag:null,grammarTag:"social_responses"},
+  /* 19 */ {section:"Dialogue gap-fill",level:2,type:"mc",
+    prompt:"<strong>A:</strong> <em>I've locked my keys inside the car.</em><br><strong>B:</strong> How annoying! You _____ have a spare set made.",
+    options:["must","should","can","shall"],answer:1,
+    tenseTag:null,grammarTag:"modal_verbs_advice"},
+  /* 20 */ {section:"Dialogue gap-fill",level:3,type:"mc",
+    prompt:"<strong>A:</strong> <em>He denied taking the money.</em><br><strong>B:</strong> I know — but the evidence _____ him to it.",
+    options:["links","is linking","had linked","was linked"],answer:0,
+    tenseTag:"present_simple",grammarTag:"verb_patterns_gerund_infinitive"},
+  /* 21 */ {section:"Vocabulary — word forms",vocab:true,level:2,type:"mc",
+    prompt:"Choose the correct form: <em>Her _____ (decide) to resign came as a shock to everyone.</em>",
+    options:["decide","decisive","decision","decided"],answer:2,
+    tenseTag:null,grammarTag:null},
+  /* 22 */ {section:"Vocabulary — word forms",vocab:true,level:3,type:"mc",
+    prompt:"<em>The new law will affect all _____ (employ) in the private sector.</em>",
+    options:["employ","employer","employment","employees"],answer:3,
+    tenseTag:null,grammarTag:null},
+  /* 23 */ {section:"Vocabulary — word forms",vocab:true,level:3,type:"mc",
+    prompt:"<em>The scientist's findings were _____ (controversy) from the start.</em>",
+    options:["controversially","controversy","controversial","controversed"],answer:2,
+    tenseTag:null,grammarTag:null},
+  /* 24 */ {section:"Grammar — advanced structures",level:3,type:"mc",
+    prompt:"It is high time the government _____ action on climate change.",
+    options:["takes","took","has taken","is taking"],answer:1,
+    tenseTag:null,grammarTag:"subjunctive_unreal_present"},
+  /* 25 */ {section:"Grammar — advanced structures",level:4,type:"mc",
+    prompt:"Not until the 20th century _____ women full voting rights in most countries.",
+    options:["did receive","received","women received","women did receive"],answer:0,
+    tenseTag:null,grammarTag:"inverted_conditional"},
+  /* 26 */ {section:"Grammar — advanced structures",level:4,type:"mc",
+    prompt:"The report, _____ by a team of independent researchers, was published last month.",
+    options:["compiled","compiling","having compiled","to compile"],answer:0,
+    tenseTag:null,grammarTag:"participle_clauses"},
+  /* 27 */ {section:"Vocabulary — collocations",vocab:true,level:2,type:"mc",
+    prompt:"Which verb collocates correctly? <em>She _____ a strong resemblance to her mother.</em>",
+    options:["does","makes","bears","has got"],answer:2,
+    tenseTag:null,grammarTag:null},
+  /* 28 */ {section:"Vocabulary — collocations",vocab:true,level:3,type:"mc",
+    prompt:"<em>The prime minister came _____ considerable criticism after the announcement.</em>",
+    options:["under","into","across","in for"],answer:0,
+    tenseTag:null,grammarTag:null},
+  /* 29 */ {section:"Vocabulary — collocations",vocab:true,level:4,type:"mc",
+    prompt:"<em>The project was _____ to budget cuts and had to be scaled back significantly.</em>",
+    options:["prone","subjected","subject","vulnerable"],answer:2,
+    tenseTag:null,grammarTag:null},
+  /* 30 */ {section:"Grammar — passive & reported speech",level:2,type:"mc",
+    prompt:"The bridge _____ by a famous architect in 1890.",
+    options:["was designed","is designed","designed","had been designing"],answer:0,
+    tenseTag:"past_simple",grammarTag:"passive_voice"},
+  /* 31 */ {section:"Grammar — passive & reported speech",level:3,type:"mc",
+    prompt:"She told me she _____ the report the previous day.",
+    options:["has finished","finished","had finished","was finishing"],answer:2,
+    tenseTag:"past_perfect",grammarTag:"reported_speech"},
+  /* 32 */ {section:"Grammar — passive & reported speech",level:4,type:"mc",
+    prompt:"It is widely believed that the economy _____ by the end of the year.",
+    options:["will recover","will have recovered","recovers","will be recovering"],answer:1,
+    tenseTag:"future_perfect",grammarTag:"passive_voice"},
+  /* 33 */ {section:"Reading comprehension",vocab:true,level:2,type:"mc",
+    prompt:"Read the sentence: <em>\"Despite the initial setbacks, the expedition proved to be a resounding success.\"</em><br>What does <em>resounding</em> most nearly mean here?",
+    options:["surprising","complete and unmistakeable","unexpected","moderate"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 34 */ {section:"Reading comprehension",vocab:true,level:3,type:"mc",
+    prompt:"Read the extract: <em>\"The committee was loath to commit resources before seeing concrete evidence.\"</em><br>The committee was:",
+    options:["unable to commit resources","unwilling to commit resources","eager to see evidence","opposed to the project entirely"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 35 */ {section:"Reading comprehension",level:4,type:"mc",
+    prompt:"Read the extract: <em>\"Were it not for the intervention of a swift-thinking bystander, the consequences could have been catastrophic.\"</em><br>What structure is used here?",
+    options:["third conditional","inverted conditional","passive voice","reported speech"],answer:1,
+    tenseTag:null,grammarTag:"inverted_conditional"},
+  /* 36 */ {section:"Writing task — sentence level",writing:true,level:2,type:"text",minWords:6,tag:"passive_rewrite",
+    prompt:"Rewrite this sentence in the passive voice:<br><em>\"The local council repaired the road last week.\"</em><br><br>Type your answer below:"},
+  /* 37 */ {section:"Writing task — sentence level",writing:true,level:3,type:"text",minWords:7,tag:"relative_clause",
+    prompt:"Combine these two sentences into one using a relative clause:<br><em>\"The woman is my neighbour. She won the prize.\"</em><br><br>Type your answer below:"},
+  /* 38 */ {section:"Grammar — articles & prepositions",level:1,type:"mc",
+    prompt:"She is _____ nurse who works at the local hospital.",
+    options:["a","an","the","—"],answer:1,
+    tenseTag:null,grammarTag:"articles_determiners"},
+  /* 39 */ {section:"Grammar — articles & prepositions",level:2,type:"mc",
+    prompt:"He has been working _____ this company _____ ten years.",
+    options:["at / for","in / since","for / since","at / since"],answer:0,
+    tenseTag:"present_perfect_continuous",grammarTag:"prepositions_time_place"},
+  /* 40 */ {section:"Grammar — articles & prepositions",level:3,type:"mc",
+    prompt:"I wasn't aware _____ the changes until I read the memo.",
+    options:["about","of","on","with"],answer:1,
+    tenseTag:null,grammarTag:"prepositions_time_place"},
+  /* 41 */ {section:"Writing task — paragraph",writing:true,level:3,type:"text",minWords:30,tag:"para_wfh",
+    prompt:"Write 3–5 sentences describing the advantages and disadvantages of working from home. Use at least one linking word (e.g. <em>however, on the other hand, although</em>)."},
+  /* 42 */ {section:"Writing task — paragraph",writing:true,level:4,type:"text",minWords:40,tag:"para_tech",
+    prompt:"Write a short paragraph (4–6 sentences) arguing <em>for</em> or <em>against</em> the following statement: <strong>\"Technology has made modern life more stressful, not less.\"</strong> Use formal language and support your view with a reason."},
+  /* 43 */ {section:"Vocabulary — advanced",vocab:true,level:4,type:"mc",
+    prompt:"Choose the word that best completes the sentence: <em>The politician's _____ remarks left the audience uncertain about her true position.</em>",
+    options:["equivocal","eloquent","emphatic","earnest"],answer:0,
+    tenseTag:null,grammarTag:null},
+  /* 44 */ {section:"Vocabulary — advanced",vocab:true,level:4,type:"mc",
+    prompt:"Which pair are antonyms?",
+    options:["taciturn / reticent","benevolent / malevolent","lucid / transparent","diligent / industrious"],answer:1,
+    tenseTag:null,grammarTag:null},
+  /* 45 */ {section:"Vocabulary — advanced",vocab:true,level:5,type:"mc",
+    prompt:"<em>Her analysis was remarkably _____ — she drew on philosophy, economics, and biology to make her point.</em>",
+    options:["verbose","eclectic","didactic","pedantic"],answer:1,
+    tenseTag:null,grammarTag:null}
+];
+
+var TENSE_META = {
+  present_simple:            {label:"Present simple",              color:"#185FA5"},
+  past_simple:               {label:"Past simple",                 color:"#185FA5"},
+  past_continuous:           {label:"Past continuous",             color:"#3B6D11"},
+  present_perfect:           {label:"Present perfect",             color:"#3B6D11"},
+  present_perfect_continuous:{label:"Present perfect continuous",  color:"#3B6D11"},
+  past_perfect:              {label:"Past perfect",                color:"#854F0B"},
+  future_perfect:            {label:"Future perfect",              color:"#854F0B"}
+};
+
+var GRAMMAR_META = {
+  subject_verb_agreement:         {label:"Subject–verb agreement",        color:"#185FA5"},
+  auxiliary_do_does:              {label:"Auxiliary do / does",            color:"#185FA5"},
+  articles_determiners:           {label:"Articles & determiners",         color:"#185FA5"},
+  social_responses:               {label:"Social & functional responses",  color:"#185FA5"},
+  continuous_aspect:              {label:"Continuous aspect",              color:"#3B6D11"},
+  present_perfect_since_for:      {label:"Present perfect (since/for)",    color:"#3B6D11"},
+  sequence_of_past_events:        {label:"Sequence of past events",        color:"#3B6D11"},
+  modal_verbs_advice:             {label:"Modal verbs (advice/ability)",   color:"#3B6D11"},
+  prepositions_time_place:        {label:"Prepositions (time & place)",    color:"#3B6D11"},
+  verb_patterns_gerund_infinitive:{label:"Gerund vs infinitive",           color:"#854F0B"},
+  passive_voice:                  {label:"Passive voice",                  color:"#854F0B"},
+  reported_speech:                {label:"Reported speech",                color:"#854F0B"},
+  third_conditional:              {label:"Third conditional",              color:"#854F0B"},
+  subjunctive_unreal_present:     {label:"Subjunctive / unreal present",   color:"#993C1D"},
+  inverted_conditional:           {label:"Inversion / inverted conditional",color:"#993C1D"},
+  participle_clauses:             {label:"Participle clauses",             color:"#993C1D"}
+};
+
+var answers = new Array(Q.length).fill(null);
+var current = 0;
+
+var sectionColors = {
+  "Notices & signs":"#185FA5",
+  "Grammar — present & past":"#3B6D11",
+  "Vocabulary — word meaning":"#3C3489",
+  "Grammar — questions & negatives":"#3B6D11",
+  "Grammar — conditionals":"#3B6D11",
+  "Dialogue gap-fill":"#854F0B",
+  "Vocabulary — word forms":"#3C3489",
+  "Grammar — advanced structures":"#3B6D11",
+  "Vocabulary — collocations":"#3C3489",
+  "Grammar — passive & reported speech":"#3B6D11",
+  "Reading comprehension":"#185FA5",
+  "Writing task — sentence level":"#993C1D",
+  "Grammar — articles & prepositions":"#3B6D11",
+  "Writing task — paragraph":"#993C1D",
+  "Vocabulary — advanced":"#3C3489"
+};
+
+function render() {
+  var q = Q[current];
+  var pct = Math.round(((current + 1) / Q.length) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = 'Question ' + (current + 1) + ' of ' + Q.length;
+  document.getElementById('section-name').textContent = q.section;
+  document.getElementById('btn-back').style.visibility = current === 0 ? 'hidden' : 'visible';
+  document.getElementById('btn-next').textContent = current === Q.length - 1 ? 'Submit test ✓' : 'Next →';
+  document.getElementById('warning-msg').style.display = 'none';
+
+  var color = sectionColors[q.section] || '#185FA5';
+  var letters = ['A','B','C','D'];
+  var html = '<div class="section-label" style="color:' + color + '">' + q.section + '</div>';
+  html += '<div class="question-card">';
+  html += '<div class="question-num">Question ' + (current + 1) + '</div>';
+  html += '<div class="question-text">' + q.prompt + '</div>';
+
+  if (q.type === 'mc') {
+    html += '<div class="options">';
+    q.options.forEach(function(opt, i) {
+      var sel = answers[current] === i ? ' selected' : '';
+      html += '<button class="option-btn' + sel + '" onclick="selectOption(' + i + ')"><span class="option-letter">' + letters[i] + '</span>' + opt + '</button>';
+    });
+    html += '</div>';
+  } else {
+    var val = answers[current] && answers[current].text ? answers[current].text : '';
+    var wc = val.trim() ? val.trim().split(/\s+/).length : 0;
+    html += '<textarea class="text-input" id="text-ans" rows="5" placeholder="Write your answer here…" oninput="saveText(this.value)">' + val + '</textarea>';
+    html += '<div class="char-count" id="wc-display">' + wc + ' words</div>';
+  }
+  html += '</div>';
+  document.getElementById('question-area').innerHTML = html;
+  updateNextBtn();
+}
+
+function selectOption(i) {
+  answers[current] = i;
+  document.querySelectorAll('.option-btn').forEach(function(b, j) { b.classList.toggle('selected', j === i); });
+  updateNextBtn();
+}
+
+function saveText(val) {
+  var wc = val.trim() ? val.trim().split(/\s+/).length : 0;
+  document.getElementById('wc-display').textContent = wc + ' words';
+  answers[current] = {text: val, words: wc};
+  updateNextBtn();
+}
+
+function updateNextBtn() {
+  var q = Q[current];
+  var has = q.type === 'mc' ? answers[current] !== null : (answers[current] && answers[current].words >= 1);
+  document.getElementById('btn-next').disabled = !has;
+}
+
+function goNext() {
+  var q = Q[current];
+  var has = q.type === 'mc' ? answers[current] !== null : (answers[current] && answers[current].words >= 1);
+  if (!has) { document.getElementById('warning-msg').style.display = 'block'; return; }
+  if (current < Q.length - 1) { current++; render(); window.scrollTo(0,0); }
+  else showResults();
+}
+
+function goBack() {
+  if (current > 0) { current--; render(); window.scrollTo(0,0); }
+}
+
+function getLevelForPct(p) {
+  if (p < 0.30) return 0;
+  if (p < 0.48) return 1;
+  if (p < 0.64) return 2;
+  if (p < 0.80) return 3;
+  return 4;
+}
+
+function pctInt(c, t) { return t > 0 ? Math.round((c / t) * 100) : 0; }
+
+function verdictChip(c, t) {
+  if (t === 0) return '<span class="verdict-chip chip-na">n/a</span>';
+  var p = c / t;
+  if (p >= 0.67) return '<span class="verdict-chip chip-strong">Strong</span>';
+  if (p >= 0.34) return '<span class="verdict-chip chip-partial">Developing</span>';
+  return '<span class="verdict-chip chip-weak">Needs work</span>';
+}
+
+function verdictLabel(c, t) {
+  if (t === 0) return null;
+  var p = c / t;
+  if (p >= 0.67) return 'strong';
+  if (p >= 0.34) return 'developing';
+  return 'weak';
+}
+
+function subSkillRow(label, correct, total, color) {
+  var p = pctInt(correct, total);
+  var barColor = total === 0 ? '#D3D1C7' : color;
+  return '<div class="sub-skill-row">' +
+    '<div class="sub-skill-name">' + label + '</div>' +
+    '<div class="sub-skill-bar-wrap"><div class="sub-skill-bar-track"><div class="sub-skill-bar-fill" style="width:' + (total===0?0:p) + '%;background:' + barColor + '"></div></div></div>' +
+    '<div class="sub-skill-score">' + (total > 0 ? correct + '/' + total : '—') + '</div>' +
+    verdictChip(correct, total) +
+    '</div>';
+}
+
+function showResults() {
+  document.getElementById('test-screen').style.display = 'none';
+  var rs = document.getElementById('results-screen');
+  rs.style.display = 'block';
+
+  var totalMC = 0, correct = 0;
+  var tenseMap = {};
+  var grammarMap = {};
+  var vocabC = 0, vocabT = 0;
+  var writingA = 0, writingT = 0;
+
+  Q.forEach(function(q, i) {
+    if (q.type === 'mc') {
+      totalMC++;
+      var ok = answers[i] === q.answer;
+      if (ok) correct++;
+      if (q.tenseTag) {
+        if (!tenseMap[q.tenseTag]) tenseMap[q.tenseTag] = {c:0, t:0};
+        tenseMap[q.tenseTag].t++;
+        if (ok) tenseMap[q.tenseTag].c++;
+      }
+      if (q.grammarTag) {
+        if (!grammarMap[q.grammarTag]) grammarMap[q.grammarTag] = {c:0, t:0};
+        grammarMap[q.grammarTag].t++;
+        if (ok) grammarMap[q.grammarTag].c++;
+      }
+      if (q.vocab) { vocabT++; if (ok) vocabC++; }
+    } else {
+      writingT++;
+      if (answers[i] && answers[i].words >= q.minWords) writingA++;
+    }
+  });
+
+  var mcPct = totalMC > 0 ? correct / totalMC : 0;
+
+  var tenseC = 0, tenseT = 0, grammarC = 0, grammarT = 0;
+  Q.forEach(function(q, i) {
+    if (q.type !== 'mc') return;
+    var ok = answers[i] === q.answer;
+    if (q.tenseTag) { tenseT++; if (ok) tenseC++; }
+    if (q.grammarTag) { grammarT++; if (ok) grammarC++; }
+  });
+
+  var level, levelClass, cefr, desc;
+  if (mcPct < 0.30) {
+    level='Beginner'; levelClass='level-beginner'; cefr='A1';
+    desc='You understand very basic English words and simple phrases. Focus on core vocabulary, numbers, greetings, and present simple tense.';
+  } else if (mcPct < 0.48) {
+    level='Elementary'; levelClass='level-elementary'; cefr='A2';
+    desc='You can communicate in simple, routine situations. You understand common vocabulary and basic sentence structures.';
+  } else if (mcPct < 0.64) {
+    level='Lower intermediate'; levelClass='level-lower-intermediate'; cefr='B1';
+    desc='You can handle most everyday situations and understand the main points of familiar topics. Work on expanding tenses and complex sentences.';
+  } else if (mcPct < 0.80) {
+    level='Upper intermediate'; levelClass='level-upper-intermediate'; cefr='B2';
+    desc='You can communicate fluently on a wide range of topics. Focus on advanced grammar, idiomatic language, and academic writing.';
+  } else {
+    level='Advanced'; levelClass='level-advanced'; cefr='C1/C2';
+    desc='You have strong command of English. Continue developing nuance, register, and precision in complex written and spoken contexts.';
+  }
+
+  /* ── Intermediate spectrum ── */
+  var showSpectrum = (mcPct >= 0.35 && mcPct < 0.85);
+  var spectrumHtml = '';
+
+  if (showSpectrum) {
+    var b1Markers = [
+      {idx:5,  label:'Present perfect (since/for)'},
+      {idx:6,  label:'Past perfect in sequence'},
+      {idx:12, label:'Gerund after suggest'},
+      {idx:18, label:'Modal verbs — should for advice'},
+      {idx:19, label:'Verb pattern after deny'},
+      {idx:29, label:'Passive voice — past simple'},
+      {idx:30, label:'Reported speech backshift'},
+      {idx:38, label:'Prepositions — at/for with time'},
+      {idx:39, label:'Prepositions after adjective (aware of)'}
+    ];
+    var b2Markers = [
+      {idx:13, label:'Subjunctive — I\'d rather you…'},
+      {idx:14, label:'Third conditional'},
+      {idx:15, label:'Gerund vs infinitive (advanced)'},
+      {idx:16, label:'Inverted conditional (Should…)'},
+      {idx:23, label:'Advanced grammar — high time'},
+      {idx:24, label:'Inversion — Not until…'},
+      {idx:25, label:'Participle clause (compiled)'},
+      {idx:31, label:'Future perfect (will have recovered)'},
+      {idx:34, label:'Identifying inverted conditional'},
+      {idx:27, label:'Advanced collocation (came under)'},
+      {idx:28, label:'Precise collocation (subject to)'},
+      {idx:42, label:'Advanced vocabulary (equivocal)'},
+      {idx:43, label:'Antonym recognition (benevolent)'},
+      {idx:44, label:'C-level vocabulary (eclectic)'}
+    ];
+
+    var b1C = 0, b1Detail = [];
+    var b2C = 0, b2Detail = [];
+
+    b1Markers.forEach(function(m) {
+      var ok = answers[m.idx] === Q[m.idx].answer;
+      if (ok) b1C++;
+      b1Detail.push({label: m.label, ok: ok});
+    });
+    b2Markers.forEach(function(m) {
+      var ok = answers[m.idx] === Q[m.idx].answer;
+      if (ok) b2C++;
+      b2Detail.push({label: m.label, ok: ok});
+    });
+
+    var b1Weight = b1Markers.length > 0 ? (b1C / b1Markers.length) * 40 : 20;
+    var b2Weight = b2Markers.length > 0 ? (b2C / b2Markers.length) * 60 : 0;
+    var specScore = Math.round(b1Weight + b2Weight);
+    specScore = Math.max(2, Math.min(98, specScore));
+
+    var posLabel, posDesc;
+    if (specScore < 18) {
+      posLabel = 'Lower B1 — early lower intermediate';
+      posDesc = 'The student handles basic past tenses and simple present perfect but struggles with most intermediate structures. Core B1 grammar (passives, modals, gerunds) needs consolidation before moving on.';
+    } else if (specScore < 36) {
+      posLabel = 'Solid B1 — lower intermediate';
+      posDesc = 'The student has a reasonable command of B1 structures — passives, reported speech, modal verbs — but upper-intermediate grammar (conditionals, inversion, participle clauses) is not yet secure.';
+    } else if (specScore < 54) {
+      posLabel = 'B1/B2 boundary — mid-intermediate';
+      posDesc = 'The student is transitioning between lower and upper intermediate. Core B1 structures are largely in place, and some B2 structures are emerging, but consistency at the upper level is not yet established.';
+    } else if (specScore < 72) {
+      posLabel = 'Solid B2 — upper intermediate';
+      posDesc = 'The student demonstrates confident command of most upper-intermediate structures. Some advanced grammar (inversion, participle clauses, C1-level vocabulary) is still developing.';
+    } else {
+      posLabel = 'Strong B2 — approaching advanced';
+      posDesc = 'The student has solid upper-intermediate competence across grammar, vocabulary and tenses. They are close to C1 and would benefit from advanced reading, academic writing, and nuanced register work.';
+    }
+
+    function evidenceCol(title, items, colorHex) {
+      var hits = items.filter(function(x){ return x.ok; });
+      var misses = items.filter(function(x){ return !x.ok; });
+      var rows = '';
+      hits.slice(0,5).forEach(function(x){ rows += '<li><span class="ev-tick">✓</span>' + x.label + '</li>'; });
+      misses.slice(0,5).forEach(function(x){ rows += '<li><span class="ev-cross">✗</span>' + x.label + '</li>'; });
+      return '<div><div class="evidence-col-title" style="color:' + colorHex + '">' + title + ' (' + hits.length + '/' + items.length + ' correct)</div><ul class="evidence-list">' + rows + '</ul></div>';
+    }
+
+    spectrumHtml =
+      '<div class="spectrum-card">' +
+      '<div class="spectrum-card-eyebrow">Intermediate spectrum analysis</div>' +
+      '<div class="spectrum-card-title">Where within intermediate?</div>' +
+      '<div class="spectrum-card-sub">Because this student scored in the intermediate range, the test has performed a deeper analysis to locate them precisely within the B1–B2 spectrum. This is based on which specific B1 and B2 structures they got right — not just their overall score.</div>' +
+      '<div class="spectrum-track-wrap">' +
+      '<div class="spectrum-labels"><span>Lower B1</span><span>Mid B1</span><span>B1/B2</span><span>Mid B2</span><span>Upper B2</span></div>' +
+      '<div class="spectrum-rail"><div class="spectrum-marker" style="left:' + specScore + '%"><div class="spectrum-marker-inner"></div></div></div>' +
+      '<div class="spectrum-tick-labels"><span>|</span><span>|</span><span>|</span><span>|</span><span>|</span></div>' +
+      '</div>' +
+      '<div class="spectrum-position-label">' + posLabel + '</div>' +
+      '<div class="spectrum-evidence">' +
+      '<div class="spectrum-evidence-title">Evidence — what drove this result</div>' +
+      '<div class="evidence-grid">' +
+      evidenceCol('B1 structures', b1Detail, '#3B6D11') +
+      evidenceCol('B2 structures', b2Detail, '#185FA5') +
+      '</div></div>' +
+      '<div class="spectrum-desc">' + posDesc + '</div>' +
+      '</div>';
+  }
+
+  var levelNames = ['Beginner','Elementary','Lower int.','Upper int.','Advanced'];
+  function dotRow(label, achievedLevel) {
+    var cells = '<td>' + label + '</td>';
+    for (var i = 0; i < 5; i++) {
+      var cls = i < achievedLevel ? 'dot-partial' : (i === achievedLevel ? 'dot-strong' : 'dot-none');
+      cells += '<td><div class="dot ' + cls + '" title="' + levelNames[i] + '"></div></td>';
+    }
+    return '<tr>' + cells + '</tr>';
+  }
+  var tenseLevel   = tenseT   > 0 ? getLevelForPct(tenseC / tenseT)   : 0;
+  var grammarLevel = grammarT > 0 ? getLevelForPct(grammarC / grammarT): 0;
+  var vocabLevel   = vocabT   > 0 ? getLevelForPct(vocabC / vocabT)   : 0;
+  var writingLevel = writingT > 0 ? getLevelForPct(writingA / writingT): 0;
+
+  function skillBar(name, c, t, color, label2) {
+    var p = pctInt(c, t);
+    return '<div class="skill-row"><div><div class="skill-name">' + name + '</div><div class="skill-desc">' + label2 + '</div></div>' +
+      '<div class="skill-bar-wrap"><div class="skill-bar-track"><div class="skill-bar-fill" style="width:' + p + '%;background:' + color + '"></div></div></div>' +
+      '<div class="skill-pct">' + p + '%</div></div>';
+  }
+
+  var pipHtml = Q.map(function(q, i) {
+    if (q.type !== 'mc') return '<div class="answer-pip pip-empty" title="Written Q'+(i+1)+'"></div>';
+    return '<div class="answer-pip '+(answers[i]===q.answer?'pip-correct':'pip-wrong')+'" title="Q'+(i+1)+'"></div>';
+  }).join('');
+
+  var tenseOrder = ['present_simple','past_simple','past_continuous','present_perfect','present_perfect_continuous','past_perfect','future_perfect'];
+  var grammarOrder = [
+    'subject_verb_agreement','auxiliary_do_does','articles_determiners','social_responses',
+    'continuous_aspect','present_perfect_since_for','sequence_of_past_events','modal_verbs_advice','prepositions_time_place',
+    'verb_patterns_gerund_infinitive','passive_voice','reported_speech','third_conditional',
+    'subjunctive_unreal_present','inverted_conditional','participle_clauses'
+  ];
+
+  function buildInsights(tagMap, metaLookup, tagOrder) {
+    var knows = [], developing = [], gaps = [];
+    tagOrder.forEach(function(tag) {
+      var sc = tagMap[tag];
+      if (!sc || sc.t === 0) return;
+      var v = verdictLabel(sc.c, sc.t);
+      var name = metaLookup[tag].label;
+      if (v === 'strong') knows.push(name);
+      else if (v === 'developing') developing.push(name);
+      else gaps.push(name);
+    });
+    var html = '';
+    if (knows.length)
+      html += '<div class="insight-box insight-knows"><div class="insight-title">✓ Appears to know well</div><ul class="insight-list">' + knows.map(function(n){ return '<li>'+n+'</li>'; }).join('') + '</ul></div>';
+    if (developing.length)
+      html += '<div class="insight-box insight-developing"><div class="insight-title">~ Still developing</div><ul class="insight-list">' + developing.map(function(n){ return '<li>'+n+'</li>'; }).join('') + '</ul></div>';
+    if (gaps.length)
+      html += '<div class="insight-box insight-gaps"><div class="insight-title">✗ Likely needs practice</div><ul class="insight-list">' + gaps.map(function(n){ return '<li>'+n+'</li>'; }).join('') + '</ul></div>';
+    return html || '<p style="font-size:13px;color:var(--text-tertiary)">Not enough data from this test to generate insights.</p>';
+  }
+
+  var tenseInsights   = buildInsights(tenseMap,  TENSE_META,   tenseOrder);
+  var grammarInsights = buildInsights(grammarMap, GRAMMAR_META, grammarOrder);
+
+  rs.innerHTML =
+  '<div class="results-wrap">' +
+  '<h1 class="results-title">Test complete</h1>' +
+  '<p class="results-sub">' + correct + ' of ' + totalMC + ' multiple choice questions correct</p>' +
+  '<div class="answer-strip">' + pipHtml + '</div>' +
+  '<div class="level-badge ' + levelClass + '">&#127942; ' + level + ' &mdash; CEFR ' + cefr + '</div>' +
+
+  spectrumHtml +
+
+  '<div class="result-card">' +
+  '<div class="result-card-title">Overall skills matrix</div>' +
+  '<p style="font-size:12px;color:var(--text-tertiary);margin-bottom:1rem;">Blue = current level &nbsp;|&nbsp; Amber = levels already passed &nbsp;|&nbsp; Empty = not yet reached</p>' +
+  '<div style="overflow-x:auto"><table class="matrix-table"><thead><tr>' +
+  '<th style="text-align:left;padding-left:14px;">Skill</th>' +
+  levelNames.map(function(n){return '<th>'+n+'</th>';}).join('') +
+  '</tr></thead><tbody>' +
+  dotRow('Tenses', tenseLevel) + dotRow('Grammar', grammarLevel) + dotRow('Vocabulary', vocabLevel) + dotRow('Writing', writingLevel) +
+  '</tbody></table></div></div>' +
+
+  '<div class="result-card">' +
+  '<div class="result-card-title">Skill overview</div>' +
+  skillBar('Tenses',     tenseC,   tenseT,   '#185FA5', tenseC + ' / ' + tenseT + ' correct') +
+  skillBar('Grammar',    grammarC, grammarT, '#3B6D11', grammarC + ' / ' + grammarT + ' correct') +
+  skillBar('Vocabulary', vocabC,   vocabT,   '#3C3489', vocabC + ' / ' + vocabT + ' correct') +
+  skillBar('Writing',    writingA, writingT, '#993C1D', writingA + ' / ' + writingT + ' tasks attempted') +
+  '</div>' +
+
+  '<div class="result-card">' +
+  '<div class="result-card-title">Tense diagnostic</div>' +
+  '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:1rem;line-height:1.6;">Each row shows how the student performed on questions targeting that specific tense. A dash (—) means no question in this test covered that tense.</p>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#185FA5">Basic tenses</div>' +
+  subSkillRow(TENSE_META.present_simple.label,  (tenseMap.present_simple||{c:0,t:0}).c,  (tenseMap.present_simple||{c:0,t:0}).t,  '#185FA5') +
+  subSkillRow(TENSE_META.past_simple.label,     (tenseMap.past_simple||{c:0,t:0}).c,     (tenseMap.past_simple||{c:0,t:0}).t,     '#185FA5') +
+  subSkillRow(TENSE_META.past_continuous.label, (tenseMap.past_continuous||{c:0,t:0}).c, (tenseMap.past_continuous||{c:0,t:0}).t, '#185FA5') +
+  '</div>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#3B6D11">Intermediate tenses</div>' +
+  subSkillRow(TENSE_META.present_perfect.label,            (tenseMap.present_perfect||{c:0,t:0}).c,            (tenseMap.present_perfect||{c:0,t:0}).t,            '#3B6D11') +
+  subSkillRow(TENSE_META.present_perfect_continuous.label, (tenseMap.present_perfect_continuous||{c:0,t:0}).c, (tenseMap.present_perfect_continuous||{c:0,t:0}).t, '#3B6D11') +
+  subSkillRow(TENSE_META.past_perfect.label,               (tenseMap.past_perfect||{c:0,t:0}).c,               (tenseMap.past_perfect||{c:0,t:0}).t,               '#3B6D11') +
+  '</div>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#854F0B">Advanced tenses</div>' +
+  subSkillRow(TENSE_META.future_perfect.label, (tenseMap.future_perfect||{c:0,t:0}).c, (tenseMap.future_perfect||{c:0,t:0}).t, '#854F0B') +
+  '</div>' +
+  tenseInsights + '</div>' +
+
+  '<div class="result-card">' +
+  '<div class="result-card-title">Grammar diagnostic</div>' +
+  '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:1rem;line-height:1.6;">Each row shows performance on a specific grammar structure. A dash means the structure was not directly tested in this session.</p>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#185FA5">Foundational grammar</div>' +
+  subSkillRow(GRAMMAR_META.subject_verb_agreement.label,   (grammarMap.subject_verb_agreement||{c:0,t:0}).c,   (grammarMap.subject_verb_agreement||{c:0,t:0}).t,   '#185FA5') +
+  subSkillRow(GRAMMAR_META.auxiliary_do_does.label,        (grammarMap.auxiliary_do_does||{c:0,t:0}).c,        (grammarMap.auxiliary_do_does||{c:0,t:0}).t,        '#185FA5') +
+  subSkillRow(GRAMMAR_META.articles_determiners.label,     (grammarMap.articles_determiners||{c:0,t:0}).c,     (grammarMap.articles_determiners||{c:0,t:0}).t,     '#185FA5') +
+  subSkillRow(GRAMMAR_META.social_responses.label,         (grammarMap.social_responses||{c:0,t:0}).c,         (grammarMap.social_responses||{c:0,t:0}).t,         '#185FA5') +
+  '</div>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#3B6D11">Intermediate grammar</div>' +
+  subSkillRow(GRAMMAR_META.continuous_aspect.label,           (grammarMap.continuous_aspect||{c:0,t:0}).c,           (grammarMap.continuous_aspect||{c:0,t:0}).t,           '#3B6D11') +
+  subSkillRow(GRAMMAR_META.present_perfect_since_for.label,   (grammarMap.present_perfect_since_for||{c:0,t:0}).c,   (grammarMap.present_perfect_since_for||{c:0,t:0}).t,   '#3B6D11') +
+  subSkillRow(GRAMMAR_META.sequence_of_past_events.label,     (grammarMap.sequence_of_past_events||{c:0,t:0}).c,     (grammarMap.sequence_of_past_events||{c:0,t:0}).t,     '#3B6D11') +
+  subSkillRow(GRAMMAR_META.modal_verbs_advice.label,          (grammarMap.modal_verbs_advice||{c:0,t:0}).c,          (grammarMap.modal_verbs_advice||{c:0,t:0}).t,          '#3B6D11') +
+  subSkillRow(GRAMMAR_META.prepositions_time_place.label,     (grammarMap.prepositions_time_place||{c:0,t:0}).c,     (grammarMap.prepositions_time_place||{c:0,t:0}).t,     '#3B6D11') +
+  '</div>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#854F0B">Upper-intermediate grammar</div>' +
+  subSkillRow(GRAMMAR_META.verb_patterns_gerund_infinitive.label,(grammarMap.verb_patterns_gerund_infinitive||{c:0,t:0}).c,(grammarMap.verb_patterns_gerund_infinitive||{c:0,t:0}).t,'#854F0B') +
+  subSkillRow(GRAMMAR_META.passive_voice.label,   (grammarMap.passive_voice||{c:0,t:0}).c,   (grammarMap.passive_voice||{c:0,t:0}).t,   '#854F0B') +
+  subSkillRow(GRAMMAR_META.reported_speech.label, (grammarMap.reported_speech||{c:0,t:0}).c, (grammarMap.reported_speech||{c:0,t:0}).t, '#854F0B') +
+  subSkillRow(GRAMMAR_META.third_conditional.label,(grammarMap.third_conditional||{c:0,t:0}).c,(grammarMap.third_conditional||{c:0,t:0}).t,'#854F0B') +
+  '</div>' +
+  '<div class="diag-section"><div class="diag-section-title" style="color:#993C1D">Advanced grammar</div>' +
+  subSkillRow(GRAMMAR_META.subjunctive_unreal_present.label,(grammarMap.subjunctive_unreal_present||{c:0,t:0}).c,(grammarMap.subjunctive_unreal_present||{c:0,t:0}).t,'#993C1D') +
+  subSkillRow(GRAMMAR_META.inverted_conditional.label, (grammarMap.inverted_conditional||{c:0,t:0}).c, (grammarMap.inverted_conditional||{c:0,t:0}).t, '#993C1D') +
+  subSkillRow(GRAMMAR_META.participle_clauses.label,   (grammarMap.participle_clauses||{c:0,t:0}).c,   (grammarMap.participle_clauses||{c:0,t:0}).t,   '#993C1D') +
+  '</div>' +
+  grammarInsights + '</div>' +
+
+  '<div class="result-card">' +
+  '<div class="result-card-title">Level description</div>' +
+  '<p class="result-desc">' + desc + '</p>' +
+  '<p class="result-note"><strong>Writing tasks:</strong> ' + writingA + ' of ' + writingT + ' writing tasks were attempted with sufficient length. Writing quality requires human assessment — please review the test taker\'s written responses separately.</p>' +
+  '</div>' +
+
+  '<div style="margin-top:1.5rem"><button class="btn btn-secondary" onclick="restartTest()">← Restart test</button></div>' +
+  '</div>';
+
+  window.scrollTo(0, 0);
+
+  // Notify parent React app of completion
+  try {
+    var writingTexts = Q.filter(function(q){ return q.type === 'text'; }).map(function(q) {
+      var idx = Q.indexOf(q);
+      return { tag: q.tag || '', answer: (answers[idx] && answers[idx].text) ? answers[idx].text : '' };
+    });
+    window.parent.postMessage({
+      type: 'PLACEMENT_TEST_COMPLETE',
+      payload: {
+        level: level, cefr: cefr,
+        correct: correct, totalMC: totalMC,
+        overallScore: Math.round(mcPct * 100),
+        grammarScore: grammarT > 0 ? Math.round((grammarC / grammarT) * 100) : 0,
+        vocabScore: vocabT > 0 ? Math.round((vocabC / vocabT) * 100) : 0,
+        tenseScore: tenseT > 0 ? Math.round((tenseC / tenseT) * 100) : 0,
+        writingAttempted: writingA, writingTotal: writingT,
+        writingAnswers: writingTexts,
+        spectrumScore: (typeof specScore !== 'undefined') ? specScore : null,
+        spectrumPosition: (typeof posLabel !== 'undefined') ? posLabel : null,
+      }
+    }, '*');
+  } catch(e) {}
+}
+
+function restartTest() {
+  answers = new Array(Q.length).fill(null);
+  current = 0;
+  document.getElementById('results-screen').style.display = 'none';
+  document.getElementById('test-screen').style.display = 'block';
+  render();
+  window.scrollTo(0, 0);
+}
+
+render();
+</script>
+</body>
+</html>
