@@ -1177,6 +1177,7 @@ export async function fetchAllReferrals() {
 // ─── Prospects ────────────────────────────────────────────────
 
 export async function createProspect({ name, email, phone, message, source }) {
+  if (!supabase) return false
   const { error } = await supabase
     .from('prospects')
     .insert({ name, email, phone: phone || null, message: message || null, source: source || 'consultation_booking' })
@@ -1184,6 +1185,7 @@ export async function createProspect({ name, email, phone, message, source }) {
 }
 
 export async function fetchAllProspects() {
+  if (!supabase) return []
   const { data } = await supabase
     .from('prospects')
     .select('*')

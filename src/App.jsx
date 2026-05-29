@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, Component } from 'react'
 import './App.css'
 import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
@@ -246,6 +246,38 @@ const TEST_QUESTIONS = [
   },
 ]
 
+// ─── ErrorBoundary ────────────────────────────────────────────
+// Catches render crashes so the admin never sees a blank page.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flow-card" style={{ maxWidth: 640, margin: '2rem auto', textAlign: 'center' }}>
+          <span style={{ fontSize: '2.5rem' }}>⚠️</span>
+          <h2 style={{ marginTop: '0.75rem' }}>Something went wrong</h2>
+          <p className="flow-sub" style={{ marginBottom: '1.5rem' }}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </p>
+          <button className="btn-gold" onClick={() => this.setState({ hasError: false, error: null })}>
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 // ─── App ─────────────────────────────────────────────────────
 export default function App() {
   const initPage = () => {
@@ -426,7 +458,9 @@ export default function App() {
             <AccountSettings user={user} onBack={() => goTo('dashboard')} onSignOut={handleSignOut} />
           )}
           {page === 'admin' && (
-            <AdminPanel user={user} onSignOut={handleSignOut} />
+            <ErrorBoundary>
+              <AdminPanel user={user} onSignOut={handleSignOut} />
+            </ErrorBoundary>
           )}
         </div>
       </div>
@@ -3092,7 +3126,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
         </div>
       )}
       {exercise?.context_images?.length > 0 && !(
-        questions.length > 0 && questions[0].type === 'fill_blank' &&
+        questions?.length > 0 && questions[0].type === 'fill_blank' &&
         parseOverlayPrompt(questions[0].prompt)
       ) && (
         <div className="exercise-context-images">
@@ -3115,7 +3149,6 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
         )}
         {(questions || []).map((q, idx) => {
           if (q.type === 'listening' || q.type === 'viewing') return null
-          const result = getResult(q)
 
           // Fill-blank: overlay on image (demo/screen-share mode — Dogukan can type too)
           if (q.type === 'fill_blank') {
@@ -3193,7 +3226,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false }) {
         })}
       </div>
 
-      {!questions.every(q => q.type === 'listening' || q.type === 'viewing') && (
+      {questions?.length > 0 && !questions.every(q => q.type === 'listening' || q.type === 'viewing') && (
         <div className="exercise-submit-row">
           <button className="btn-ghost" onClick={() => setAnswers({})}>
             ↺ Reset
