@@ -246,6 +246,55 @@ export async function assignExercise({ exerciseId, studentId, assignedBy, mode, 
   return data
 }
 
+/** Admin: remove an exercise assignment from a student. */
+export async function deleteAssignment(assignmentId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('exercise_assignments').delete().eq('id', assignmentId)
+  return !error
+}
+
+/** Admin: delete a lesson record. */
+export async function deleteLesson(lessonId) {
+  if (!supabase) return false
+  const { error } = await supabase.from('lessons').delete().eq('id', lessonId)
+  return !error
+}
+
+/** Admin: fetch ALL upcoming lessons (all students) ordered by date — for the calendar view. */
+export async function fetchAllUpcomingLessons() {
+  if (!supabase) return []
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('lessons')
+    .select(`
+      id, lesson_no, title, scheduled_at, status, duration_minutes, created_at,
+      student_id,
+      profiles:student_id ( id, name, email )
+    `)
+    .gte('scheduled_at', now)
+    .order('scheduled_at', { ascending: true })
+    .limit(100)
+  if (error) { console.error('[supabase] fetchAllUpcomingLessons:', error); return [] }
+  return data ?? []
+}
+
+/** Admin: fetch ALL lessons (all students) for a given date range — calendar month view. */
+export async function fetchLessonsInRange(from, to) {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('lessons')
+    .select(`
+      id, lesson_no, title, scheduled_at, status, duration_minutes,
+      student_id,
+      profiles:student_id ( id, name, email )
+    `)
+    .gte('scheduled_at', from)
+    .lte('scheduled_at', to)
+    .order('scheduled_at', { ascending: true })
+  if (error) { console.error('[supabase] fetchLessonsInRange:', error); return [] }
+  return data ?? []
+}
+
 /** Fetch all assignments with exercise + student info (admin list view). */
 export async function fetchAllAssignmentsAdmin() {
   if (!supabase) return []

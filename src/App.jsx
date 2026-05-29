@@ -22,6 +22,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   markDiscountApplied, fetchAllReferrals,
   createProspect, fetchAllProspects, updateProspectStatus,
   fetchNotesForExercise, saveNote, deleteNote, fetchMyAssignedPlans,
+  deleteAssignment, deleteLesson, fetchAllUpcomingLessons, fetchLessonsInRange,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -2187,30 +2188,59 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
           ) : (
             <>
               {/* ── Upcoming lesson ── */}
-              {nextLesson && (
-                <div className="upcoming-lesson-card">
-                  <div className="upcoming-lesson-label">📅 Next lesson</div>
-                  <div className="upcoming-lesson-meta">
-                    <strong className="upcoming-lesson-date">
-                      {new Date(nextLesson.scheduled_at).toLocaleDateString('en-GB', {
-                        weekday: 'long', day: 'numeric', month: 'long'
-                      })}
-                    </strong>
-                    <span className="upcoming-lesson-time">
-                      {new Date(nextLesson.scheduled_at).toLocaleTimeString('en-GB', {
-                        hour: '2-digit', minute: '2-digit'
-                      })}
-                      {nextLesson.duration_minutes ? ` · ${nextLesson.duration_minutes} min` : ''}
-                    </span>
-                  </div>
-                  {nextLesson.title && (
-                    <p className="upcoming-lesson-title">"{nextLesson.title}"</p>
-                  )}
-                  {nextLesson.teacher_notes_public && (
-                    <p className="upcoming-lesson-note">📝 {nextLesson.teacher_notes_public}</p>
-                  )}
-                </div>
-              )}
+              {/* ── Upcoming lessons ── */}
+              {(() => {
+                const now = new Date()
+                const upcoming = lessons
+                  .filter(l => l.scheduled_at && new Date(l.scheduled_at) > now && l.status !== 'cancelled')
+                  .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+                if (upcoming.length === 0) return null
+                const next = upcoming[0]
+                const rest = upcoming.slice(1, 4) // show up to 3 more
+                const fmtDate = (iso) => {
+                  const d = new Date(iso)
+                  const isToday = d.toDateString() === now.toDateString()
+                  const isTomorrow = d.toDateString() === new Date(now.getTime() + 86400000).toDateString()
+                  const day = isToday ? 'Today' : isTomorrow ? 'Tomorrow'
+                    : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+                  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                  return `${day} at ${time}`
+                }
+                return (
+                  <>
+                    <div className="upcoming-lesson-card">
+                      <div className="upcoming-lesson-label">📅 Next lesson</div>
+                      <div className="upcoming-lesson-meta">
+                        <strong className="upcoming-lesson-date">
+                          {new Date(next.scheduled_at).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        </strong>
+                        <span className="upcoming-lesson-time">
+                          {new Date(next.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                          {next.duration_minutes ? ` · ${next.duration_minutes} min` : ''}
+                        </span>
+                      </div>
+                      {next.title && <p className="upcoming-lesson-title">"{next.title}"</p>}
+                      {next.teacher_notes_public && (
+                        <p className="upcoming-lesson-note">📝 {next.teacher_notes_public}</p>
+                      )}
+                    </div>
+                    {rest.length > 0 && (
+                      <div style={{ marginBottom: '1rem' }}>
+                        <p style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 0.4rem' }}>
+                          Also scheduled
+                        </p>
+                        {rest.map(l => (
+                          <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.45rem 0.75rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '7px', marginBottom: '0.3rem', fontSize: '0.88rem' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>{fmtDate(l.scheduled_at)}</span>
+                            {l.title && <span style={{ fontWeight: 500 }}>{l.title}</span>}
+                            {l.duration_minutes && <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{l.duration_minutes} min</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
 
               {/* ── Placement test CTA (test_approved, no result yet) ── */}
               {isTestApproved && !hasTestResult && (
@@ -7021,8 +7051,10 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
 
 // ─── AdminStudentExercises ────────────────────────────────────
 function AdminStudentExercises({ student, onReview }) {
-  const [assignments, setAssignments] = useState([])
-  const [loading,     setLoading]     = useState(true)
+  const [assignments,  setAssignments]  = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [deletingId,   setDeletingId]   = useState(null)
+  const [confirmId,    setConfirmId]    = useState(null) // id awaiting delete confirmation
 
   useEffect(() => {
     fetchStudentAssignmentsAdmin(student.id).then(data => {
@@ -7030,26 +7062,53 @@ function AdminStudentExercises({ student, onReview }) {
     })
   }, [student.id])
 
+  const handleDelete = async (id) => {
+    setDeletingId(id)
+    const ok = await deleteAssignment(id)
+    setDeletingId(null)
+    setConfirmId(null)
+    if (ok) setAssignments(prev => prev.filter(a => a.id !== id))
+  }
+
   const completed = assignments.filter(a => a.status === 'submitted')
   const pending   = assignments.filter(a => a.status !== 'submitted')
 
   const renderRow = (a) => (
-    <button key={a.id} className="admin-student-row" onClick={() => onReview(a)}>
-      <div className="admin-student-info">
-        <strong>{a.exercises?.title}</strong>
-        <span className="admin-student-email">
-          {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
-          {a.status === 'submitted'
-            ? ` · Completed ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-            : ` · Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
-        </span>
-      </div>
-      <span style={{ fontSize: '0.82rem', fontWeight: 600, flexShrink: 0,
-        color: a.status === 'submitted' ? '#4ade80' : 'var(--text-muted)' }}>
-        {a.status === 'submitted' ? '✓ Completed' : '⏳ Pending'}
-      </span>
-      <span className="admin-arrow">›</span>
-    </button>
+    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.4rem', marginBottom: '0.4rem' }}>
+      {confirmId === a.id ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fef2f2', borderRadius: '6px', padding: '0.4rem 0.6rem' }}>
+          <span style={{ flex: 1, fontSize: '0.85rem', color: '#b91c1c' }}>Delete "{a.exercises?.title}"?</span>
+          <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.2rem 0.55rem', color: '#b91c1c', borderColor: '#fca5a5' }}
+            onClick={() => handleDelete(a.id)} disabled={deletingId === a.id}>
+            {deletingId === a.id ? '…' : 'Yes, delete'}
+          </button>
+          <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.2rem 0.55rem' }}
+            onClick={() => setConfirmId(null)}>Cancel</button>
+        </div>
+      ) : (
+        <>
+          <button className="admin-student-row" style={{ flex: 1, border: 'none', borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }} onClick={() => onReview(a)}>
+            <div className="admin-student-info">
+              <strong>{a.exercises?.title}</strong>
+              <span className="admin-student-email">
+                {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
+                {a.status === 'submitted'
+                  ? ` · Completed ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                  : ` · Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+              </span>
+            </div>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, flexShrink: 0,
+              color: a.status === 'submitted' ? '#4ade80' : 'var(--text-muted)' }}>
+              {a.status === 'submitted' ? '✓ Done' : '⏳ Pending'}
+            </span>
+          </button>
+          <button title="Remove assignment" onClick={() => setConfirmId(a.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1rem', padding: '0.25rem', flexShrink: 0, lineHeight: 1 }}>
+            🗑
+          </button>
+        </>
+      )}
+    </div>
   )
 
   return (
@@ -7060,7 +7119,7 @@ function AdminStudentExercises({ student, onReview }) {
       ) : assignments.length === 0 ? (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No exercises assigned to this student yet.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.5rem' }}>
+        <div style={{ marginTop: '0.5rem' }}>
           {completed.map(renderRow)}
           {pending.map(renderRow)}
         </div>
@@ -7083,6 +7142,8 @@ function AdminStudentLessons({ student, adminUserId }) {
   const [editTeacherNotes,    setEditTeacherNotes]    = useState('')
   const [editPublicNotes,     setEditPublicNotes]     = useState('')
   const [notesSaving,         setNotesSaving]         = useState(false)
+  const [confirmDeleteId,     setConfirmDeleteId]     = useState(null)
+  const [deletingLessonId,    setDeletingLessonId]    = useState(null)
 
   useEffect(() => {
     fetchStudentLessonsAdmin(student.id).then(data => {
@@ -7121,6 +7182,14 @@ function AdminStudentLessons({ student, adminUserId }) {
     const ok = await updateLesson(lessonId, updates)
     if (ok) setLessons(prev => prev.map(l => l.id === lessonId ? { ...l, ...updates } : l))
     return ok
+  }
+
+  const handleDeleteLesson = async (id) => {
+    setDeletingLessonId(id)
+    const ok = await deleteLesson(id)
+    setDeletingLessonId(null)
+    setConfirmDeleteId(null)
+    if (ok) setLessons(prev => prev.filter(l => l.id !== id))
   }
 
   const handleSaveNotes = async (lessonId) => {
@@ -7185,8 +7254,28 @@ function AdminStudentLessons({ student, adminUserId }) {
       ) : (
         <div className="admin-lesson-list">
           {lessons.map(l => (
-            <div key={l.id}>
-              <AdminLessonRow lesson={l} onUpdate={handleUpdate} />
+            <div key={l.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <AdminLessonRow lesson={l} onUpdate={handleUpdate} />
+                </div>
+                {confirmDeleteId === l.id ? (
+                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', background: '#fef2f2', borderRadius: '6px', padding: '0.3rem 0.55rem', flexShrink: 0 }}>
+                    <span style={{ fontSize: '0.78rem', color: '#b91c1c' }}>Delete?</span>
+                    <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem', color: '#b91c1c', borderColor: '#fca5a5' }}
+                      onClick={() => handleDeleteLesson(l.id)} disabled={deletingLessonId === l.id}>
+                      {deletingLessonId === l.id ? '…' : 'Yes'}
+                    </button>
+                    <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem' }}
+                      onClick={() => setConfirmDeleteId(null)}>No</button>
+                  </div>
+                ) : (
+                  <button title="Delete lesson" onClick={() => setConfirmDeleteId(l.id)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1rem', padding: '0.25rem', lineHeight: 1, flexShrink: 0 }}>
+                    🗑
+                  </button>
+                )}
+              </div>
               {editingNotesId === l.id ? (
                 <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <div className="form-field">
@@ -7902,6 +7991,123 @@ function AdminExerciseLibrary({ adminUserId }) {
   )
 }
 
+// ─── AdminCalendar ────────────────────────────────────────────
+function AdminCalendar() {
+  const [lessons,  setLessons]  = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [viewMode, setViewMode] = useState('upcoming') // 'upcoming' | 'week'
+
+  useEffect(() => {
+    fetchAllUpcomingLessons().then(data => {
+      setLessons(data)
+      setLoading(false)
+    })
+  }, [])
+
+  const now    = new Date()
+  const today  = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const week   = new Date(today); week.setDate(week.getDate() + 7)
+
+  const todayLessons    = lessons.filter(l => {
+    const d = new Date(l.scheduled_at)
+    return d >= today && d < new Date(today.getTime() + 86400000)
+  })
+  const upcomingLessons = lessons.filter(l => {
+    const d = new Date(l.scheduled_at)
+    return d >= new Date(today.getTime() + 86400000)
+  })
+
+  const fmtDate = (iso) => {
+    const d = new Date(iso)
+    const isToday   = d.toDateString() === now.toDateString()
+    const isTomorrow = d.toDateString() === new Date(now.getTime() + 86400000).toDateString()
+    const dayLabel  = isToday ? 'Today' : isTomorrow ? 'Tomorrow'
+      : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+    const timeLabel = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    return `${dayLabel} · ${timeLabel}`
+  }
+
+  const statusColor = (s) => s === 'completed' ? '#4ade80' : s === 'cancelled' ? '#f87171' : '#d4a853'
+
+  const LessonCard = ({ l, highlight }) => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '1rem',
+      padding: '0.8rem 1rem', borderRadius: '10px',
+      background: highlight ? 'color-mix(in srgb, var(--gold) 8%, var(--bg))' : 'var(--bg)',
+      border: `1px solid ${highlight ? 'color-mix(in srgb, var(--gold) 35%, transparent)' : 'var(--border)'}`,
+      marginBottom: '0.5rem',
+    }}>
+      <div style={{ textAlign: 'center', minWidth: '48px' }}>
+        <div style={{ fontSize: '1.4rem', lineHeight: 1 }}>
+          {highlight ? '⭐' : '📅'}
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {l.profiles?.name || l.profiles?.email || 'Unknown student'}
+          {l.title && <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: '0.4rem' }}>— {l.title}</span>}
+        </div>
+        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+          {fmtDate(l.scheduled_at)}
+          {l.duration_minutes && <span> · {l.duration_minutes} min</span>}
+          {l.lesson_no && <span> · Lesson #{l.lesson_no}</span>}
+        </div>
+      </div>
+      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: statusColor(l.status),
+        background: 'color-mix(in srgb, currentColor 12%, transparent)',
+        borderRadius: '99px', padding: '0.2em 0.65em', flexShrink: 0, border: '1px solid currentColor' }}>
+        {l.status}
+      </span>
+    </div>
+  )
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Upcoming lessons</h3>
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginLeft: 'auto' }}>
+          All times are your local time
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="dashboard-loading">Loading calendar…</div>
+      ) : lessons.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📅</div>
+          <p style={{ margin: 0 }}>No upcoming lessons scheduled.<br />Add lessons from a student's profile.</p>
+        </div>
+      ) : (
+        <>
+          {todayLessons.length > 0 && (
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gold)', marginBottom: '0.5rem' }}>
+                ⭐ Today — {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </div>
+              {todayLessons.map(l => <LessonCard key={l.id} l={l} highlight />)}
+            </div>
+          )}
+          {upcomingLessons.length > 0 && (
+            <div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                Coming up
+              </div>
+              {upcomingLessons.map(l => <LessonCard key={l.id} l={l} />)}
+            </div>
+          )}
+          {todayLessons.length === 0 && (
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>No lessons today.</p>
+          )}
+        </>
+      )}
+
+      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+        💡 Tip: to add or edit lessons, go to <strong>👥 Students</strong> → open a student → Lessons section.
+      </p>
+    </div>
+  )
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────
 function AdminPanel({ user, onSignOut }) {
   const [adminEmail,    setAdminEmail]    = useState('')
@@ -8355,6 +8561,10 @@ function AdminPanel({ user, onSignOut }) {
 
       {/* Tab bar */}
       <div className="admin-tabs">
+        <button className={`admin-tab ${adminTab === 'calendar' ? 'active' : ''}`}
+          onClick={() => setAdminTab('calendar')}>
+          📅 Calendar
+        </button>
         <button className={`admin-tab ${adminTab === 'students' ? 'active' : ''}`}
           onClick={() => setAdminTab('students')}>
           👥 Students
@@ -8382,6 +8592,9 @@ function AdminPanel({ user, onSignOut }) {
           🎁 Referrals
         </button>
       </div>
+
+      {/* Calendar tab */}
+      {adminTab === 'calendar' && <AdminCalendar />}
 
       {/* Lesson Stages tab */}
       {adminTab === 'stages' && <AdminLessonStages adminUserId={user?.id} />}
