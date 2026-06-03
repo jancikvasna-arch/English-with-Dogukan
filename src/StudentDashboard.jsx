@@ -78,8 +78,11 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   // Inline exercise preview in the plan stage list
   const [activePlanExCache,     setActivePlanExCache]     = useState({}) // exerciseId → full exercise obj
   const [activePlanLoadingEx,   setActivePlanLoadingEx]   = useState(false)
-  const [activePlanExpanded,    setActivePlanExpanded]    = useState(new Set()) // expanded stage IDs
+  const [activePlanExpanded,    setActivePlanExpanded]    = useState(new Set()) // expanded stage IDs (non-exercise)
   const [activePlanDemoAns,     setActivePlanDemoAns]     = useState({}) // exerciseId → { qId → val }
+  // Inline exercise player state
+  const [inlineOpenIds,    setInlineOpenIds]    = useState(new Set())   // stageIds with inline player open
+  const [inlinePlayerData, setInlinePlayerData] = useState({})          // stageId → { exercise, assignment }
   const [myTestAssignments, setMyTestAssignments] = useState([])
   const [activeTest,        setActiveTest]        = useState(null) // assignment obj
 
@@ -126,6 +129,8 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     if (!ids.length) return
     setActivePlanLoadingEx(true)
     setActivePlanExpanded(new Set()) // collapse all when switching plans
+    setInlineOpenIds(new Set())
+    setInlinePlayerData({})
     setActivePlanDemoAns({})
     Promise.all(ids.map(id => fetchExerciseWithQuestions(id))).then(results => {
       const cache = {}
@@ -192,6 +197,28 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     URL.revokeObjectURL(url)
   }
 
+  // Inline exercise: open exercise player inline within stage card
+  const openInlineExercise = async (stageId, planId, exerciseId) => {
+    if (inlineOpenIds.has(stageId)) {
+      setInlineOpenIds(prev => { const n = new Set(prev); n.delete(stageId); return n })
+      return
+    }
+    setLoadingPlanExId(exerciseId)
+    const [full, assignment] = await Promise.all([
+      fetchExerciseWithQuestions(exerciseId),
+      startLessonPlanExercise(planId, exerciseId, user.id),
+    ])
+    setLoadingPlanExId(null)
+    if (full) {
+      setInlinePlayerData(prev => ({ ...prev, [stageId]: { exercise: full, assignment } }))
+      setInlineOpenIds(prev => new Set([...prev, stageId]))
+    }
+  }
+
+  const closeInlineExercise = (stageId) =>
+    setInlineOpenIds(prev => { const n = new Set(prev); n.delete(stageId); return n })
+
+  // Legacy full-screen exercise open (kept for non-plan assignments)
   const openPlanExercise = async (planId, exerciseId) => {
     setLoadingPlanExId(exerciseId)
     const [full, assignment] = await Promise.all([
@@ -352,29 +379,37 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     const stageTypeDef = (type) => STAGE_TYPES.find(t => t.value === type) || { icon: '▸', label: type || 'Activity' }
 
     const renderStageItem = (stage, isHomework = false) => {
-      const ex         = stage.exercises
-      const exId       = ex?.id || stage.exercise_id
-      const asgn       = exId ? planAssignments.find(a => a.exercises?.id === exId || a.exercise_id === exId) : null
-      const isDone     = asgn?.status === 'submitted'
-      const def        = stageTypeDef(stage.stage_type)
-      const color      = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
-      const isExpanded = activePlanExpanded.has(stage.id)
+      const ex          = stage.exercises
+      const exId        = ex?.id || stage.exercise_id
+      const asgn        = exId ? planAssignments.find(a => a.exercises?.id === exId || a.exercise_id === exId) : null
+      const isDone      = asgn?.status === 'submitted'
+      const def         = stageTypeDef(stage.stage_type)
+      const color       = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
       const stageImages = Array.isArray(stage.content_images) ? stage.content_images : []
       const hasStageContent = !!(stage.content_text || stage.audio_url || stageImages.length)
-      const hasContent = !!(exId || hasStageContent)
+
+      // Non-exercise stages: expand/collapse for content_images, text, audio
+      const isContentExpanded = activePlanExpanded.has(stage.id)
+
+      // Exercise stages: inline player
+      const isInlineOpen   = inlineOpenIds.has(stage.id)
+      const inlineData     = inlinePlayerData[stage.id]
+      const isLoading      = loadingPlanExId === (exId || '')
+
+      const headerClickable = !exId && hasStageContent
       return (
         <div key={stage.id} style={{
           background: isDone ? '#f0fdf4' : (isHomework ? '#fafaf8' : '#fff'),
           borderRadius: '10px',
-          border: `1px solid ${isDone ? '#bbf7d0' : '#e8e3d8'}`,
+          border: `1px solid ${isDone ? '#bbf7d0' : isInlineOpen ? '#a8c8e8' : '#e8e3d8'}`,
           borderLeft: `4px solid ${color}`,
           marginBottom: '0.45rem',
           overflow: 'hidden',
         }}>
           {/* Header row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', padding: '0.65rem 0.85rem',
-            cursor: hasContent ? 'pointer' : 'default' }}
-            onClick={() => hasContent && togglePlanStage(stage.id)}>
+            cursor: headerClickable ? 'pointer' : 'default' }}
+            onClick={() => headerClickable && togglePlanStage(stage.id)}>
             <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1 }}>{def.icon}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: '0.88rem', color: isDone ? '#15803d' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -389,9 +424,9 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                 )}
               </div>
             </div>
-            {/* Action buttons — always visible */}
+            {/* Action buttons */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
-              {isDone ? (
+              {isDone && !isInlineOpen ? (
                 <>
                   <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#16a34a' }}>✓ Done</span>
                   {ex && (
@@ -402,56 +437,85 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                         {loadingViewPlanExId === ex.id ? '…' : '👁 View'}
                       </button>
                       <button className="btn-ghost" style={{ fontSize: '0.73rem', padding: '0.18rem 0.48rem' }}
-                        onClick={e => { e.stopPropagation(); openPlanExercise(activePlan.id, ex.id) }}
-                        disabled={loadingPlanExId === ex.id}>
-                        {loadingPlanExId === ex.id ? '…' : '↩ Redo'}
+                        onClick={e => { e.stopPropagation(); openInlineExercise(stage.id, activePlan.id, ex.id) }}
+                        disabled={isLoading}>
+                        {isLoading ? '…' : '↩ Redo'}
                       </button>
                     </>
                   )}
                 </>
-              ) : ex ? (
-                <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.4rem 0.85rem', whiteSpace: 'nowrap' }}
-                  onClick={e => { e.stopPropagation(); openPlanExercise(activePlan.id, ex.id) }}
-                  disabled={loadingPlanExId === ex.id}>
-                  {loadingPlanExId === ex.id ? '…' : '▶ Start'}
+              ) : exId ? (
+                <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.4rem 0.85rem', whiteSpace: 'nowrap',
+                    background: isInlineOpen ? '#005580' : undefined }}
+                  onClick={e => { e.stopPropagation(); openInlineExercise(stage.id, activePlan.id, exId) }}
+                  disabled={isLoading}>
+                  {isLoading ? '…' : isInlineOpen ? '▲ Collapse' : '▶ Start'}
                 </button>
               ) : null}
-              {hasContent && (
+              {/* Expand arrow only for non-exercise stages with stage-level content */}
+              {!exId && hasStageContent && (
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginLeft: '0.2rem' }}>
-                  {isExpanded ? '▲' : '▼'}
+                  {isContentExpanded ? '▲' : '▼'}
                 </span>
               )}
             </div>
           </div>
-          {/* Expanded preview */}
-          {isExpanded && (
-            <div style={{ borderTop: `1px solid ${isDone ? '#d1fae5' : '#f0ede6'}`, padding: '0.75rem 0.85rem' }}>
-              {exId ? (
-                <InlineExerciseContent
-                  exerciseId={exId}
-                  exerciseCache={activePlanExCache}
-                  loadingExercises={activePlanLoadingEx}
-                  demoAnswers={activePlanDemoAns}
-                  setDemoAnswers={setActivePlanDemoAns}
+
+          {/* Inline exercise player */}
+          {exId && isInlineOpen && (
+            <div style={{ borderTop: `1px solid #d4e8f5`, background: '#f8fafc' }}>
+              {inlineData?.assignment ? (
+                <ExercisePlayer
+                  assignment={{ ...inlineData.assignment, exercises: inlineData.exercise }}
+                  questions={inlineData.exercise?.questions ?? []}
+                  studentId={user.id}
+                  embedded={true}
+                  onBack={() => closeInlineExercise(stage.id)}
+                  onSubmitted={(id) => {
+                    setAssignments(prev => {
+                      const exists = prev.some(a => a.id === id)
+                      if (exists) return prev.map(a => a.id === id ? { ...a, status: 'submitted' } : a)
+                      return [...prev, { ...inlineData.assignment, exercises: inlineData.exercise, status: 'submitted', submitted_at: new Date().toISOString() }]
+                    })
+                    closeInlineExercise(stage.id)
+                  }}
                 />
-              ) : hasStageContent ? (
-                <>
-                  {stage.audio_url && (
-                    <div style={{ marginBottom: '0.5rem' }}>
-                      <EmbeddedMedia url={stage.audio_url} label="🎧 Listen" />
-                    </div>
-                  )}
-                  {stage.content_text && (
-                    <div style={{ fontSize: '0.88rem', lineHeight: 1.65, marginBottom: stageImages.length ? '0.75rem' : 0 }}
-                      dangerouslySetInnerHTML={{ __html: stage.content_text }} />
-                  )}
-                  {stageImages.map((src, i) => (
-                    <div key={i} style={{ marginBottom: i < stageImages.length - 1 ? '0.75rem' : 0 }}>
-                      <AnnotatedImage src={src} />
-                    </div>
-                  ))}
-                </>
-              ) : null}
+              ) : inlineData ? (
+                // No assignment created (e.g. no exercise_assignments row yet) — show read-only
+                <div style={{ padding: '0.75rem 0.85rem' }}>
+                  <InlineExerciseContent
+                    exerciseId={exId}
+                    exerciseCache={activePlanExCache}
+                    loadingExercises={activePlanLoadingEx}
+                    demoAnswers={activePlanDemoAns}
+                    setDemoAnswers={setActivePlanDemoAns}
+                  />
+                </div>
+              ) : (
+                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Loading exercise…
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Non-exercise stage content: images, text, audio */}
+          {!exId && isContentExpanded && hasStageContent && (
+            <div style={{ borderTop: `1px solid ${isDone ? '#d1fae5' : '#f0ede6'}`, padding: '0.75rem 0.85rem' }}>
+              {stage.audio_url && (
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <EmbeddedMedia url={stage.audio_url} label="🎧 Listen" />
+                </div>
+              )}
+              {stage.content_text && (
+                <div style={{ fontSize: '0.88rem', lineHeight: 1.65, marginBottom: stageImages.length ? '0.75rem' : 0 }}
+                  dangerouslySetInnerHTML={{ __html: stage.content_text }} />
+              )}
+              {stageImages.map((src, i) => (
+                <div key={i} style={{ marginBottom: i < stageImages.length - 1 ? '0.75rem' : 0 }}>
+                  <AnnotatedImage src={src} />
+                </div>
+              ))}
             </div>
           )}
         </div>

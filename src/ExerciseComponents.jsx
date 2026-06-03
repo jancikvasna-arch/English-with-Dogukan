@@ -784,7 +784,7 @@ export function ImageOverlayFill({ src, blanks, answers, onChange, disabled = fa
 }
 
 // ─── ExercisePlayer (student) ─────────────────────────────────
-export function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted }) {
+export function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted, embedded = false }) {
   const ex = assignment.exercises
   const [answers, setAnswers] = useState({})
   const [confirming, setConfirming] = useState(false)
@@ -839,10 +839,17 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
     setSubmitting(true)
     const ok = await submitExerciseAnswers(assignment.id, answers, studentId)
     setSubmitting(false)
-    if (ok) { setDone(true); setTimeout(() => onSubmitted(assignment.id), 2200) }
+    if (ok) {
+      if (embedded) {
+        onSubmitted(assignment.id) // parent collapses the stage immediately
+      } else {
+        setDone(true)
+        setTimeout(() => onSubmitted(assignment.id), 2200)
+      }
+    }
   }
 
-  if (done) {
+  if (done && !embedded) {
     return (
       <div className="flow-card text-center">
         <span className="confirmation-icon" style={{ fontSize: '3rem' }}>✅</span>
@@ -853,8 +860,8 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
   }
 
   return (
-    <div className="flow-card exercise-player-card">
-      <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+    <div className={embedded ? '' : 'flow-card exercise-player-card'}>
+      {!embedded && <button className="back-btn" onClick={onBack}>← Back to dashboard</button>}
 
       <div className="exercise-player-header">
         <span className={`exercise-mode-chip exercise-mode-chip--${assignment.mode}`}>
@@ -1001,7 +1008,14 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
         </div>
       )}
 
-      {!confirming ? (
+      {embedded ? (
+        <div className="exercise-submit-row" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #e8e3d8' }}>
+          {!allAnswered && <p className="exercise-submit-hint">Answer all questions before finishing.</p>}
+          <button className="btn-gold btn-lg" disabled={!allAnswered || submitting} onClick={handleSubmit}>
+            {submitting ? 'Saving…' : '✓ Finish Exercise'}
+          </button>
+        </div>
+      ) : !confirming ? (
         <div className="exercise-submit-row">
           {!allAnswered && <p className="exercise-submit-hint">Answer all questions before submitting.</p>}
           <button className="btn-gold btn-lg" disabled={!allAnswered} onClick={() => setConfirming(true)}>

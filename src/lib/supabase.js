@@ -1609,6 +1609,17 @@ export async function fetchStudentPlanAssignments(studentId, planId, exerciseIds
   return byEx ?? []
 }
 
+/** Admin: fetch all exercise_assignments for a plan (with student profiles). Used by TeachView. */
+export async function fetchPlanAssignmentsAdmin(planId) {
+  if (!supabase || !planId) return []
+  const { data, error } = await supabase
+    .from('exercise_assignments')
+    .select('id, exercise_id, student_id, status, submitted_at, assigned_at, exercises(id, title), profiles:student_id(id, name, email)')
+    .eq('lesson_plan_id', planId)
+  if (error) { console.error('[supabase] fetchPlanAssignmentsAdmin:', error); return [] }
+  return data ?? []
+}
+
 /** Link or unlink a lesson plan to a lesson record. */
 export async function updateLessonPlanLink(lessonId, planId) {
   if (!supabase) return false

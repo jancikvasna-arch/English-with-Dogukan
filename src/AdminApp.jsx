@@ -1,6 +1,6 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
-import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
+import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
 import { ADMIN_EMAIL, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
 import { COURSES_DATA } from './content'
 import { EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
@@ -1270,6 +1270,12 @@ export function TeachView({ plan, onBack }) {
   const [loadingEx,      setLoadingEx]      = useState(false)
   const [expandedStages, setExpandedStages] = useState(new Set())
   const [demoAnswers,    setDemoAnswers]    = useState({})
+  // Live student submissions
+  const [planAsgns,      setPlanAsgns]      = useState([])   // all exercise_assignments for this plan
+  const [expandedAsgn,   setExpandedAsgn]   = useState({})   // assignmentId → bool
+  const [asgnDetails,    setAsgnDetails]    = useState({})   // assignmentId → { questions, answerMap }
+  const [loadingAsgnId,  setLoadingAsgnId]  = useState(null)
+  const [lastRefresh,    setLastRefresh]    = useState(null)
 
   const saveWb = (v) => { setWhiteboard(v); try { localStorage.setItem('wb_' + plan.id, v) } catch {} }
 
@@ -1298,6 +1304,90 @@ export function TeachView({ plan, onBack }) {
       setLoadingEx(false)
     })
   }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh student submissions every 30s
+  useEffect(() => {
+    const load = () => fetchPlanAssignmentsAdmin(plan.id).then(data => {
+      setPlanAsgns(data); setLastRefresh(new Date())
+    })
+    load()
+    const iv = setInterval(load, 30000)
+    return () => clearInterval(iv)
+  }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadAsgnAnswers = async (asgnId) => {
+    if (asgnDetails[asgnId]) { setExpandedAsgn(p => ({ ...p, [asgnId]: !p[asgnId] })); return }
+    setLoadingAsgnId(asgnId)
+    const asgn = planAsgns.find(a => a.id === asgnId)
+    if (!asgn) { setLoadingAsgnId(null); return }
+    const [qs, ans] = await Promise.all([
+      fetchQuestionsForReview(asgn.exercise_id),
+      fetchMyAnswersForAssignment(asgnId),
+    ])
+    setLoadingAsgnId(null)
+    const answerMap = Object.fromEntries((ans || []).map(sa => [sa.question_id, sa]))
+    setAsgnDetails(p => ({ ...p, [asgnId]: { questions: qs || [], answerMap } }))
+    setExpandedAsgn(p => ({ ...p, [asgnId]: true }))
+  }
+
+  const renderStageStudents = (stage) => {
+    if (!stage.exercise_id) return null
+    const asgns = planAsgns.filter(a => a.exercise_id === stage.exercise_id)
+    if (!asgns.length) return null
+    return (
+      <div style={{ borderTop: '1px dashed #e8e3d8', padding: '0.5rem 0.85rem 0.6rem', background: '#fafaf8' }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.45rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          👥 Student progress
+        </div>
+        {asgns.map(a => {
+          const name = a.profiles?.name || a.profiles?.email || 'Student'
+          const submitted = a.status === 'submitted'
+          const isOpen = expandedAsgn[a.id]
+          const details = asgnDetails[a.id]
+          return (
+            <div key={a.id} style={{ marginBottom: '0.4rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.82rem', flex: 1, fontWeight: 500 }}>{name}</span>
+                {submitted ? (
+                  <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', color: '#16a34a', borderColor: '#bbf7d0' }}
+                    onClick={() => loadAsgnAnswers(a.id)}
+                    disabled={loadingAsgnId === a.id}>
+                    {loadingAsgnId === a.id ? '…' : isOpen ? '▲ Collapse' : '✓ View answers'}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>⏳ Not submitted</span>
+                )}
+              </div>
+              {isOpen && details && (
+                <div style={{ marginTop: '0.4rem', paddingLeft: '0.6rem', borderLeft: '3px solid #bbf7d0' }}>
+                  {details.questions.length === 0 ? (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>No questions to show.</p>
+                  ) : details.questions.map((q, i) => {
+                    const ans = details.answerMap[q.id]
+                    return (
+                      <div key={q.id} style={{ fontSize: '0.8rem', marginBottom: '0.35rem', display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                        <span style={{ color: 'var(--text-muted)', flexShrink: 0, fontWeight: 600 }}>Q{i+1}</span>
+                        <span style={{ flex: 1, wordBreak: 'break-word' }}>
+                          {ans?.answer
+                            ? <span style={{ background: '#f0fdf4', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>{ans.answer}</span>
+                            : <em style={{ color: 'var(--text-muted)' }}>—</em>}
+                        </span>
+                        {ans?.is_correct != null && (
+                          <span style={{ fontWeight: 700, color: ans.is_correct ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                            {ans.is_correct ? '✓' : '✗'}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   const toggleStage = (id) => setExpandedStages(prev => {
     const next = new Set(prev)
@@ -1349,6 +1439,8 @@ export function TeachView({ plan, onBack }) {
             </div>
           </div>
         )}
+        {/* Live student submissions — always shown when they exist */}
+        {renderStageStudents(stage)}
       </div>
     )
   }
@@ -1358,7 +1450,14 @@ export function TeachView({ plan, onBack }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
         <button className="back-btn" style={{ margin: 0 }} onClick={onBack}>← Back to lesson plans</button>
-        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem', marginLeft: 'auto' }} onClick={() => window.print()}>🖨 Print</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          {lastRefresh && planAsgns.length > 0 && (
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              🔄 Live · {lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }} onClick={() => window.print()}>🖨 Print</button>
+        </div>
       </div>
 
       {/* Title */}
