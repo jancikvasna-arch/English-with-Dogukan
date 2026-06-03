@@ -994,8 +994,12 @@ export async function updateLessonPlan(planId, title, desc, exerciseIds) {
  *  Uses lesson_stages (new builder) if present; falls back to lesson_plan_exercises.
  *  Also creates a lesson row so the plan appears in the student portal.
  *  Pass skipLessonCreation=true when a lesson row already exists (e.g. linking from AdminStudentLessons). */
-export async function assignLessonPlan({ planId, studentId, assignedBy, mode, note, scheduledAt, skipLessonCreation = false }) {
+export async function assignLessonPlan({ planId, studentId, manualStudentId = null, assignedBy, mode, note, scheduledAt, skipLessonCreation = false }) {
   if (!supabase) return false
+
+  // Manual students have no portal access — exercise_assignments and lessons both
+  // have student_id FK → profiles, so we skip those steps for manual students.
+  if (manualStudentId) return true
 
   // 1. Fetch plan title (for naming the lesson)
   const { data: planData } = await supabase

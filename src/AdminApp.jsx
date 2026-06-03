@@ -1498,7 +1498,14 @@ export function AdminLessonPlans({ adminUserId }) {
   const handleAssignPlan = async (planId) => {
     if (!apStudentId) { setApError('Please select a student.'); return }
     setApSaving(true); setApError(null)
-    const ok = await assignLessonPlan({ planId, studentId: apStudentId, assignedBy: adminUserId, mode: apMode, note: apNote || null, scheduledAt: apScheduledAt ? new Date(apScheduledAt).toISOString() : null })
+    const isManual = manualStudents.some(s => s.id === apStudentId)
+    const ok = await assignLessonPlan({
+      planId,
+      studentId:       isManual ? null : apStudentId,
+      manualStudentId: isManual ? apStudentId : null,
+      assignedBy: adminUserId, mode: apMode, note: apNote || null,
+      scheduledAt: apScheduledAt ? new Date(apScheduledAt).toISOString() : null,
+    })
     setApSaving(false)
     if (ok === true) {
       setApDone(true)
@@ -1510,7 +1517,16 @@ export function AdminLessonPlans({ adminUserId }) {
     if (!apMultiIds.length) { setApError('Select at least one student.'); return }
     setApSaving(true); setApError(null)
     const results = await Promise.all(
-      apMultiIds.map(sid => assignLessonPlan({ planId, studentId: sid, assignedBy: adminUserId, mode: apMode, note: apNote || null, scheduledAt: apScheduledAt ? new Date(apScheduledAt).toISOString() : null }))
+      apMultiIds.map(sid => {
+        const isManual = manualStudents.some(s => s.id === sid)
+        return assignLessonPlan({
+          planId,
+          studentId:       isManual ? null : sid,
+          manualStudentId: isManual ? sid : null,
+          assignedBy: adminUserId, mode: apMode, note: apNote || null,
+          scheduledAt: apScheduledAt ? new Date(apScheduledAt).toISOString() : null,
+        })
+      })
     )
     setApSaving(false)
     const succeeded = apMultiIds.filter((_, i) => results[i])
