@@ -3,7 +3,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 're
 import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
 import { ADMIN_EMAIL, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
 import { COURSES_DATA } from './content'
-import { EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
+import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
 import { AccessBadge } from './StudentDashboard.jsx'
 
 export function fileToBase64(file) {
@@ -1271,11 +1271,10 @@ export function TeachView({ plan, onBack }) {
   const [expandedStages, setExpandedStages] = useState(new Set())
   const [demoAnswers,    setDemoAnswers]    = useState({})
   // Live student submissions
-  const [planAsgns,      setPlanAsgns]      = useState([])   // all exercise_assignments for this plan
-  const [expandedAsgn,   setExpandedAsgn]   = useState({})   // assignmentId → bool
-  const [asgnDetails,    setAsgnDetails]    = useState({})   // assignmentId → { questions, answerMap }
+  const [planAsgns,      setPlanAsgns]      = useState([])
   const [loadingAsgnId,  setLoadingAsgnId]  = useState(null)
   const [lastRefresh,    setLastRefresh]    = useState(null)
+  const [reviewingDetails, setReviewingDetails] = useState(null) // full details for inline review
 
   const saveWb = (v) => { setWhiteboard(v); try { localStorage.setItem('wb_' + plan.id, v) } catch {} }
 
@@ -1315,19 +1314,11 @@ export function TeachView({ plan, onBack }) {
     return () => clearInterval(iv)
   }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadAsgnAnswers = async (asgnId) => {
-    if (asgnDetails[asgnId]) { setExpandedAsgn(p => ({ ...p, [asgnId]: !p[asgnId] })); return }
+  const openAsgnReview = async (asgnId) => {
     setLoadingAsgnId(asgnId)
-    const asgn = planAsgns.find(a => a.id === asgnId)
-    if (!asgn) { setLoadingAsgnId(null); return }
-    const [qs, ans] = await Promise.all([
-      fetchQuestionsForReview(asgn.exercise_id),
-      fetchMyAnswersForAssignment(asgnId),
-    ])
+    const details = await fetchAssignmentDetails(asgnId)
     setLoadingAsgnId(null)
-    const answerMap = Object.fromEntries((ans || []).map(sa => [sa.question_id, sa]))
-    setAsgnDetails(p => ({ ...p, [asgnId]: { questions: qs || [], answerMap } }))
-    setExpandedAsgn(p => ({ ...p, [asgnId]: true }))
+    if (details) setReviewingDetails(details)
   }
 
   const renderStageStudents = (stage) => {
@@ -1342,45 +1333,17 @@ export function TeachView({ plan, onBack }) {
         {asgns.map(a => {
           const name = a.profiles?.name || a.profiles?.email || 'Student'
           const submitted = a.status === 'submitted'
-          const isOpen = expandedAsgn[a.id]
-          const details = asgnDetails[a.id]
           return (
-            <div key={a.id} style={{ marginBottom: '0.4rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.82rem', flex: 1, fontWeight: 500 }}>{name}</span>
-                {submitted ? (
-                  <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', color: '#16a34a', borderColor: '#bbf7d0' }}
-                    onClick={() => loadAsgnAnswers(a.id)}
-                    disabled={loadingAsgnId === a.id}>
-                    {loadingAsgnId === a.id ? '…' : isOpen ? '▲ Collapse' : '✓ View answers'}
-                  </button>
-                ) : (
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>⏳ Not submitted</span>
-                )}
-              </div>
-              {isOpen && details && (
-                <div style={{ marginTop: '0.4rem', paddingLeft: '0.6rem', borderLeft: '3px solid #bbf7d0' }}>
-                  {details.questions.length === 0 ? (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, fontStyle: 'italic' }}>No questions to show.</p>
-                  ) : details.questions.map((q, i) => {
-                    const ans = details.answerMap[q.id]
-                    return (
-                      <div key={q.id} style={{ fontSize: '0.8rem', marginBottom: '0.35rem', display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
-                        <span style={{ color: 'var(--text-muted)', flexShrink: 0, fontWeight: 600 }}>Q{i+1}</span>
-                        <span style={{ flex: 1, wordBreak: 'break-word' }}>
-                          {ans?.answer
-                            ? <span style={{ background: '#f0fdf4', padding: '0.1rem 0.3rem', borderRadius: '4px' }}>{ans.answer}</span>
-                            : <em style={{ color: 'var(--text-muted)' }}>—</em>}
-                        </span>
-                        {ans?.is_correct != null && (
-                          <span style={{ fontWeight: 700, color: ans.is_correct ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
-                            {ans.is_correct ? '✓' : '✗'}
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+              <span style={{ fontSize: '0.82rem', flex: 1, fontWeight: 500 }}>{name}</span>
+              {submitted ? (
+                <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', color: '#16a34a', borderColor: '#bbf7d0' }}
+                  onClick={() => openAsgnReview(a.id)}
+                  disabled={loadingAsgnId === a.id}>
+                  {loadingAsgnId === a.id ? '…' : '📋 Review answers'}
+                </button>
+              ) : (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>⏳ Not submitted</span>
               )}
             </div>
           )
@@ -1441,6 +1404,18 @@ export function TeachView({ plan, onBack }) {
         )}
         {/* Live student submissions — always shown when they exist */}
         {renderStageStudents(stage)}
+      </div>
+    )
+  }
+
+  // Inline student answer review
+  if (reviewingDetails) {
+    return (
+      <div className="teach-view-wrapper" style={{ background: '#F2EFE8', margin: '-1.5rem', padding: '1.5rem', borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', minHeight: '60vh' }}>
+        <AdminExerciseReview
+          details={reviewingDetails}
+          onBack={() => setReviewingDetails(null)}
+        />
       </div>
     )
   }
@@ -4302,10 +4277,22 @@ export function AdminExerciseReview({ details, onBack }) {
       )}
       {exercise?.context_images?.length > 0 && (
         <div className="exercise-context-images" style={{ marginTop: '0.75rem' }}>
-          <p className="exercise-context-label">📖 Reference material</p>
-          {exercise.context_images.map((src, i) => (
-            <img key={i} src={src} alt={`Reference ${i+1}`} className="exercise-context-img" />
-          ))}
+          <p className="exercise-context-label">📖 Reference material{details.student_annotations ? ' (student annotations shown)' : ''}</p>
+          {exercise.context_images.map((src, i) => {
+            const savedAnn = details.student_annotations?.[i]
+            return (
+              <div key={i} style={{ marginBottom: i < exercise.context_images.length - 1 ? '0.75rem' : 0 }}>
+                <AnnotatedImage
+                  src={src}
+                  alt={`Reference ${i+1}`}
+                  circlesEnabled={false}
+                  linesEnabled={false}
+                  initialCircles={savedAnn?.circles || []}
+                  initialLines={savedAnn?.lines || []}
+                />
+              </div>
+            )
+          })}
         </div>
       )}
 

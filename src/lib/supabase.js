@@ -338,7 +338,18 @@ export async function fetchAssignmentDetails(assignmentId) {
   ])
   if (aErr)  { console.error('[supabase] fetchAssignmentDetails assignment:', aErr);  return null }
   if (anErr) { console.error('[supabase] fetchAssignmentDetails answers:',    anErr); return null }
-  return { ...assignment, studentAnswers: answers ?? [] }
+  return { ...assignment, studentAnswers: answers ?? [], student_annotations: assignment.student_annotations ?? null }
+}
+
+/** Student: save image annotation data to an exercise assignment. */
+export async function saveExerciseAnnotations(assignmentId, annotations) {
+  if (!supabase || !assignmentId) return false
+  const { error } = await supabase
+    .from('exercise_assignments')
+    .update({ student_annotations: annotations })
+    .eq('id', assignmentId)
+  if (error) { console.error('[supabase] saveExerciseAnnotations:', error); return false }
+  return true
 }
 
 /** Save teacher review (is_correct + comment) for multiple answers at once. */

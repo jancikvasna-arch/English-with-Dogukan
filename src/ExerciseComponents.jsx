@@ -1,6 +1,6 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
-import { addVocabularyWord, deleteNote, fetchNotesForExercise, saveNote, submitExerciseAnswers, submitTestResult } from './lib/supabase'
+import { addVocabularyWord, deleteNote, fetchNotesForExercise, saveExerciseAnnotations, saveNote, submitExerciseAnswers, submitTestResult } from './lib/supabase'
 import { getEffectiveQuestions, parseOverlayPrompt } from './lib/shared'
 
 export const CIRCLE_COLORS = [
@@ -20,23 +20,31 @@ export const LINE_THICKNESSES = [
   { label: 'Thick', px: 5   },
 ]
 
-export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnabled = true }) {
+export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnabled = true,
+  initialCircles = [], initialLines = [], onAnnotationChange = null }) {
   const wrapRef    = useRef(null)
   const instanceId = useRef(`ai${Math.random().toString(36).slice(2,7)}`).current
 
   // ── Circle state ──────────────────────────────────────────
-  const [circles,       setCircles]       = useState([])   // [{cx,cy,rx,ry,color}] in %
-  const [circleDrawing, setCircleDrawing] = useState(null)  // {sx,sy,cx,cy}
+  const [circles,       setCircles]       = useState(() => initialCircles || [])
+  const [circleDrawing, setCircleDrawing] = useState(null)
   const [circleMode,    setCircleMode]    = useState(false)
   const [circleColor,   setCircleColor]   = useState('#dc2626')
 
   // ── Line state ────────────────────────────────────────────
-  const [lines,     setLines]     = useState([])  // [{x1,y1,x2,y2,color,thickness}] in %
+  const [lines,     setLines]     = useState(() => initialLines || [])
   const [lineMode,  setLineMode]  = useState(false)
-  const [lineStart, setLineStart] = useState(null) // {x,y} first click
-  const [lineMouse, setLineMouse] = useState(null) // current hover pos for preview
+  const [lineStart, setLineStart] = useState(null)
+  const [lineMouse, setLineMouse] = useState(null)
   const [lineThick, setLineThick] = useState(3)
   const justDrewRef = useRef(false)
+
+  // Notify parent when annotations change (skip on initial render)
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    onAnnotationChange?.(circles, lines)
+  }, [circles, lines]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeMode     = circleMode ? 'circle' : lineMode ? 'line' : null
   const nextLineColor  = LINE_COLORS[lines.length % LINE_COLORS.length]
@@ -790,6 +798,7 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  const [imageAnnotations, setImageAnnotations] = useState([]) // index → {circles,lines}
 
   const setAnswer = (qId, val) => setAnswers(prev => ({ ...prev, [qId]: val }))
 
@@ -840,8 +849,11 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
     const ok = await submitExerciseAnswers(assignment.id, answers, studentId)
     setSubmitting(false)
     if (ok) {
+      // Save any image annotations
+      const hasAnn = imageAnnotations.some(a => a?.circles?.length || a?.lines?.length)
+      if (hasAnn) saveExerciseAnnotations(assignment.id, imageAnnotations)
       if (embedded) {
-        onSubmitted(assignment.id) // parent collapses the stage immediately
+        onSubmitted(assignment.id)
       } else {
         setDone(true)
         setTimeout(() => onSubmitted(assignment.id), 2200)
@@ -893,7 +905,7 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
           <div className="exercise-context-passage" dangerouslySetInnerHTML={{ __html: ex.context_text }} />
         </div>
       )}
-      {/* ── Context images (skip if fill_blank overlay — the image is shown on the overlay) ── */}
+      {/* ── Context images with annotation tools ── */}
       {ex?.context_images?.length > 0 && !(
         questions.length > 0 && questions[0].type === 'fill_blank' &&
         parseOverlayPrompt(questions[0].prompt)
@@ -901,7 +913,21 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
         <div className="exercise-context-images">
           <p className="exercise-context-label">📖 Reference material</p>
           {ex.context_images.map((src, i) => (
-            <img key={i} src={src} alt={`Reference ${i + 1}`} className="exercise-context-img" />
+            <div key={i} style={{ marginBottom: i < ex.context_images.length - 1 ? '0.75rem' : 0 }}>
+              <AnnotatedImage
+                src={src}
+                alt={`Reference ${i + 1}`}
+                circlesEnabled={ex.context_image_settings?.[i]?.circles !== false}
+                linesEnabled={ex.context_image_settings?.[i]?.lines !== false}
+                onAnnotationChange={(circles, lines) =>
+                  setImageAnnotations(prev => {
+                    const next = [...prev]
+                    next[i] = { circles, lines }
+                    return next
+                  })
+                }
+              />
+            </div>
           ))}
         </div>
       )}
