@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, Component } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, Component } from 'react'
 import './App.css'
 import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
