@@ -213,6 +213,15 @@ export function AdminLessonStages({ adminUserId }) {
     setAssigning(false)
     if (ok) {
       fetchAllAssignmentsAdmin().then(setAssignments)
+      const student  = students.find(s => s.id === aStudentId)
+      const exercise = exercises.find(e => e.id === aExerciseId)
+      if (student?.email && exercise?.title) {
+        fetch('/api/send-exercise-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: student.email, name: student.name, exerciseTitle: exercise.title, mode: aMode }),
+        }).catch(e => console.error('[send-exercise-email]', e))
+      }
       setShowAssign(false); setAStudentId(''); setAExerciseId(''); setANote('')
     } else { setAssignError('Something went wrong. Please try again.') }
   }
@@ -4515,17 +4524,46 @@ export function AdminStudentPlans({ student, isManual = false, onOpenPlan }) {
 }
 
 // ─── AdminStudentExercises ────────────────────────────────────
-export function AdminStudentExercises({ student, onReview }) {
+export function AdminStudentExercises({ student, onReview, adminUserId = null }) {
   const [assignments,  setAssignments]  = useState([])
   const [loading,      setLoading]      = useState(true)
   const [deletingId,   setDeletingId]   = useState(null)
-  const [confirmId,    setConfirmId]    = useState(null) // id awaiting delete confirmation
+  const [confirmId,    setConfirmId]    = useState(null)
+
+  // inline assign form
+  const [allExercises,  setAllExercises]  = useState([])
+  const [showAssign,    setShowAssign]    = useState(false)
+  const [assignExId,    setAssignExId]    = useState('')
+  const [assignMode,    setAssignMode]    = useState('homework')
+  const [assignNote,    setAssignNote]    = useState('')
+  const [assignSaving,  setAssignSaving]  = useState(false)
+  const [assignError,   setAssignError]   = useState(null)
 
   useEffect(() => {
     fetchStudentAssignmentsAdmin(student.id).then(data => {
       setAssignments(data); setLoading(false)
     })
+    fetchAllExercises().then(setAllExercises)
   }, [student.id])
+
+  const handleAssign = async (e) => {
+    e.preventDefault()
+    if (!assignExId) { setAssignError('Please select an exercise.'); return }
+    setAssignSaving(true); setAssignError(null)
+    const ok = await assignExercise({ exerciseId: assignExId, studentId: student.id, assignedBy: adminUserId, mode: assignMode, note: assignNote || null })
+    setAssignSaving(false)
+    if (!ok) { setAssignError('Something went wrong. Please try again.'); return }
+    const ex = allExercises.find(e => e.id === assignExId)
+    if (student?.email && ex?.title) {
+      fetch('/api/send-exercise-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: student.email, name: student.name, exerciseTitle: ex.title, mode: assignMode }),
+      }).catch(err => console.error('[send-exercise-email]', err))
+    }
+    fetchStudentAssignmentsAdmin(student.id).then(setAssignments)
+    setShowAssign(false); setAssignExId(''); setAssignNote('')
+  }
 
   const handleDelete = async (id) => {
     setDeletingId(id)
@@ -4578,7 +4616,45 @@ export function AdminStudentExercises({ student, onReview }) {
 
   return (
     <div className="admin-section">
-      <h3>Exercises ({assignments.length})</h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
+        <h3 style={{ margin: 0 }}>Exercises ({assignments.length})</h3>
+        <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.2rem 0.65rem', marginLeft: 'auto' }}
+          onClick={() => { setShowAssign(p => !p); setAssignError(null) }}>
+          {showAssign ? '✕ Cancel' : '+ Assign exercise'}
+        </button>
+      </div>
+
+      {showAssign && (
+        <form onSubmit={handleAssign} style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.85rem', marginBottom: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+          <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
+            <div style={{ flex: 2, minWidth: '180px' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>Exercise</label>
+              <select value={assignExId} onChange={e => setAssignExId(e.target.value)} style={{ width: '100%' }}>
+                <option value="">— Select exercise —</option>
+                {allExercises.map(ex => <option key={ex.id} value={ex.id}>{ex.title}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: '120px' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>Mode</label>
+              <select value={assignMode} onChange={e => setAssignMode(e.target.value)} style={{ width: '100%' }}>
+                <option value="homework">🏠 Homework</option>
+                <option value="class">🎓 In class</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>Note (optional)</label>
+            <input type="text" value={assignNote} onChange={e => setAssignNote(e.target.value)}
+              placeholder="Any instructions for the student…"
+              style={{ width: '100%', boxSizing: 'border-box', fontSize: '0.85rem' }} />
+          </div>
+          {assignError && <div className="auth-error">{assignError}</div>}
+          <button className="btn-gold" type="submit" disabled={assignSaving} style={{ alignSelf: 'flex-end', padding: '0.4rem 1.1rem', fontSize: '0.85rem' }}>
+            {assignSaving ? 'Assigning…' : 'Assign →'}
+          </button>
+        </form>
+      )}
+
       {loading ? (
         <div className="dashboard-loading" style={{ padding: '0.5rem 0' }}>Loading…</div>
       ) : assignments.length === 0 ? (
@@ -6333,7 +6409,8 @@ export function AdminTests({ adminUserId, students = [], manualStudents = [] }) 
   const [assignments, setAssignments] = useState([])
   const [loading,     setLoading]     = useState(true)
   const [needsSetup,  setNeedsSetup]  = useState(false)
-  const [viewingResult, setViewingResult] = useState(null) // assignment obj
+  const [viewingResult, setViewingResult] = useState(null) // unused, kept for compat
+  const [expandedResultId, setExpandedResultId] = useState(null) // inline collapsed result
   const [previewing,    setPreviewing]    = useState(false) // admin preview mode
   const [editingQuestions, setEditingQuestions] = useState(null) // TEST_DEFINITIONS entry
   // Assign form
@@ -6398,10 +6475,6 @@ export function AdminTests({ adminUserId, students = [], manualStudents = [] }) 
 
   if (editingQuestions) {
     return <TestQuestionEditor testDef={editingQuestions} onBack={() => setEditingQuestions(null)} />
-  }
-
-  if (viewingResult) {
-    return <TestResultView assignment={viewingResult} onBack={() => setViewingResult(null)} />
   }
 
   if (previewing) {
@@ -6534,45 +6607,53 @@ create policy "Students complete own" on test_assignments
             const testDef = TEST_DEFINITIONS.find(t => t.id === a.test_id) || { label: a.test_id }
             const studentName = a.profiles?.name || a.profiles?.email || a.manual_students?.name || a.manual_students?.email || '—'
             const isCompleted = a.status === 'completed'
+            const isExpanded = expandedResultId === a.id
             return (
-              <div key={a.id} style={{ background: 'var(--bg-card)', border: `1px solid ${isCompleted ? '#c5dfa3' : 'var(--border)'}`, borderRadius: '8px', padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '160px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testDef.label}</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <span>👤 {studentName}</span>
-                    <span>📅 {new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                    {isCompleted && a.completed_at && (
-                      <span style={{ color: '#4a8a1a' }}>✓ Completed {new Date(a.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+              <div key={a.id} style={{ background: 'var(--bg-card)', border: `1px solid ${isExpanded ? '#a8c8e8' : isCompleted ? '#c5dfa3' : 'var(--border)'}`, borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '160px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testDef.label}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span>👤 {studentName}</span>
+                      <span>📅 {new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      {isCompleted && a.completed_at && (
+                        <span style={{ color: '#4a8a1a' }}>✓ Completed {new Date(a.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                      )}
+                      {isCompleted && a.results && (
+                        <span style={{ fontWeight: 600, color: '#2b72b5' }}>
+                          {a.results.level} ({a.results.cefr}) — {a.results.mcCorrect}/{a.results.mcTotal} correct
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                    {isCompleted && (
+                      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.7rem' }}
+                        onClick={() => setExpandedResultId(isExpanded ? null : a.id)}>
+                        {isExpanded ? '▲ Collapse' : '📊 View results'}
+                      </button>
                     )}
-                    {isCompleted && a.results && (
-                      <span style={{ fontWeight: 600, color: '#2b72b5' }}>
-                        {a.results.level} ({a.results.cefr}) — {a.results.mcCorrect}/{a.results.mcTotal} correct
-                      </span>
+                    {!isCompleted && (
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.3rem 0.5rem' }}>⏳ Pending</span>
+                    )}
+                    {deletingId === a.id ? (
+                      <>
+                        <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                          onClick={() => handleDelete(a.id)}>Confirm delete</button>
+                        <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                          onClick={() => setDeletingId(null)}>Cancel</button>
+                      </>
+                    ) : (
+                      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.6rem', color: '#e05c5c' }}
+                        onClick={() => setDeletingId(a.id)}>Delete</button>
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                  {isCompleted && (
-                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.7rem' }}
-                      onClick={() => setViewingResult(a)}>
-                      📊 View results
-                    </button>
-                  )}
-                  {!isCompleted && (
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.3rem 0.5rem' }}>⏳ Pending</span>
-                  )}
-                  {deletingId === a.id ? (
-                    <>
-                      <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem', color: '#e05c5c', borderColor: '#e05c5c' }}
-                        onClick={() => handleDelete(a.id)}>Confirm delete</button>
-                      <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
-                        onClick={() => setDeletingId(null)}>Cancel</button>
-                    </>
-                  ) : (
-                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.6rem', color: '#e05c5c' }}
-                      onClick={() => setDeletingId(a.id)}>Delete</button>
-                  )}
-                </div>
+                {isExpanded && (
+                  <div style={{ borderTop: '1px solid #d4e8f5', padding: '0 0.85rem 0.85rem' }}>
+                    <TestResultView assignment={a} onBack={() => setExpandedResultId(null)} backLabel="▲ Collapse results" />
+                  </div>
+                )}
               </div>
             )
           })}
@@ -6583,11 +6664,11 @@ create policy "Students complete own" on test_assignments
 }
 
 // ─── TestResultView (admin diagnostic display) ─────────────────
-export function TestResultView({ assignment, onBack }) {
+export function TestResultView({ assignment, onBack, backLabel = '← Back to tests' }) {
   const r = assignment.results
   if (!r) return (
     <div>
-      <button className="back-btn" onClick={onBack}>← Back to tests</button>
+      <button className="back-btn" onClick={onBack}>{backLabel}</button>
       <p style={{ color: 'var(--text-muted)' }}>No results data found.</p>
     </div>
   )
@@ -6639,7 +6720,7 @@ export function TestResultView({ assignment, onBack }) {
 
   return (
     <div>
-      <button className="back-btn" onClick={onBack}>← Back to tests</button>
+      <button className="back-btn" onClick={onBack}>{backLabel}</button>
 
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', gap:'1rem', marginTop:'1rem', marginBottom:'1.5rem', flexWrap:'wrap' }}>
@@ -7964,7 +8045,7 @@ export function AdminPanel({ user, onSignOut }) {
 
         {/* ── Exercise assignments ── */}
         {!adminOpenPlan && (
-          <AdminStudentExercises student={selected} onReview={openStudentReview} />
+          <AdminStudentExercises student={selected} onReview={openStudentReview} adminUserId={user?.id} />
         )}
 
         {/* ── Lessons (single entry point — plan opens from within a lesson) ── */}
