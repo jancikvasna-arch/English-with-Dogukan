@@ -29,6 +29,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyTestAssignments, createTestAssignment, fetchAllTestAssignments, submitTestResult, deleteTestAssignment,
   fetchTestAssignmentById, findManualStudentByEmail, transferTestAssignments,
   fetchSiteSetting, saveSiteSetting,
+  fetchAllCourses, createCourse, updateCourseRecord, deleteCourseRecord,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -323,6 +324,11 @@ export default function App() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  // Load courses cache from Supabase when user logs in
+  useEffect(() => {
+    if (user) loadAdminCoursesCache()
+  }, [user])
 
   const goTo = (p) => {
     setPageHistory(prev => [...prev, page])
@@ -6482,14 +6488,24 @@ const EXERCISE_LEVELS = [
   'Hospitality English',
 ]
 
+// Module-level courses cache — populated from Supabase on login
+let _adminCoursesCache = []
+
 function getAdminCourses() {
+  return _adminCoursesCache
+}
+
+async function loadAdminCoursesCache() {
   try {
-    const newData = localStorage.getItem('admin_courses_v1')
-    if (newData) return JSON.parse(newData)
-    const oldData = localStorage.getItem('admin_levels_v1')
-    if (oldData) return JSON.parse(oldData).map(l => ({ id: l.id, name: l.name }))
-    return []
-  } catch { return [] }
+    const courses = await fetchAllCourses()
+    _adminCoursesCache = courses
+  } catch {
+    // Fallback: keep localStorage data if Supabase unreachable
+    try {
+      const stored = localStorage.getItem('admin_courses_v1')
+      if (stored && _adminCoursesCache.length === 0) _adminCoursesCache = JSON.parse(stored)
+    } catch {}
+  }
 }
 
 function logRecentlyDeleted(type, id, title) {
@@ -12068,65 +12084,115 @@ function AdminCourses() {
 
 // ─── AdminLevels ──────────────────────────────────────────────
 function AdminLevels() {
-  const STORAGE_KEY = 'admin_courses_v1'
-  const [courses, setCourses] = useState(() => {
-    try {
-      const newData = localStorage.getItem('admin_courses_v1')
-      if (newData) return JSON.parse(newData)
-      const oldData = localStorage.getItem('admin_levels_v1')
-      if (oldData) {
-        const migrated = JSON.parse(oldData).map(l => ({ id: l.id, name: l.name, linked_book_ids: [] }))
-        localStorage.setItem('admin_courses_v1', JSON.stringify(migrated))
-        return migrated
-      }
-      return []
-    } catch { return [] }
-  })
+  const [courses, setCourses] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [courseError, setCourseError] = useState(null)
   const [newName, setNewName]     = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName]   = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [allBooks, setAllBooks]   = useState([])
   const [booksLoading, setBooksLoading] = useState(false)
-  const [selectedBookId, setSelectedBookId] = useState({}) // {courseId: bookId}
+  const [selectedBookId, setSelectedBookId] = useState({})
 
   const loadBooks = () => {
     setBooksLoading(true)
     fetchAllBooks().then(bks => { setAllBooks(bks); setBooksLoading(false) })
   }
 
-  useEffect(() => { loadBooks() }, [])
+  const refresh = async () => {
+    setLoading(true)
+    setCourseError(null)
+    try {
+      let fetched = await fetchAllCourses()
 
-  const persist = (next) => {
-    setCourses(next)
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
+      // One-time migration: if Supabase empty but localStorage has courses, import them
+      if (fetched.length === 0) {
+        try {
+          const stored = localStorage.getItem('admin_courses_v1') || localStorage.getItem('admin_levels_v1')
+          if (stored) {
+            const local = JSON.parse(stored)
+            if (local.length > 0) {
+              for (const c of local) {
+                try { await createCourse({ name: c.name, linkedBookIds: c.linked_book_ids || [] }) } catch {}
+              }
+              fetched = await fetchAllCourses()
+              localStorage.removeItem('admin_courses_v1')
+              localStorage.removeItem('admin_levels_v1')
+            }
+          }
+        } catch {}
+      }
+
+      setCourses(fetched)
+      _adminCoursesCache = fetched
+    } catch (e) {
+      setCourseError('Could not load courses: ' + (e.message || e))
+    }
+    setLoading(false)
   }
 
-  const addCourse = () => {
-    if (!newName.trim()) return
-    persist([...courses, { id: crypto.randomUUID(), name: newName.trim(), linked_book_ids: [] }])
-    setNewName('')
+  useEffect(() => { refresh(); loadBooks() }, [])
+
+  const handleAdd = async () => {
+    if (!newName.trim() || saving) return
+    setSaving(true); setCourseError(null)
+    try {
+      await createCourse({ name: newName.trim(), linkedBookIds: [] })
+      setNewName('')
+      await refresh()
+    } catch (e) { setCourseError('Failed to add course: ' + (e.message || e)) }
+    setSaving(false)
   }
 
-  const deleteCourse = (id) => persist(courses.filter(c => c.id !== id))
+  const handleDelete = async (id) => {
+    if (saving) return
+    setSaving(true); setCourseError(null)
+    try { await deleteCourseRecord(id); await refresh() }
+    catch (e) { setCourseError('Failed to delete: ' + (e.message || e)) }
+    setSaving(false)
+  }
+
   const startEdit = (c) => { setEditingId(c.id); setEditName(c.name) }
-  const saveEdit = (id) => {
-    persist(courses.map(c => c.id === id ? { ...c, name: editName } : c))
-    setEditingId(null)
+
+  const handleSaveEdit = async (id) => {
+    if (saving) return
+    setSaving(true); setCourseError(null)
+    const course = courses.find(c => c.id === id)
+    try {
+      await updateCourseRecord(id, { name: editName, linkedBookIds: course?.linked_book_ids || [] })
+      setEditingId(null)
+      await refresh()
+    } catch (e) { setCourseError('Failed to update: ' + (e.message || e)) }
+    setSaving(false)
   }
 
-  const linkBook = (cid) => {
+  const handleLinkBook = async (cid) => {
     const bid = selectedBookId[cid]
-    if (!bid) return
+    if (!bid || saving) return
     const course = courses.find(c => c.id === cid)
     const linked = course?.linked_book_ids || []
     if (linked.includes(bid)) return
-    persist(courses.map(c => c.id === cid ? { ...c, linked_book_ids: [...linked, bid] } : c))
-    setSelectedBookId(prev => ({ ...prev, [cid]: '' }))
+    setSaving(true); setCourseError(null)
+    try {
+      await updateCourseRecord(cid, { name: course.name, linkedBookIds: [...linked, bid] })
+      setSelectedBookId(prev => ({ ...prev, [cid]: '' }))
+      await refresh()
+    } catch (e) { setCourseError('Failed to link book: ' + (e.message || e)) }
+    setSaving(false)
   }
 
-  const unlinkBook = (cid, bid) => {
-    persist(courses.map(c => c.id === cid ? { ...c, linked_book_ids: (c.linked_book_ids || []).filter(id => id !== bid) } : c))
+  const handleUnlinkBook = async (cid, bid) => {
+    if (saving) return
+    const course = courses.find(c => c.id === cid)
+    const linked = (course?.linked_book_ids || []).filter(id => id !== bid)
+    setSaving(true); setCourseError(null)
+    try {
+      await updateCourseRecord(cid, { name: course.name, linkedBookIds: linked })
+      await refresh()
+    } catch (e) { setCourseError('Failed to unlink book: ' + (e.message || e)) }
+    setSaving(false)
   }
 
   const downloadBackup = () => {
@@ -12144,15 +12210,24 @@ function AdminLevels() {
     <div style={{ marginTop: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Courses</h3>
-        {courses.length > 0 && (
-          <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }} onClick={downloadBackup}>
-            ⬇ Download backup
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {saving && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Saving…</span>}
+          {courses.length > 0 && (
+            <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }} onClick={downloadBackup}>
+              ⬇ Download backup
+            </button>
+          )}
+        </div>
       </div>
       <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-        Define the courses you teach. Optionally link books from your Books tab to each course.
+        Courses are now saved to the cloud and work across all devices.
       </p>
+
+      {courseError && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.85rem', color: '#dc2626' }}>
+          {courseError}
+        </div>
+      )}
 
       {/* Add new course */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
@@ -12161,19 +12236,21 @@ function AdminLevels() {
           <div style={{ flex: 1 }}>
             <input type="text" placeholder="e.g. Elementary English"
               value={newName} onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addCourse()}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
               style={{ width: '100%' }} />
           </div>
           <button className="btn-gold" style={{ padding: '0.5rem 1.25rem', flexShrink: 0 }}
-            disabled={!newName.trim()} onClick={addCourse}>
+            disabled={!newName.trim() || saving} onClick={handleAdd}>
             Add course
           </button>
         </div>
       </div>
 
       {/* Course list */}
-      {courses.length === 0 ? (
-        <div className="dashboard-empty"><p>No courses yet.</p></div>
+      {loading ? (
+        <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>Loading courses…</p>
+      ) : courses.length === 0 ? (
+        <div className="dashboard-empty"><p>No courses yet. Add your first course above.</p></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           {courses.map(c => {
@@ -12187,19 +12264,20 @@ function AdminLevels() {
                 {editingId === c.id ? (
                   <div style={{ padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSaveEdit(c.id)}
                       style={{ flex: 1 }} autoFocus />
-                    <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => saveEdit(c.id)}>Save</button>
+                    <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} disabled={saving} onClick={() => handleSaveEdit(c.id)}>Save</button>
                     <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
                   </div>
                 ) : (
                   <div style={{ padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                     <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</span>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }}
-                      onClick={() => { if (!isExpanded) loadBooks(); setExpandedId(isExpanded ? null : c.id) }}>
+                      onClick={() => setExpandedId(isExpanded ? null : c.id)}>
                       📚 Books {linkedBooks.length > 0 ? `(${linkedBooks.length})` : ''} {isExpanded ? '▲' : '▼'}
                     </button>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }} onClick={() => startEdit(c)}>Edit</button>
-                    <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem', color: '#e05c5c' }} onClick={() => deleteCourse(c.id)}>Delete</button>
+                    <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem', color: '#e05c5c' }} disabled={saving} onClick={() => handleDelete(c.id)}>Delete</button>
                   </div>
                 )}
 
@@ -12214,7 +12292,7 @@ function AdminLevels() {
                           <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.75rem' }}>
                             <span style={{ flex: 1, fontWeight: 600, fontSize: '0.88rem' }}>📚 {b.title}</span>
                             <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: '#e05c5c' }}
-                              onClick={() => unlinkBook(c.id, b.id)}>Remove</button>
+                              disabled={saving} onClick={() => handleUnlinkBook(c.id, b.id)}>Remove</button>
                           </div>
                         ))}
                       </div>
@@ -12242,7 +12320,7 @@ function AdminLevels() {
                           {unlinkableBooks.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
                         </select>
                         <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.85rem', flexShrink: 0 }}
-                          disabled={!selectedBookId[c.id]} onClick={() => linkBook(c.id)}>
+                          disabled={!selectedBookId[c.id] || saving} onClick={() => handleLinkBook(c.id)}>
                           Link book
                         </button>
                       </div>

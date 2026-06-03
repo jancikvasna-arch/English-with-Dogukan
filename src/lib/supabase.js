@@ -1721,3 +1721,40 @@ export async function saveSiteSetting(key, value) {
   if (error) { console.error('[supabase] saveSiteSetting:', error); return false }
   return true
 }
+
+// ─── Courses ──────────────────────────────────────────────────
+export async function fetchAllCourses() {
+  if (!supabase) return []
+  const { data, error } = await supabase.from('courses').select('*').order('name')
+  if (error) { console.error('[supabase] fetchAllCourses:', error); return [] }
+  return data || []
+}
+
+export async function createCourse({ name, linkedBookIds = [] }) {
+  if (!supabase) throw new Error('No Supabase client')
+  const { data, error } = await supabase
+    .from('courses')
+    .insert({ name, linked_book_ids: linkedBookIds })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCourseRecord(id, { name, linkedBookIds }) {
+  if (!supabase) throw new Error('No Supabase client')
+  const { data, error } = await supabase
+    .from('courses')
+    .update({ name, linked_book_ids: linkedBookIds })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteCourseRecord(id) {
+  if (!supabase) throw new Error('No Supabase client')
+  const { error } = await supabase.from('courses').delete().eq('id', id)
+  if (error) throw error
+}
