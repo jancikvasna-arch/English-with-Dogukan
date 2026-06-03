@@ -406,17 +406,19 @@ export async function createExerciseWithQuestions({ title, description, course, 
   })
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
-  const rows = questions.map((q, i) => ({
-    exercise_id:    exerciseId,
-    order_index:    i + 1,
-    type:           q.type,
-    prompt:         q.prompt,
-    options:        q.options ?? null,
-    correct_answer: q.correct_answer || null,
-    hint:           q.hint           || null,
-  }))
-  const { error: qErr } = await supabase.from('questions').insert(rows)
-  if (qErr) { console.error('[supabase] createQuestions:', qErr); return null }
+  if (questions.length > 0) {
+    const rows = questions.map((q, i) => ({
+      exercise_id:    exerciseId,
+      order_index:    i + 1,
+      type:           q.type,
+      prompt:         q.prompt || null,
+      options:        (Array.isArray(q.options) && q.options.length > 0) ? q.options : null,
+      correct_answer: q.correct_answer || null,
+      hint:           q.hint           || null,
+    }))
+    const { error: qErr } = await supabase.from('questions').insert(rows)
+    if (qErr) { console.error('[supabase] createQuestions:', qErr); return { exerciseId, dbError: qErr.message } }
+  }
   return exerciseId
 }
 
@@ -471,13 +473,13 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
       exercise_id:    exerciseId,
       order_index:    i + 1,
       type:           q.type,
-      prompt:         q.prompt,
-      options:        q.options ?? null,
+      prompt:         q.prompt || null,
+      options:        (Array.isArray(q.options) && q.options.length > 0) ? q.options : null,
       correct_answer: q.correct_answer || null,
       hint:           q.hint           || null,
     }))
     const { error: qErr } = await supabase.from('questions').insert(rows)
-    if (qErr) { console.error('[supabase] updateQuestions:', qErr); return null }
+    if (qErr) { console.error('[supabase] updateQuestions:', qErr); return { exerciseId, dbError: qErr.message } }
   }
   return exerciseId
 }

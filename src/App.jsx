@@ -6670,16 +6670,21 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     const questionsToSave = isVerbal
       ? [{ type: selType, prompt: '', order_index: 0, options: [], correct_answer: null, hint: null }]
       : questions
-    const id = isEdit
+    const result = isEdit
       ? await updateExerciseWithQuestions(initialExercise.id, meta, questionsToSave)
       : await createExerciseWithQuestions(meta, questionsToSave)
-    if (id) {
+    // result is either an exerciseId string, or {exerciseId, dbError} if questions failed, or null
+    const id = typeof result === 'string' ? result : (result?.exerciseId ?? null)
+    const dbErr = typeof result === 'object' && result !== null ? result.dbError : null
+    if (id && !dbErr) {
       await setExerciseLabels(id, labelIds)
       setSaving(false)
       onSaved(id)
     } else {
       setSaving(false)
-      setSaveError('Something went wrong saving. Check your connection and try again.')
+      setSaveError(dbErr
+        ? `DB error saving questions: ${dbErr} — you may need to update the "questions" table type constraint in Supabase.`
+        : 'Something went wrong saving. Check your connection and try again.')
     }
   }
 
