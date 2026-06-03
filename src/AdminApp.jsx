@@ -1,6 +1,6 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
-import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
+import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignedPlansForStudent, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
 import { ADMIN_EMAIL, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
 import { COURSES_DATA } from './content'
 import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
@@ -1510,7 +1510,9 @@ export function RecentlyDeletedPanel({ type, onClose }) {
   )
 }
 
-export function AdminLessonPlans({ adminUserId }) {
+export function AdminLessonPlans({ adminUserId, studentScope = null }) {
+  // studentScope = { id, name, email, isManual } — when set, only plans for that
+  // student are shown, and the assign panel defaults to this student.
   const [exercises,      setExercises]      = useState([])
   const [plans,          setPlans]          = useState([])
   const [labels,         setLabels]         = useState([])
@@ -1550,11 +1552,19 @@ export function AdminLessonPlans({ adminUserId }) {
   const [apBulkDone,      setApBulkDone]      = useState([]) // track which student IDs succeeded
   const [apIsMulti,       setApIsMulti]       = useState(false) // toggle between single/multi mode
 
+  // Choose the plan-fetch strategy based on scope
+  const fetchScopedPlans = () => {
+    if (!studentScope) return fetchAllLessonPlans()
+    return studentScope.isManual
+      ? fetchPlansForManualStudentAdmin(studentScope.id)
+      : fetchAssignedPlansForStudent(studentScope.id)
+  }
+
   useEffect(() => {
     setLoading(true)
     Promise.all([
       fetchAllExercises(),
-      fetchAllLessonPlans(),
+      fetchScopedPlans(),
       fetchAllLabels(),
       fetchAllBooks(),
       fetchStudentsAdmin(),
@@ -1564,9 +1574,9 @@ export function AdminLessonPlans({ adminUserId }) {
       setBooks(bks); setAuthStudents(auths); setManualStudents(manuals)
       setLoading(false)
     })
-  }, [])
+  }, [studentScope?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const reloadAll = () => Promise.all([fetchAllExercises(), fetchAllLessonPlans()])
+  const reloadAll = () => Promise.all([fetchAllExercises(), fetchScopedPlans()])
     .then(([exs, pls]) => { setExercises(exs); setPlans(pls) })
 
   const handleAssignPlan = async (planId) => {
@@ -1583,6 +1593,7 @@ export function AdminLessonPlans({ adminUserId }) {
     setApSaving(false)
     if (ok === true) {
       setApDone(true)
+      if (studentScope) reloadAll()
       setTimeout(() => { setAssigningPlanId(null); setApDone(false); setApStudentId(''); setApNote(''); setApScheduledAt('') }, 2000)
     } else { setApError('Assignment failed: ' + (ok?.error || 'Unknown error — check the browser console for details.')) }
   }
@@ -1605,6 +1616,7 @@ export function AdminLessonPlans({ adminUserId }) {
     setApSaving(false)
     const succeeded = apMultiIds.filter((_, i) => results[i])
     setApBulkDone(succeeded)
+    if (studentScope) reloadAll()
     if (succeeded.length === apMultiIds.length) {
       setTimeout(() => { setAssigningPlanId(null); setApMultiIds([]); setApBulkDone([]); setApNote(''); setApScheduledAt('') }, 2000)
     }
@@ -1649,19 +1661,23 @@ export function AdminLessonPlans({ adminUserId }) {
   return (
     <div>
       <div className="admin-exercises-toolbar">
-        <h3 style={{ margin: 0 }}>Lesson Plans ({plans.length})</h3>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', position: 'relative' }}
-            onClick={() => setShowPlanFilters(p => !p)}>
-            🔽 Filters
-            {filterEnglishLevel && <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--gold)', color: '#fff', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 700, padding: '1px 5px', lineHeight: 1.4 }}>1</span>}
-          </button>
-          <button className="btn-gold" onClick={() => setView('create')}>+ Create plan</button>
-        </div>
+        <h3 style={{ margin: 0 }}>
+          {studentScope ? `Lesson Plans — ${studentScope.name || 'student'} (${plans.length})` : `Lesson Plans (${plans.length})`}
+        </h3>
+        {!studentScope && (
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', position: 'relative' }}
+              onClick={() => setShowPlanFilters(p => !p)}>
+              🔽 Filters
+              {filterEnglishLevel && <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--gold)', color: '#fff', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 700, padding: '1px 5px', lineHeight: 1.4 }}>1</span>}
+            </button>
+            <button className="btn-gold" onClick={() => setView('create')}>+ Create plan</button>
+          </div>
+        )}
       </div>
 
       {/* Draft in progress banner */}
-      {hasDraft && (
+      {!studentScope && hasDraft && (
         <div style={{
           background: 'linear-gradient(135deg, #fef9ec 0%, #fdf3d3 100%)',
           border: '1.5px solid var(--gold)', borderRadius: '10px',
@@ -1809,7 +1825,7 @@ export function AdminLessonPlans({ adminUserId }) {
       )}
 
       {loading ? <p>Loading…</p> : plans.length === 0 ? (
-        <div className="dashboard-empty"><p>No lesson plans yet.</p></div>
+        <div className="dashboard-empty"><p>{studentScope ? 'No lesson plans assigned to this student yet.' : 'No lesson plans yet.'}</p></div>
       ) : (() => {
         const filteredPlans = plans.filter(p =>
           (!filterEnglishLevel || p.english_level === filterEnglishLevel)
@@ -1852,7 +1868,7 @@ export function AdminLessonPlans({ adminUserId }) {
                     style={{ fontSize: '0.85rem', color: assigningPlanId === p.id ? undefined : 'var(--gold)', borderColor: assigningPlanId === p.id ? undefined : 'var(--gold)' }}
                     onClick={() => {
                       setAssigningPlanId(p.id === assigningPlanId ? null : p.id)
-                      setApStudentId(''); setApMode('homework'); setApNote(''); setApError(null); setApDone(false); setApMultiIds([]); setApBulkDone([])
+                      setApStudentId(studentScope ? studentScope.id : ''); setApMode('homework'); setApNote(''); setApError(null); setApDone(false); setApMultiIds([]); setApBulkDone([])
                     }}>
                     {assigningPlanId === p.id ? '✕ Cancel' : 'Assign →'}
                   </button>
@@ -1895,13 +1911,15 @@ export function AdminLessonPlans({ adminUserId }) {
       })()}
 
       {/* Recently Deleted button - bottom right */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-          onClick={() => setShowRecentlyDeleted(p => !p)}>
-          🗑 Recently Deleted
-        </button>
-      </div>
-      {showRecentlyDeleted && <RecentlyDeletedPanel type="lesson_plan" onClose={() => setShowRecentlyDeleted(false)} />}
+      {!studentScope && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+            onClick={() => setShowRecentlyDeleted(p => !p)}>
+            🗑 Recently Deleted
+          </button>
+        </div>
+      )}
+      {!studentScope && showRecentlyDeleted && <RecentlyDeletedPanel type="lesson_plan" onClose={() => setShowRecentlyDeleted(false)} />}
     </div>
   )
 }
@@ -7961,7 +7979,6 @@ export function AdminPanel({ user, onSignOut }) {
 
   // Manual student detail view
   if (selectedManual) {
-    const openManualPlan = (p) => { setAdminOpenPlan({ plan: p, studentId: null, studentName: selectedManual.name }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
     return (
       <div className="flow-card admin-detail">
         {adminOpenPlan ? (
@@ -8011,8 +8028,13 @@ export function AdminPanel({ user, onSignOut }) {
               </div>
             )}
 
-            {/* Lesson plans for this manual student */}
-            <AdminStudentPlans student={selectedManual} isManual={true} onOpenPlan={openManualPlan} />
+            {/* Lesson plans for this manual student (full plan rows with all actions) */}
+            <div className="admin-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+              <AdminLessonPlans
+                adminUserId={user.id}
+                studentScope={{ id: selectedManual.id, name: selectedManual.name || selectedManual.email, email: selectedManual.email, isManual: true }}
+              />
+            </div>
           </>
         )}
       </div>
@@ -8148,6 +8170,16 @@ export function AdminPanel({ user, onSignOut }) {
         {/* ── Exercise assignments ── */}
         {!adminOpenPlan && (
           <AdminStudentExercises student={selected} onReview={openStudentReview} adminUserId={user?.id} />
+        )}
+
+        {/* ── Assigned lesson plans (full plan rows: Teach / Assign / View / Edit / Duplicate / Delete) ── */}
+        {!adminOpenPlan && (
+          <div className="admin-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
+            <AdminLessonPlans
+              adminUserId={user.id}
+              studentScope={{ id: selected.id, name: selected.name || selected.email, email: selected.email, isManual: false }}
+            />
+          </div>
         )}
 
         {/* ── Lessons (single entry point — plan opens from within a lesson) ── */}

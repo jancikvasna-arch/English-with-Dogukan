@@ -1501,6 +1501,45 @@ export async function fetchPlansForManualStudentAdmin(manualStudentId) {
   return data ?? []
 }
 
+/**
+ * Fetch all lesson plans associated with an auth student — both directly-owned
+ * (lesson_plans.student_id) and assigned via assignLessonPlan (tracked in the
+ * lessons table). Returns the SAME shape as fetchAllLessonPlans so every plan
+ * action (Teach / View / Edit / Duplicate / Delete / Assign) works identically.
+ */
+export async function fetchAssignedPlansForStudent(studentId) {
+  if (!supabase || !studentId) return []
+
+  const PLAN_SELECT = `
+    id, title, description, created_at,
+    student_id, manual_student_id, lesson_aim, teaching_point, language_analysis, scheduled_at,
+    english_level, lesson_level,
+    profiles:student_id ( id, name, email, english_level ),
+    manual_students:manual_student_id ( id, name, email, english_level ),
+    lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes, exercises ( id, title, course ) ),
+    lesson_plan_exercises ( order_index, exercises ( id, title, course ) )
+  `
+
+  // Plan IDs assigned to this student via the lessons table
+  const { data: lessonRows } = await supabase
+    .from('lessons')
+    .select('lesson_plan_id')
+    .eq('student_id', studentId)
+    .not('lesson_plan_id', 'is', null)
+  const assignedIds = [...new Set((lessonRows || []).map(r => r.lesson_plan_id))]
+
+  const [ownedRes, assignedRes] = await Promise.all([
+    supabase.from('lesson_plans').select(PLAN_SELECT).eq('student_id', studentId),
+    assignedIds.length
+      ? supabase.from('lesson_plans').select(PLAN_SELECT).in('id', assignedIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const byId = new Map()
+  ;[...(ownedRes.data || []), ...(assignedRes.data || [])].forEach(p => byId.set(p.id, p))
+  return [...byId.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+}
+
 /** Upload a whiteboard PDF to Supabase Storage and update the lesson row. */
 export async function uploadLessonWhiteboard(lessonId, file) {
   if (!supabase) return null
