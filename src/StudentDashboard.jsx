@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { addVocabularyWord, checkAndAwardBadges, deleteVocabularyWord, fetchBadgeDefinitions, fetchExerciseWithQuestions, fetchMyAnswersForAssignment, fetchMyExercises, fetchMyLessons, fetchMyProfile, fetchMyReferralCode, fetchMyReferrals, fetchMyTestAssignments, fetchMyVocabulary, fetchNextLesson, fetchQuestionsForReview, fetchQuestionsForStudent, fetchStudentBadges, startLessonPlanExercise, supabase, updateMyName } from './lib/supabase'
 import { STAGE_TYPES } from './lib/shared'
-import { ExerciseDemoPlayer, ExercisePlayer, InlineExerciseContent, NotesSection, StudentSubmissionReview, TestPlayer } from './ExerciseComponents.jsx'
+import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, ExercisePlayer, InlineExerciseContent, NotesSection, StudentSubmissionReview, TestPlayer } from './ExerciseComponents.jsx'
 import { PlacementTestFrame } from './PublicPages.jsx'
 
 export const ACCESS_META = {
@@ -359,7 +359,9 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       const def        = stageTypeDef(stage.stage_type)
       const color      = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
       const isExpanded = activePlanExpanded.has(stage.id)
-      const hasContent = !!(exId)
+      const stageImages = Array.isArray(stage.content_images) ? stage.content_images : []
+      const hasStageContent = !!(stage.content_text || stage.audio_url || stageImages.length)
+      const hasContent = !!(exId || hasStageContent)
       return (
         <div key={stage.id} style={{
           background: isDone ? '#f0fdf4' : (isHomework ? '#fafaf8' : '#fff'),
@@ -422,15 +424,34 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
             </div>
           </div>
           {/* Expanded preview */}
-          {isExpanded && exId && (
+          {isExpanded && (
             <div style={{ borderTop: `1px solid ${isDone ? '#d1fae5' : '#f0ede6'}`, padding: '0.75rem 0.85rem' }}>
-              <InlineExerciseContent
-                exerciseId={exId}
-                exerciseCache={activePlanExCache}
-                loadingExercises={activePlanLoadingEx}
-                demoAnswers={activePlanDemoAns}
-                setDemoAnswers={setActivePlanDemoAns}
-              />
+              {exId ? (
+                <InlineExerciseContent
+                  exerciseId={exId}
+                  exerciseCache={activePlanExCache}
+                  loadingExercises={activePlanLoadingEx}
+                  demoAnswers={activePlanDemoAns}
+                  setDemoAnswers={setActivePlanDemoAns}
+                />
+              ) : hasStageContent ? (
+                <>
+                  {stage.audio_url && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <EmbeddedMedia url={stage.audio_url} label="🎧 Listen" />
+                    </div>
+                  )}
+                  {stage.content_text && (
+                    <div style={{ fontSize: '0.88rem', lineHeight: 1.65, marginBottom: stageImages.length ? '0.75rem' : 0 }}
+                      dangerouslySetInnerHTML={{ __html: stage.content_text }} />
+                  )}
+                  {stageImages.map((src, i) => (
+                    <div key={i} style={{ marginBottom: i < stageImages.length - 1 ? '0.75rem' : 0 }}>
+                      <AnnotatedImage src={src} />
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           )}
         </div>
