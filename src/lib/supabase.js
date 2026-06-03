@@ -413,7 +413,7 @@ export async function createExerciseWithQuestions({ title, description, course, 
       order_index:    i + 1,
       type:           q.type,
       prompt:         q.prompt || null,
-      options:        (Array.isArray(q.options) && q.options.length > 0) ? q.options : null,
+      options:        q.options == null ? null : (Array.isArray(q.options) && q.options.length === 0) ? null : q.options,
       correct_answer: q.correct_answer || null,
       hint:           q.hint           || null,
     }))
@@ -476,7 +476,7 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
       order_index:    i + 1,
       type:           q.type,
       prompt:         q.prompt || null,
-      options:        (Array.isArray(q.options) && q.options.length > 0) ? q.options : null,
+      options:        q.options == null ? null : (Array.isArray(q.options) && q.options.length === 0) ? null : q.options,
       correct_answer: q.correct_answer || null,
       hint:           q.hint           || null,
     }))
