@@ -382,7 +382,7 @@ export async function reviewWriting(resultId, notes) {
 // ─── Exercise Builder ─────────────────────────────────────────
 
 /** Create a new exercise with all its questions in one shot. */
-export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail }, questions) {
+export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level }, questions) {
   if (!supabase) return null
   const exerciseId = crypto.randomUUID()
   const { error: exErr } = await supabase.from('exercises').insert({
@@ -402,6 +402,7 @@ export async function createExerciseWithQuestions({ title, description, course, 
     section:           section        || null,
     exercise_no:       exerciseNo     || null,
     thumbnail:         thumbnail      || null,
+    level:             level          || null,
   })
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
@@ -442,7 +443,7 @@ export async function fetchExerciseWithQuestions(exerciseId) {
 }
 
 /** Update an existing exercise and replace all its questions. */
-export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail }, questions) {
+export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level }, questions) {
   if (!supabase) return null
   const { error: exErr } = await supabase.from('exercises').update({
     title,
@@ -458,6 +459,7 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
     section:           section        || null,
     exercise_no:       exerciseNo     || null,
     thumbnail:         thumbnail      || null,
+    level:             level          || null,
   }).eq('id', exerciseId)
   if (exErr) { console.error('[supabase] updateExercise:', exErr); return null }
 
@@ -480,6 +482,30 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
   return exerciseId
 }
 
+export async function updateExerciseLevel(exerciseId, level) {
+  if (!supabase || !exerciseId) return false
+  const { error } = await supabase.from('exercises').update({ level: level || null }).eq('id', exerciseId)
+  if (error) { console.error('[supabase] updateExerciseLevel:', error); return false }
+  return true
+}
+
+export async function updateLessonPlanLevel(planId, level) {
+  if (!supabase || !planId) return false
+  const { error } = await supabase.from('lesson_plans').update({ english_level: level || null }).eq('id', planId)
+  if (error) { console.error('[supabase] updateLessonPlanLevel:', error); return false }
+  return true
+}
+
+/** Update only the thumbnail field for an exercise (used from lesson plan builder). */
+export async function updateExerciseThumbnail(exerciseId, thumbnail) {
+  if (!supabase || !exerciseId) return false
+  const { error } = await supabase.from('exercises')
+    .update({ thumbnail: thumbnail || null })
+    .eq('id', exerciseId)
+  if (error) { console.error('[supabase] updateExerciseThumbnail:', error); return false }
+  return true
+}
+
 // ─── Lesson Plans ─────────────────────────────────────────────
 
 /** Fetch all lesson plans with stages + legacy exercises (admin). */
@@ -493,7 +519,7 @@ export async function fetchAllLessonPlans() {
       english_level, lesson_level,
       profiles:student_id ( id, name, email, english_level ),
       manual_students:manual_student_id ( id, name, email, english_level ),
-      lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, exercises ( id, title, course ) ),
+      lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes, exercises ( id, title, course ) ),
       lesson_plan_exercises ( order_index, exercises ( id, title, course ) )
     `)
     .order('created_at', { ascending: false })
@@ -665,7 +691,16 @@ export async function fetchMyLessons(userId) {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('lessons')
-    .select('*')
+    .select(`*,
+  lesson_plans:lesson_plan_id (
+    id, title, description,
+    lesson_stages (
+      id, order_index, stage_number, stage_name, stage_type, title,
+      duration_minutes, exercise_id, content_text, audio_url, content_images, section,
+      exercises ( id, title, description, audio_url, context_text, context_images, course )
+    )
+  )
+`)
     .eq('student_id', userId)
     .order('lesson_no', { ascending: true })
   if (error) { console.error('[supabase] fetchMyLessons:', error); return [] }
@@ -819,6 +854,7 @@ export async function duplicateLessonPlan(planId, createdBy) {
         content_images:   s.content_images,
         audio_url:        s.audio_url,
         section:          s.section || 'lesson',
+        teacher_notes:    s.teacher_notes || null,
       }))
     const { error: stageErr } = await supabase.from('lesson_stages').insert(stageRows)
     if (stageErr) { console.error('[supabase] duplicateLessonPlan stages:', stageErr); return null }
@@ -830,6 +866,8 @@ export async function duplicateLessonPlan(planId, createdBy) {
 /** Permanently delete a lesson plan (cascades to lesson_stages via FK). */
 export async function deleteLessonPlan(planId) {
   if (!supabase) return false
+  // Delete stages first to avoid FK constraint issues
+  await supabase.from('lesson_stages').delete().eq('lesson_plan_id', planId)
   const { error } = await supabase.from('lesson_plans').delete().eq('id', planId)
   if (error) { console.error('[supabase] deleteLessonPlan:', error); return false }
   return true
@@ -860,6 +898,7 @@ async function _saveStages(planId, stages) {
       content_images:   s.contentImages?.length ? s.contentImages : null,
       audio_url:        s.audioUrl     || null,
       section:          s.section      || 'lesson',
+      teacher_notes:    s.teacherNotes || null,
     }
   })
   const { error } = await supabase.from('lesson_stages').insert(rows)
@@ -944,11 +983,20 @@ export async function updateLessonPlan(planId, title, desc, exerciseIds) {
 }
 
 /** Assign all exercise stages in a lesson plan to a student.
- *  Uses lesson_stages (new builder) if present; falls back to lesson_plan_exercises. */
-export async function assignLessonPlan({ planId, studentId, assignedBy, mode, note }) {
+ *  Uses lesson_stages (new builder) if present; falls back to lesson_plan_exercises.
+ *  Also creates a lesson row so the plan appears in the student portal.
+ *  Pass skipLessonCreation=true when a lesson row already exists (e.g. linking from AdminStudentLessons). */
+export async function assignLessonPlan({ planId, studentId, assignedBy, mode, note, scheduledAt, skipLessonCreation = false }) {
   if (!supabase) return false
 
-  // Try new stage-based exercises first
+  // 1. Fetch plan title (for naming the lesson)
+  const { data: planData } = await supabase
+    .from('lesson_plans')
+    .select('title')
+    .eq('id', planId)
+    .maybeSingle()
+
+  // 2. Try new stage-based exercises first
   const { data: stages } = await supabase
     .from('lesson_stages')
     .select('exercise_id, order_index')
@@ -961,28 +1009,68 @@ export async function assignLessonPlan({ planId, studentId, assignedBy, mode, no
 
   if (!exerciseList) {
     // Fall back to legacy lesson_plan_exercises
-    const { data: planExs, error: peErr } = await supabase
+    const { data: planExs } = await supabase
       .from('lesson_plan_exercises')
       .select('exercise_id, order_index')
       .eq('lesson_plan_id', planId)
       .order('order_index')
-    if (peErr || !planExs?.length) {
-      console.error('[supabase] assignLessonPlan: no exercises found', peErr)
-      return false
-    }
-    exerciseList = planExs
+    if (planExs?.length) exerciseList = planExs
+    // No exercises is OK — plan may have only non-exercise stages
   }
 
-  const rows = exerciseList.map(pe => ({
-    exercise_id:    pe.exercise_id,
-    student_id:     studentId,
-    assigned_by:    assignedBy,
-    mode:           mode || 'homework',
-    note:           note || null,
-    lesson_plan_id: planId,
-  }))
-  const { error } = await supabase.from('exercise_assignments').insert(rows)
-  if (error) { console.error('[supabase] assignLessonPlan insert:', error); return false }
+  // 3. Create exercise_assignment rows (if exercises exist)
+  if (exerciseList?.length) {
+    const rows = exerciseList.map(pe => ({
+      exercise_id:    pe.exercise_id,
+      student_id:     studentId,
+      assigned_by:    assignedBy,
+      mode:           mode || 'homework',
+      note:           note || null,
+      lesson_plan_id: planId,
+      scheduled_at:   scheduledAt || null,
+    }))
+    const { error } = await supabase.from('exercise_assignments').insert(rows)
+    if (error) { console.error('[supabase] assignLessonPlan insert assignments:', error); return { error: error.message || error.code || 'Unknown error' } }
+  }
+
+  // 4. Create a lesson row so the plan shows up in the student portal
+  if (!skipLessonCreation) {
+    // Check if a lesson is already linked to this plan for this student
+    const { data: existingLesson } = await supabase
+      .from('lessons')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('lesson_plan_id', planId)
+      .limit(1)
+
+    if (!existingLesson?.length) {
+      // Calculate next lesson number for this student
+      const { data: lastLesson } = await supabase
+        .from('lessons')
+        .select('lesson_no')
+        .eq('student_id', studentId)
+        .order('lesson_no', { ascending: false })
+        .limit(1)
+      const nextNo = (lastLesson?.[0]?.lesson_no ?? 0) + 1
+
+      const { error: lessonErr } = await supabase
+        .from('lessons')
+        .insert({
+          student_id:     studentId,
+          lesson_plan_id: planId,
+          title:          planData?.title || null,
+          status:         'scheduled',
+          lesson_no:      nextNo,
+          created_by:     assignedBy,
+          scheduled_at:   scheduledAt || null,
+        })
+      if (lessonErr) {
+        console.error('[supabase] assignLessonPlan create lesson:', lessonErr)
+        // Don't fail the whole operation if lesson creation fails
+      }
+    }
+  }
+
   return true
 }
 
@@ -1065,7 +1153,7 @@ export async function fetchStudentLessonsAdmin(studentId) {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('lessons')
-    .select('id, lesson_no, title, scheduled_at, status, duration_minutes, student_feedback, teacher_notes, teacher_notes_public, created_at')
+    .select('id, lesson_no, title, scheduled_at, status, duration_minutes, student_feedback, teacher_notes, teacher_notes_public, created_at, lesson_plan_id, whiteboard_pdf_url, whiteboard_pdf_name, lesson_plans:lesson_plan_id ( id, title )')
     .eq('student_id', studentId)
     .order('created_at', { ascending: false })
   if (error) { console.error('[supabase] fetchStudentLessonsAdmin:', error); return [] }
@@ -1305,6 +1393,83 @@ export async function deleteNote(noteId) {
   return !error
 }
 
+// ─── Lesson Plan helpers (new) ────────────────────────────────
+
+/** Find or create an exercise_assignment for tracking completion of lesson plan exercises.
+ *  Returns the assignment row (new or existing), or null if RLS blocked the insert. */
+export async function startLessonPlanExercise(planId, exerciseId, studentId) {
+  if (!supabase) return null
+
+  // 1. Look for an existing assignment — use .limit(1) to handle duplicate rows gracefully
+  const { data: existingRows } = await supabase
+    .from('exercise_assignments')
+    .select('*')
+    .eq('exercise_id', exerciseId)
+    .eq('student_id', studentId)
+    .eq('lesson_plan_id', planId)
+    .order('assigned_at', { ascending: false })
+    .limit(1)
+  const existing = existingRows?.[0] ?? null
+  if (existing) return existing
+
+  // 2. Create a new tracking record (requires RLS policy: student insert own/via lesson)
+  const { data, error } = await supabase
+    .from('exercise_assignments')
+    .insert({ exercise_id: exerciseId, student_id: studentId, lesson_plan_id: planId, mode: 'in_class' })
+    .select()
+    .single()
+  if (error) {
+    console.error('[startLessonPlanExercise] INSERT failed — check RLS policy:', error.message ?? error)
+    return null
+  }
+  return data
+}
+
+/** Fetch lesson plans where student_id = studentId (for admin viewing a student's plans). */
+export async function fetchPlansForStudentAdmin(studentId) {
+  if (!supabase || !studentId) return []
+  const { data } = await supabase
+    .from('lesson_plans')
+    .select(`id, title, description, scheduled_at, english_level, lesson_level, created_at,
+      lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title,
+        duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
+        exercises ( id, title, description, audio_url, context_text, context_images ) )`)
+    .eq('student_id', studentId)
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
+/** Fetch lesson plans where manual_student_id = manualStudentId (for admin viewing a manual student's plans). */
+export async function fetchPlansForManualStudentAdmin(manualStudentId) {
+  if (!supabase || !manualStudentId) return []
+  const { data } = await supabase
+    .from('lesson_plans')
+    .select(`id, title, description, scheduled_at, english_level, lesson_level, created_at,
+      lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title,
+        duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
+        exercises ( id, title, description, audio_url, context_text, context_images ) )`)
+    .eq('manual_student_id', manualStudentId)
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
+/** Upload a whiteboard PDF to Supabase Storage and update the lesson row. */
+export async function uploadLessonWhiteboard(lessonId, file) {
+  if (!supabase) return null
+  const ext = file.name.split('.').pop()
+  const path = `whiteboards/${lessonId}.${ext}`
+  const { error: upErr } = await supabase.storage
+    .from('lesson-whiteboards')
+    .upload(path, file, { upsert: true })
+  if (upErr) { console.error('uploadLessonWhiteboard storage:', upErr); return null }
+  const { data: { publicUrl } } = supabase.storage.from('lesson-whiteboards').getPublicUrl(path)
+  const { error } = await supabase.from('lessons')
+    .update({ whiteboard_pdf_url: publicUrl, whiteboard_pdf_name: file.name })
+    .eq('id', lessonId)
+  if (error) { console.error('uploadLessonWhiteboard update:', error); return null }
+  return publicUrl
+}
+
 /** Fetch lesson plans assigned to the currently logged-in student.
  *  Returns the same shape as fetchAllLessonPlans so the viewer components are reusable.
  *  Each stage embeds a full exercise object (audio_url, context_text, context_images, etc.)
@@ -1313,17 +1478,227 @@ export async function fetchMyAssignedPlans() {
   if (!supabase) return []
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return []
-  const { data } = await supabase
+
+  const stagesSelect = `
+    lesson_stages (
+      id, order_index, stage_number, stage_name, stage_type, title,
+      duration_minutes, exercise_id, content_text, audio_url, content_images, section,
+      exercises ( id, title, description, audio_url, context_text, context_images, course )
+    )
+  `
+  const planSelect = `id, title, description, english_level, lesson_level, scheduled_at, created_at, ${stagesSelect}`
+
+  // 1. Plans directly assigned via student_id
+  const { data: directPlans } = await supabase
     .from('lesson_plans')
-    .select(`
-      id, title, description, english_level, lesson_level, scheduled_at, created_at,
-      lesson_stages (
-        id, order_index, stage_number, stage_name, stage_type, title,
-        duration_minutes, exercise_id, content_text, audio_url, content_images, section,
-        exercises ( id, title, description, audio_url, context_text, context_images, course )
-      )
-    `)
+    .select(planSelect)
     .eq('student_id', user.id)
     .order('created_at', { ascending: false })
+
+  // 2. Plans the student has exercise_assignments for (assigned via assignLessonPlan)
+  const { data: assignments } = await supabase
+    .from('exercise_assignments')
+    .select('lesson_plan_id')
+    .eq('student_id', user.id)
+    .not('lesson_plan_id', 'is', null)
+
+  const assignedPlanIds = [...new Set((assignments ?? []).map(a => a.lesson_plan_id))]
+  // Remove plans already fetched via direct student_id to avoid duplicates
+  const directIds = new Set((directPlans ?? []).map(p => p.id))
+  const extraIds = assignedPlanIds.filter(id => !directIds.has(id))
+
+  let extraPlans = []
+  if (extraIds.length > 0) {
+    const { data: ep } = await supabase
+      .from('lesson_plans')
+      .select(planSelect)
+      .in('id', extraIds)
+      .order('created_at', { ascending: false })
+    extraPlans = ep ?? []
+  }
+
+  // Merge: direct plans first (teacher explicitly created for this student), then extras
+  const all = [...(directPlans ?? []), ...extraPlans]
+  // Sort by scheduled_at desc, then created_at desc
+  all.sort((a, b) => {
+    const da = a.scheduled_at || a.created_at
+    const db = b.scheduled_at || b.created_at
+    return new Date(db) - new Date(da)
+  })
+  return all
+}
+
+/** Fetch assignment history for a plan (one entry per student+date). */
+export async function fetchPlanAssignmentHistory(planId) {
+  if (!supabase || !planId) return []
+  const { data } = await supabase
+    .from('exercise_assignments')
+    .select('student_id, lesson_plan_id, scheduled_at, assigned_at, profiles:student_id ( id, name, email ), manual_student_id')
+    .eq('lesson_plan_id', planId)
+    .not('student_id', 'is', null)
+    .order('scheduled_at', { ascending: false, nullsFirst: false })
+  if (!data) return []
+  // Deduplicate: one entry per (student_id, scheduled_at) pair
+  const seen = new Set()
+  return data.filter(row => {
+    const key = `${row.student_id}::${row.scheduled_at ?? row.assigned_at}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** Fetch all exercise_assignments for a specific student + plan (admin use: view student progress). */
+export async function fetchStudentPlanAssignments(studentId, planId, exerciseIds = []) {
+  if (!supabase || !studentId || !planId) return []
+
+  // Primary: fetch by lesson_plan_id (set on assignments created after the fix)
+  const { data: byPlan, error } = await supabase
+    .from('exercise_assignments')
+    .select('*, exercises(id, title)')
+    .eq('student_id', studentId)
+    .eq('lesson_plan_id', planId)
+  if (error) { console.error('[supabase] fetchStudentPlanAssignments:', error); return [] }
+  if (byPlan?.length) return byPlan
+
+  // Fallback: match by exercise_id for assignments created before lesson_plan_id was tracked
+  if (!exerciseIds.length) return []
+  const { data: byEx, error: err2 } = await supabase
+    .from('exercise_assignments')
+    .select('*, exercises(id, title)')
+    .eq('student_id', studentId)
+    .in('exercise_id', exerciseIds)
+  if (err2) { console.error('[supabase] fetchStudentPlanAssignments (fallback):', err2); return [] }
+  return byEx ?? []
+}
+
+/** Link or unlink a lesson plan to a lesson record. */
+export async function updateLessonPlanLink(lessonId, planId) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('lessons')
+    .update({ lesson_plan_id: planId || null })
+    .eq('id', lessonId)
+  if (error) { console.error('updateLessonPlanLink:', error); return false }
+  return true
+}
+
+// ─── Test Assignments ─────────────────────────────────────────
+
+export async function fetchAllTestAssignments() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('test_assignments')
+    .select('*, profiles(id, name, email), manual_students(id, name, email)')
+    .order('assigned_at', { ascending: false })
+  if (error) {
+    if (error.code === '42P01') return null // table doesn't exist yet → triggers setup UI
+    console.error('[supabase] fetchAllTestAssignments:', error)
+    return []
+  }
   return data ?? []
+}
+
+export async function fetchMyTestAssignments(studentId) {
+  if (!supabase || !studentId) return []
+  const { data, error } = await supabase
+    .from('test_assignments')
+    .select('*')
+    .eq('student_id', studentId)
+  if (error) {
+    if (error.code === '42P01') return []
+    console.error('[supabase] fetchMyTestAssignments:', error)
+    return []
+  }
+  return data ?? []
+}
+
+export async function createTestAssignment({ testId = 'general_placement_v1', studentId, manualStudentId, assignedBy }) {
+  if (!supabase) return null
+  const row = { test_id: testId, assigned_by: assignedBy, status: 'assigned' }
+  if (studentId)       row.student_id        = studentId
+  if (manualStudentId) row.manual_student_id  = manualStudentId
+  const { data, error } = await supabase.from('test_assignments').insert(row).select().single()
+  if (error) { console.error('[supabase] createTestAssignment:', error); return null }
+  return data
+}
+
+export async function submitTestResult(assignmentId, results) {
+  if (!supabase || !assignmentId) return false
+  const { error } = await supabase
+    .from('test_assignments')
+    .update({ status: 'completed', completed_at: new Date().toISOString(), results })
+    .eq('id', assignmentId)
+  if (error) { console.error('[supabase] submitTestResult:', error); return false }
+  return true
+}
+
+export async function deleteTestAssignment(id) {
+  if (!supabase || !id) return false
+  const { error } = await supabase.from('test_assignments').delete().eq('id', id)
+  if (error) { console.error('[supabase] deleteTestAssignment:', error); return false }
+  return true
+}
+
+export async function fetchTestAssignmentById(id) {
+  if (!supabase || !id) return null
+  const { data, error } = await supabase
+    .from('test_assignments')
+    .select('*, profiles(id, name, email), manual_students(id, name, email)')
+    .eq('id', id)
+    .single()
+  if (error) {
+    if (error.code === '42P01') return null
+    console.error('[supabase] fetchTestAssignmentById:', error)
+    return null
+  }
+  return data
+}
+
+export async function findManualStudentByEmail(email) {
+  if (!supabase || !email) return null
+  const { data, error } = await supabase
+    .from('manual_students')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle()
+  if (error) { console.error('[supabase] findManualStudentByEmail:', error); return null }
+  return data
+}
+
+/** Transfer test assignments from a manual_student to a real auth student (after invite accepted). */
+export async function transferTestAssignments(fromManualStudentId, toStudentId) {
+  if (!supabase || !fromManualStudentId || !toStudentId) return false
+  const { error } = await supabase
+    .from('test_assignments')
+    .update({ student_id: toStudentId, manual_student_id: null })
+    .eq('manual_student_id', fromManualStudentId)
+  if (error) { console.error('[supabase] transferTestAssignments:', error); return false }
+  return true
+}
+
+// ─── Site Settings (Courses etc.) ────────────────────────────
+
+export async function fetchSiteSetting(key) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle()
+  if (error) {
+    if (error.code === '42P01') return null
+    console.error('[supabase] fetchSiteSetting:', error)
+    return null
+  }
+  return data?.value ?? null
+}
+
+export async function saveSiteSetting(key, value) {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('site_settings')
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) { console.error('[supabase] saveSiteSetting:', error); return false }
+  return true
 }

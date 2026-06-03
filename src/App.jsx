@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Component } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, Component } from 'react'
 import './App.css'
 import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyExercises, fetchQuestionsForStudent, fetchQuestionsForReview,
@@ -21,8 +21,14 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyReferralCode, fetchMyReferrals, lookupReferralCode, logReferral,
   markDiscountApplied, fetchAllReferrals,
   createProspect, fetchAllProspects, updateProspectStatus,
-  fetchNotesForExercise, saveNote, deleteNote, fetchMyAssignedPlans,
+  fetchNotesForExercise, saveNote, deleteNote,
   deleteAssignment, deleteLesson, fetchAllUpcomingLessons, fetchLessonsInRange,
+  startLessonPlanExercise, fetchPlansForStudentAdmin, fetchPlansForManualStudentAdmin, uploadLessonWhiteboard,
+  fetchPlanAssignmentHistory, updateLessonPlanLink, fetchStudentPlanAssignments,
+  updateExerciseThumbnail, updateExerciseLevel, updateLessonPlanLevel,
+  fetchMyTestAssignments, createTestAssignment, fetchAllTestAssignments, submitTestResult, deleteTestAssignment,
+  fetchTestAssignmentById, findManualStudentByEmail, transferTestAssignments,
+  fetchSiteSetting, saveSiteSetting,
 } from './lib/supabase'
 import { ABOUT, HOW_IT_WORKS_STEPS, PRICING_PLANS, COURSES_DATA, WHATSAPP_NUMBER, TESTIMONIALS, FAQ_ITEMS } from './content'
 
@@ -293,6 +299,12 @@ export default function App() {
 
   const [page, setPage] = useState(initPage)
   const [pageHistory, setPageHistory] = useState([])
+  const [publicTestId, setPublicTestId] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('t') || null
+    } catch { return null }
+  })
   const [completedPath, setCompletedPath] = useState(null) // 'questionnaire' | 'consultation'
   const [studentData, setStudentData] = useState({})
   const [testAnswers, setTestAnswers] = useState({})
@@ -339,18 +351,36 @@ export default function App() {
     goTo('landing')
   }
 
+  if (publicTestId) {
+    return (
+      <div className="flow-wrapper">
+        <div className="flow-header">
+          <span className="flow-header-logo">English with Dogukan</span>
+        </div>
+        <div className="flow-content">
+          <div className="flow-card" style={{ maxWidth: '780px' }}>
+            <PublicTestPage
+              assignmentId={publicTestId}
+              onDone={() => setPublicTestId(null)}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (page !== 'landing') {
     return (
       <div className="flow-wrapper">
         <div className="flow-header">
           {page === 'admin' ? (
-            <span className="flow-header-logo">Admin Panel — English with Dogukan</span>
+            <span className="flow-header-logo flow-header-logo--admin">Admin Panel — English with Dogukan</span>
           ) : (
-            <button className="back-link" onClick={goBack}>
+            <button className="back-link" onClick={() => goTo('landing')}>
               ← English with Dogukan
             </button>
           )}
-          {user && page !== 'admin' && (
+          {user && page !== 'admin' && page !== 'dashboard' && page !== 'settings' && (
             <button className="back-link"
               onClick={() => goTo(user.email === ADMIN_EMAIL ? 'admin' : 'dashboard')}>
               My account →
@@ -445,6 +475,7 @@ export default function App() {
             <AuthPage
               studentData={{}}
               defaultMode="login"
+              showSteps={false}
               onSuccess={(newUser) => {
                 goTo(newUser.email === ADMIN_EMAIL ? 'admin' : 'dashboard')
               }}
@@ -764,6 +795,14 @@ function HowItWorks() {
 
 function Courses() {
   const [openModules, setOpenModules] = useState({})
+  const [coursesData, setCoursesData] = useState(COURSES_DATA)
+
+  useEffect(() => {
+    fetchSiteSetting('courses').then(data => {
+      if (Array.isArray(data) && data.length > 0) setCoursesData(data)
+    })
+  }, [])
+
   const toggle = (ci, mi) => {
     const key = `${ci}-${mi}`
     setOpenModules(prev => ({ ...prev, [key]: !prev[key] }))
@@ -775,7 +814,7 @@ function Courses() {
         <div className="section-label">What you'll learn</div>
         <h2 className="section-title">Courses</h2>
         <div className="courses-grid">
-          {COURSES_DATA.map((c, ci) => (
+          {coursesData.map((c, ci) => (
             <div key={c.name} className="course-card">
               <div className="course-tag" style={{ color: c.color }}>{c.tag}</div>
               <h3 className="course-name">{c.name}</h3>
@@ -1110,7 +1149,6 @@ function Footer() {
 function Start({ onQuestionnaire, onConsultation }) {
   return (
     <div className="flow-card">
-      <FlowSteps current={1} />
       <h2>Let's understand what you need</h2>
       <p className="flow-sub">
         Before I design your trial lesson, I need to know a little about you. You can either answer
@@ -1172,7 +1210,7 @@ function Questionnaire({ onSubmit, onBack }) {
 
   return (
     <div className="flow-card">
-      <FlowSteps current={1} />
+
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>About you</h2>
       <p className="flow-sub">
@@ -1260,7 +1298,7 @@ function ConsultationScreen({ onContinue, onBack }) {
 
   return (
     <div className="flow-card">
-      <FlowSteps current={1} />
+
       <button className="back-btn" onClick={onBack}>← Back</button>
       <h2>Book your free consultation</h2>
       <p className="flow-sub">
@@ -1313,21 +1351,29 @@ function PreTest({ completedPath, studentName, onTakeTest, onSkip }) {
     onSkip()
   }
 
+  if (!isQuestionnaire) {
+    // Consultation path: just show confirmation, no test offer
+    return (
+      <div className="flow-card" style={{ textAlign: 'center', padding: '2.5rem 2rem' }}>
+        <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>✅</div>
+        <h2 style={{ marginBottom: '0.5rem' }}>Your consultation is booked!</h2>
+        <p className="flow-sub" style={{ marginBottom: '1.75rem' }}>
+          Dogukan will be in touch to confirm your lesson time. See you soon!
+        </p>
+        <button className="btn-outline btn-full" onClick={onSkip}>
+          ← Back to home
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="flow-card pretest-card">
-      <FlowSteps current={2} />
+
       <div className="pretest-heading">
         <span className="confirmation-icon">✅</span>
-        <h2>
-          {isQuestionnaire
-            ? (studentName ? `Thanks, ${studentName}!` : "You're all set!")
-            : 'Your consultation is booked!'}
-        </h2>
-        <p className="flow-sub">
-          {isQuestionnaire
-            ? 'Dogukan has everything he needs. What would you like to do next?'
-            : 'Dogukan will design your lesson from your consultation. You can also take a quick placement test in the meantime — completely optional.'}
-        </p>
+        <h2>{studentName ? `Thanks, ${studentName}!` : "You're all set!"}</h2>
+        <p className="flow-sub">Dogukan has everything he needs. What would you like to do next?</p>
       </div>
       <div className="next-steps-grid">
         <div className="next-step-card next-step-primary">
@@ -1340,15 +1386,11 @@ function PreTest({ completedPath, studentName, onTakeTest, onSkip }) {
           </button>
         </div>
         <div className="next-step-card">
-          <div className="next-step-icon">{isQuestionnaire ? '📅' : '✓'}</div>
-          <h3>{isQuestionnaire ? 'Book my first lesson now' : "I'm all done"}</h3>
-          <p>
-            {isQuestionnaire
-              ? 'Skip the test and go straight to booking your free 60-minute first lesson with Dogukan.'
-              : "No test needed — Dogukan will assess your level naturally during your consultation call."}
-          </p>
-          <button className="btn-outline btn-full" onClick={isQuestionnaire ? handleBookLesson : onSkip}>
-            {isQuestionnaire ? 'Book my lesson →' : 'Back to home'}
+          <div className="next-step-icon">📅</div>
+          <h3>Book my first lesson now</h3>
+          <p>Skip the test and go straight to booking your free 60-minute first lesson with Dogukan.</p>
+          <button className="btn-outline btn-full" onClick={handleBookLesson}>
+            Book my lesson →
           </button>
         </div>
       </div>
@@ -1380,7 +1422,7 @@ function PlacementTest({ onSubmit, onBack }) {
 
   return (
     <div className="flow-card test-card">
-      <FlowSteps current={2} />
+
       <div className="test-header">
         <div className="test-progress-label">
           <span>{q.category}</span>
@@ -1613,7 +1655,7 @@ function Results({ results, completedPath, user, onBookLesson, onDone }) {
 
   return (
     <div className="flow-card">
-      <FlowSteps current={3} />
+
       <div className="results-header text-center">
         <div className="result-level-badge" style={{ borderColor: color, color }}>
           {results.level}
@@ -1690,7 +1732,7 @@ function Results({ results, completedPath, user, onBookLesson, onDone }) {
 }
 
 // ─── AuthPage ─────────────────────────────────────────────────
-function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
+function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup', showSteps = true }) {
   const [mode, setMode] = useState(defaultMode) // 'signup' | 'login'
   const [name, setName] = useState(studentData?.name || '')
   const [email, setEmail] = useState(studentData?.email || '')
@@ -1749,9 +1791,8 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
 
   return (
     <div className="flow-card">
-      <FlowSteps current={3} />
       <button className="back-btn" onClick={onBack}>← Back</button>
-      <h2>{mode === 'signup' ? 'Create your account' : 'Sign in'}</h2>
+      <h2>{mode === 'signup' ? 'Create your account' : 'Student Sign in'}</h2>
       <p className="flow-sub">
         {mode === 'signup'
           ? 'Your test results will be saved and you can book your free first lesson.'
@@ -1819,7 +1860,7 @@ function AuthPage({ studentData, onSuccess, onBack, defaultMode = 'signup' }) {
 
 // ─── Access level helpers ─────────────────────────────────────
 const ACCESS_META = {
-  pending:        { label: 'Awaiting approval',   color: '#94a3b8', desc: 'Dogukan will approve your account shortly.' },
+  pending:        { label: 'Awaiting activation',  color: '#94a3b8', desc: 'Book your free consultation to get started.' },
   test_approved:  { label: 'Placement test',       color: '#a78bfa', desc: 'Take your placement test below to get started.' },
   trial:          { label: 'Trial access',         color: '#60a5fa', desc: 'You have full access during your trial.' },
   pay_per_lesson: { label: 'Pay per lesson',       color: '#4ade80', desc: 'Active — book your next lesson anytime.' },
@@ -1854,6 +1895,386 @@ function getWeeklyProgress(assignments) {
   return weeks
 }
 
+// ─── AnnotatedImage ──────────────────────────────────────────
+// Wraps an image with an SVG overlay for drawing circles/ovals.
+// Annotations are session-only (not persisted).
+function AnnotatedImage({ src, alt = '' }) {
+  const wrapRef = useRef(null)
+  const [annotations, setAnnotations] = useState([]) // [{cx,cy,rx,ry} in %]
+  const [drawing, setDrawing] = useState(null)       // {sx,sy} start of current drag
+  const [mode, setMode] = useState(false)            // true = drawing mode active
+
+  const pct = (e) => {
+    const r = wrapRef.current.getBoundingClientRect()
+    return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 }
+  }
+
+  const onDown = (e) => {
+    if (!mode || e.button !== 0) return
+    e.preventDefault()
+    const p = pct(e)
+    setDrawing({ sx: p.x, sy: p.y, cx: p.x, cy: p.y })
+  }
+  const onMove = (e) => {
+    if (!drawing) return
+    const p = pct(e)
+    setDrawing(d => ({ ...d, cx: p.x, cy: p.y }))
+  }
+  const onUp = (e) => {
+    if (!drawing) return
+    const rx = Math.abs(drawing.cx - drawing.sx) / 2
+    const ry = Math.abs(drawing.cy - drawing.sy) / 2
+    if (rx > 0.5 && ry > 0.5) {
+      const cx = (drawing.sx + drawing.cx) / 2
+      const cy = (drawing.sy + drawing.cy) / 2
+      setAnnotations(prev => [...prev, { cx, cy, rx, ry }])
+    }
+    setDrawing(null)
+  }
+
+  const previewEllipse = drawing ? {
+    cx: (drawing.sx + drawing.cx) / 2,
+    cy: (drawing.sy + drawing.cy) / 2,
+    rx: Math.abs(drawing.cx - drawing.sx) / 2,
+    ry: Math.abs(drawing.cy - drawing.sy) / 2,
+  } : null
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.3rem', alignItems: 'center' }}>
+        <button type="button" onClick={() => setMode(m => !m)}
+          style={{ fontSize: '0.75rem', padding: '0.22rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
+            border: `1.5px solid ${mode ? '#dc2626' : 'var(--border)'}`,
+            background: mode ? '#fee2e2' : 'var(--bg-card)', color: mode ? '#dc2626' : 'var(--text-muted)',
+            fontFamily: 'inherit' }}>
+          {mode ? '⭕ Drawing — click to stop' : '⭕ Draw circle'}
+        </button>
+        {annotations.length > 0 && (
+          <button type="button" onClick={() => setAnnotations([])}
+            style={{ fontSize: '0.75rem', padding: '0.22rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
+              border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>
+            ✕ Clear all
+          </button>
+        )}
+      </div>
+      {/* Image + SVG overlay */}
+      <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block', maxWidth: '100%',
+        cursor: mode ? 'crosshair' : 'default' }}
+        onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={() => setDrawing(null)}>
+        <img src={src} alt={alt} style={{ display: 'block', maxWidth: '100%', userSelect: 'none' }} draggable={false} />
+        <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: mode ? 'none' : 'all' }}>
+          {annotations.map((a, i) => (
+            <ellipse key={i} cx={`${a.cx}%`} cy={`${a.cy}%`} rx={`${a.rx}%`} ry={`${a.ry}%`}
+              fill="none" stroke="#dc2626" strokeWidth="2.5"
+              style={{ cursor: 'pointer' }}
+              onClick={() => !mode && setAnnotations(prev => prev.filter((_, j) => j !== i))} />
+          ))}
+          {previewEllipse && (
+            <ellipse cx={`${previewEllipse.cx}%`} cy={`${previewEllipse.cy}%`}
+              rx={`${previewEllipse.rx}%`} ry={`${previewEllipse.ry}%`}
+              fill="none" stroke="#dc2626" strokeWidth="2.5" strokeDasharray="6 3" />
+          )}
+        </svg>
+      </div>
+    </div>
+  )
+}
+
+// ─── TestPlayer ───────────────────────────────────────────────
+// Renders a placement test in an iframe. Intercepts the submit postMessage,
+// saves results to Supabase, then shows a green checkmark confirmation.
+function TestPlayer({ assignment, studentId, onDone }) {
+  const [testHtml,   setTestHtml]   = useState(null)
+  const [submitted,  setSubmitted]  = useState(false)
+  const [saving,     setSaving]     = useState(false)
+
+  useEffect(() => {
+    const htmlFile = assignment?.test_id === 'hospitality_placement_v1'
+      ? '/tests/hospitality_placement_v1.html'
+      : '/tests/general_placement_v1.html'
+    const testId = assignment?.test_id || 'general_placement_v1'
+    fetch(htmlFile)
+      .then(r => r.text())
+      .then(html => {
+        // Inject current (possibly edited) questions as override
+        const currentQ = getEffectiveQuestions(testId)
+        const varName = testId === 'hospitality_placement_v1' ? '__eph_questions' : '__ept_questions'
+        const injected = `<script>window.${varName} = ${JSON.stringify(currentQ)};</script>\n` + html
+        setTestHtml(injected)
+      })
+      .catch(() => setTestHtml(null))
+  }, [])
+
+  useEffect(() => {
+    if (!assignment) return
+    const handler = async (e) => {
+      if (!e.data || e.data.type !== 'ept_submit') return
+      setSaving(true)
+      await submitTestResult(assignment.id, e.data.results)
+      setSaving(false)
+      setSubmitted(true)
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [assignment])
+
+  if (submitted) {
+    return (
+      <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
+        <div style={{ fontSize: '4rem', marginBottom: '1.25rem' }}>✅</div>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.75rem' }}>Test completed!</h2>
+        <p style={{ fontSize: '1rem', color: 'var(--text-muted)', lineHeight: 1.7, maxWidth: '440px', margin: '0 auto 1.5rem' }}>
+          Your answers have been submitted. Your results will be evaluated and I will get back to you shortly.
+        </p>
+        <button className="btn-gold" style={{ padding: '0.6rem 1.5rem' }} onClick={onDone}>
+          ← Back to dashboard
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem', padding: '0.5rem 0' }}>
+        <button className="back-btn" onClick={onDone}>← Back</button>
+        {saving && <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Saving results…</span>}
+      </div>
+      {!testHtml ? (
+        <div className="dashboard-loading">Loading test…</div>
+      ) : (
+        <iframe
+          srcDoc={testHtml}
+          title="English Placement Test"
+          style={{ width: '100%', border: 'none', minHeight: '750px', display: 'block' }}
+          sandbox="allow-scripts"
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── PublicTestPage ───────────────────────────────────────────
+// Public test page accessible via ?t=ASSIGNMENT_ID — no login required.
+function PublicTestPage({ assignmentId, onDone }) {
+  const [assignment, setAssignment] = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [notFound,   setNotFound]   = useState(false)
+  const [submitted,  setSubmitted]  = useState(false)
+  const [testHtml,   setTestHtml]   = useState(null)
+
+  useEffect(() => {
+    fetchTestAssignmentById(assignmentId).then(a => {
+      if (!a) { setNotFound(true); setLoading(false); return }
+      if (a.status === 'completed') { setSubmitted(true); setLoading(false); return }
+      setAssignment(a)
+      setLoading(false)
+    })
+  }, [assignmentId])
+
+  useEffect(() => {
+    if (!assignment) return
+    const htmlFile = assignment.test_id === 'hospitality_placement_v1'
+      ? '/tests/hospitality_placement_v1.html'
+      : '/tests/general_placement_v1.html'
+    const testId = assignment.test_id || 'general_placement_v1'
+    fetch(htmlFile)
+      .then(r => r.text())
+      .then(html => {
+        const currentQ = getEffectiveQuestions(testId)
+        const varName = testId === 'hospitality_placement_v1' ? '__eph_questions' : '__ept_questions'
+        const injected = `<script>window.${varName} = ${JSON.stringify(currentQ)};</script>\n` + html
+        setTestHtml(injected)
+      })
+  }, [assignment])
+
+  useEffect(() => {
+    if (!assignment) return
+    const handler = async (e) => {
+      if (!e.data || e.data.type !== 'ept_submit') return
+      await submitTestResult(assignment.id, e.data.results)
+      setSubmitted(true)
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [assignment])
+
+  if (loading) return <div className="dashboard-loading">Loading your test…</div>
+
+  if (notFound) return (
+    <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>❌</div>
+      <h2 style={{ marginBottom: '0.5rem' }}>Test not found</h2>
+      <p style={{ color: 'var(--text-muted)' }}>This test link is invalid or has expired. Please contact your teacher.</p>
+    </div>
+  )
+
+  if (submitted) return (
+    <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
+      <div style={{ fontSize: '4rem', marginBottom: '1.25rem' }}>✅</div>
+      <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.75rem' }}>Test completed!</h2>
+      <p style={{ fontSize: '1rem', color: 'var(--text-muted)', lineHeight: 1.7, maxWidth: '440px', margin: '0 auto' }}>
+        Your answers have been submitted. Your results will be evaluated and Dogukan will get back to you shortly.
+      </p>
+    </div>
+  )
+
+  const testDef = TEST_DEFINITIONS.find(t => t.id === assignment.test_id) || TEST_DEFINITIONS[0]
+  const studentName = assignment.manual_students?.name || assignment.profiles?.name
+
+  return (
+    <div>
+      <div style={{ marginBottom: '1rem' }}>
+        <h2 style={{ margin: '0 0 0.25rem', fontSize: '1.2rem' }}>{testDef.label}</h2>
+        {studentName && <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>For: {studentName}</p>}
+      </div>
+      {!testHtml ? (
+        <div className="dashboard-loading">Loading test…</div>
+      ) : (
+        <iframe
+          srcDoc={testHtml}
+          title={testDef.label}
+          style={{ width: '100%', border: 'none', minHeight: '750px', display: 'block' }}
+          sandbox="allow-scripts"
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── InlineExerciseContent ────────────────────────────────────
+// Renders exercise audio / context / questions inline inside a
+// collapsible stage card.  Used in LessonPlanView + student plan view.
+function InlineExerciseContent({ exerciseId, exerciseCache, loadingExercises, demoAnswers, setDemoAnswers }) {
+  if (!exerciseId) return null
+  if (loadingExercises) {
+    return <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontStyle: 'italic', margin: '0.5rem 0 0' }}>Loading exercise…</p>
+  }
+  const cached = exerciseCache[exerciseId]
+  if (!cached) return null
+
+  const questions  = cached.questions ?? []
+  const answers    = demoAnswers[exerciseId] || {}
+  const setAns     = (qId, val) => setDemoAnswers(prev => ({ ...prev, [exerciseId]: { ...(prev[exerciseId] || {}), [qId]: val } }))
+  const resetAns   = () => setDemoAnswers(prev => ({ ...prev, [exerciseId]: {} }))
+  const hasInteractive = questions.some(q => !['listening', 'viewing', 'speaking'].includes(q.type))
+
+  const typeLabel = (t) =>
+    t === 'multiple_choice' ? 'Multiple choice'
+    : t === 'fill_blank'    ? 'Fill in the blank'
+    : t === 'true_false'    ? 'True / False'
+    : t === 'matching'      ? 'Matching'
+    : t === 'word_choice'   ? 'Word choice'
+    : t === 'listening'     ? 'Listening'
+    : t === 'viewing'       ? 'Viewing'
+    : t === 'speaking'      ? 'Speaking'
+    : 'Written answer'
+
+  return (
+    <div>
+      {cached.description && (
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>{cached.description}</p>
+      )}
+      {cached.audio_url && (
+        <div style={{ marginBottom: '0.5rem' }}>
+          <EmbeddedMedia url={cached.audio_url} label="🎧 Listen" />
+        </div>
+      )}
+      {cached.context_text && (
+        <div className="exercise-context-text" style={{ marginBottom: '0.5rem' }}>
+          <p className="exercise-context-label">📖 Read this first</p>
+          <div className="exercise-context-passage">{cached.context_text}</div>
+        </div>
+      )}
+      {cached.context_images?.length > 0 && !(
+        questions.length > 0 && questions[0].type === 'fill_blank' && parseOverlayPrompt(questions[0].prompt)
+      ) && (
+        <div className="exercise-context-images" style={{ marginBottom: '0.5rem' }}>
+          {cached.context_images.map((src, i) => (
+            <AnnotatedImage key={i} src={src} alt={`Ref ${i + 1}`} />
+          ))}
+        </div>
+      )}
+      {questions.length === 0 && (
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontStyle: 'italic' }}>No questions.</p>
+      )}
+      <div className="exercise-questions" style={{ marginTop: '0.25rem' }}>
+        {questions.map((q, idx) => {
+          if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') {
+            return (
+              <div key={q.id} style={{ padding: '0.35rem 0', fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                {q.type === 'listening' ? '🎧 Listening' : q.type === 'viewing' ? '🎥 Viewing' : '🎙️ Speaking'} activity
+              </div>
+            )
+          }
+          if (q.type === 'fill_blank') {
+            const overlay = parseOverlayPrompt(q.prompt)
+            return (
+              <div key={q.id} className="exercise-fill-block">
+                {q.hint && <p className="eq-hint" style={{ marginBottom: '0.4rem' }}>💡 {q.hint}</p>}
+                {overlay && cached.context_images?.[0] ? (
+                  <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks}
+                    answers={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
+                ) : (
+                  <InlineFillBlank prompt={q.prompt} answer={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
+                )}
+              </div>
+            )
+          }
+          return (
+            <div key={q.id} className="exercise-question">
+              <div className="eq-label">
+                <span className="eq-num">Q{idx + 1}</span>
+                <span className="eq-type">{typeLabel(q.type)}</span>
+              </div>
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && (
+                <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />
+              )}
+              {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
+              {q.type === 'multiple_choice' && (
+                <div className="options-list">
+                  {(q.options || []).map(opt => (
+                    <button key={opt} className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
+                      onClick={() => setAns(q.id, opt)}>{opt}</button>
+                  ))}
+                </div>
+              )}
+              {q.type === 'true_false' && (
+                <div className="options-list" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+                  {['True', 'False'].map(opt => (
+                    <button key={opt} className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
+                      style={{ flex: 1, textAlign: 'center' }}
+                      onClick={() => setAns(q.id, opt)}>
+                      {opt === 'True' ? '✓ True' : '✗ False'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {q.type === 'matching' && (
+                <MatchingQuestion pairs={q.options || []} answer={answers[q.id] || null}
+                  onChange={val => setAns(q.id, val)} />
+              )}
+              {q.type === 'free_text' && (
+                <textarea className="writing-input" rows={3}
+                  placeholder={q.hint || 'Write answer here…'}
+                  value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} />
+              )}
+              {q.type === 'word_choice' && (
+                <WordChoiceQuestion template={q.prompt} answer={answers[q.id] || null}
+                  onChange={val => setAns(q.id, val)} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {hasInteractive && (
+        <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.2rem 0.55rem', marginTop: '0.25rem' }}
+          onClick={resetAns}>↺ Reset answers</button>
+      )}
+    </div>
+  )
+}
+
 // ─── StudentDashboard ─────────────────────────────────────────
 function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [profile,     setProfile]     = useState(null)
@@ -1879,11 +2300,19 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   const [takingTest,    setTakingTest]    = useState(false)
   const [testDoneData,  setTestDoneData]  = useState(null) // payload from postMessage
 
-  // Lesson plans assigned to this student (full plan view with notes)
-  const [myPlans,             setMyPlans]             = useState([])
-  const [activePlan,          setActivePlan]          = useState(null) // plan object
-  const [activePlanExercise,  setActivePlanExercise]  = useState(null) // { exercise, questions }
-  const [loadingPlanExId,     setLoadingPlanExId]     = useState(null)
+  // Active lesson plan (nested inside a lesson record)
+  const [activePlan,            setActivePlan]            = useState(null) // plan object
+  const [activePlanExercise,    setActivePlanExercise]    = useState(null) // { exercise, questions }
+  const [loadingPlanExId,       setLoadingPlanExId]       = useState(null)
+  const [viewingPlanSubmission, setViewingPlanSubmission] = useState(null) // {assignment,questions,answerMap}
+  const [loadingViewPlanExId,   setLoadingViewPlanExId]   = useState(null)
+  // Inline exercise preview in the plan stage list
+  const [activePlanExCache,     setActivePlanExCache]     = useState({}) // exerciseId → full exercise obj
+  const [activePlanLoadingEx,   setActivePlanLoadingEx]   = useState(false)
+  const [activePlanExpanded,    setActivePlanExpanded]    = useState(new Set()) // expanded stage IDs
+  const [activePlanDemoAns,     setActivePlanDemoAns]     = useState({}) // exerciseId → { qId → val }
+  const [myTestAssignments, setMyTestAssignments] = useState([])
+  const [activeTest,        setActiveTest]        = useState(null) // assignment obj
 
   useEffect(() => {
     if (!supabase || !user) { setLoading(false); return }
@@ -1899,8 +2328,7 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       fetchMyVocabulary(user.id),
       fetchMyReferralCode(user.id),
       fetchMyReferrals(user.id),
-      fetchMyAssignedPlans(),
-    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab, refCode, refs, plans]) => {
+    ]).then(([prof, { data: res }, exs, lsns, nextL, defs, earned, vocab, refCode, refs]) => {
       setProfile(prof)
       setResult(res)
       setAssignments(exs)
@@ -1911,10 +2339,40 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
       setVocabulary(vocab)
       setReferralCode(refCode)
       setMyReferrals(refs)
-      setMyPlans(plans)
       setLoading(false)
     })
   }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    fetchMyTestAssignments(user.id).then(setMyTestAssignments)
+  }, [user?.id])
+
+  // Pre-fetch full exercise data (with questions) whenever a plan is opened
+  useEffect(() => {
+    if (!activePlan) return
+    const ids = [...new Set(
+      (activePlan.lesson_stages ?? []).map(s => s.exercises?.id || s.exercise_id).filter(Boolean)
+    )]
+    if (!ids.length) return
+    setActivePlanLoadingEx(true)
+    setActivePlanExpanded(new Set()) // collapse all when switching plans
+    setActivePlanDemoAns({})
+    Promise.all(ids.map(id => fetchExerciseWithQuestions(id))).then(results => {
+      const cache = {}
+      results.forEach(ex => { if (ex) cache[ex.id] = ex })
+      setActivePlanExCache(cache)
+      setActivePlanLoadingEx(false)
+    })
+  }, [activePlan?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const togglePlanStage = (stageId) =>
+    setActivePlanExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(stageId)) next.delete(stageId)
+      else next.add(stageId)
+      return next
+    })
 
   const openExercise = async (assignment) => {
     const qs = await fetchQuestionsForStudent(assignment.exercises.id)
@@ -1947,11 +2405,48 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     if (ok) setVocabulary(prev => prev.filter(v => v.id !== id))
   }
 
-  const openPlanExercise = async (exerciseId) => {
+  const handleDownloadVocab = () => {
+    if (!vocabulary.length) return
+    const name = profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || 'vocabulary'
+    const lines = [
+      'Word\tDefinition',
+      ...vocabulary.map(v => `${v.word}\t${v.definition || ''}`)
+    ]
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}-vocabulary.tsv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const openPlanExercise = async (planId, exerciseId) => {
     setLoadingPlanExId(exerciseId)
-    const full = await fetchExerciseWithQuestions(exerciseId)
+    const [full, assignment] = await Promise.all([
+      fetchExerciseWithQuestions(exerciseId),
+      startLessonPlanExercise(planId, exerciseId, user.id),
+    ])
     setLoadingPlanExId(null)
-    if (full) setActivePlanExercise(full)
+    if (full) {
+      setActivePlanExercise({ exercise: full, assignment })
+    }
+  }
+
+  const openPlanSubmission = async (exerciseId) => {
+    const planAssignments = assignments.filter(a => a.lesson_plan_id === activePlan?.id)
+    const asgn = planAssignments.find(a => (a.exercises?.id === exerciseId || a.exercise_id === exerciseId) && a.status === 'submitted')
+    if (!asgn) return
+    setLoadingViewPlanExId(exerciseId)
+    const [qs, ans] = await Promise.all([
+      fetchQuestionsForReview(exerciseId),
+      fetchMyAnswersForAssignment(asgn.id),
+    ])
+    setLoadingViewPlanExId(null)
+    const answerMap = Object.fromEntries(ans.map(sa => [sa.question_id, sa]))
+    setViewingPlanSubmission({ assignment: asgn, questions: qs, answerMap })
   }
 
   if (viewingSubmission) {
@@ -1988,13 +2483,47 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     )
   }
 
+  // Student: viewing a completed plan exercise submission (read-only)
+  if (activePlan && viewingPlanSubmission) {
+    return (
+      <StudentSubmissionReview
+        assignment={viewingPlanSubmission.assignment}
+        questions={viewingPlanSubmission.questions ?? []}
+        answerMap={viewingPlanSubmission.answerMap}
+        onBack={() => setViewingPlanSubmission(null)}
+        backLabel="← Back to lesson"
+      />
+    )
+  }
+
   // Student: viewing an exercise inside a lesson plan (with notes)
   if (activePlan && activePlanExercise) {
+    const { exercise: planEx, assignment: planAssignment } = activePlanExercise
+    if (planAssignment) {
+      return (
+        <ExercisePlayer
+          assignment={{ ...planAssignment, exercises: planEx }}
+          questions={planEx?.questions ?? []}
+          studentId={user.id}
+          onBack={() => setActivePlanExercise(null)}
+          onSubmitted={(id) => {
+            // Update existing assignment if present, otherwise add it to state so isDone check works
+            setAssignments(prev => {
+              const exists = prev.some(a => a.id === id)
+              if (exists) return prev.map(a => a.id === id ? { ...a, status: 'submitted' } : a)
+              return [...prev, { ...planAssignment, exercises: planEx, status: 'submitted', submitted_at: new Date().toISOString() }]
+            })
+            setActivePlanExercise(null)
+          }}
+        />
+      )
+    }
+    // Fallback: show demo if no assignment (shouldn't normally happen)
     return (
       <div className="flow-card dashboard-card">
         <ExerciseDemoPlayer
-          exercise={activePlanExercise}
-          questions={activePlanExercise.questions ?? []}
+          exercise={planEx}
+          questions={planEx?.questions ?? []}
           embedded={true}
           onBack={() => setActivePlanExercise(null)}
           lessonPlanId={activePlan.id}
@@ -2005,93 +2534,208 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     )
   }
 
+  // Student: taking a test
+  if (activeTest) {
+    return (
+      <div>
+        <TestPlayer
+          assignment={activeTest}
+          studentId={user.id}
+          onDone={() => {
+            setActiveTest(null)
+            fetchMyTestAssignments(user.id).then(setMyTestAssignments)
+          }}
+        />
+      </div>
+    )
+  }
+
   // Student: viewing a lesson plan's stage list
   if (activePlan) {
-    const lessonStages = (activePlan.lesson_stages ?? [])
-      .filter(s => (s.section ?? 'lesson') !== 'homework')
+    const allStages = (activePlan.lesson_stages ?? [])
+      .slice()
       .sort((a, b) => (a.stage_number || 0) - (b.stage_number || 0) || a.order_index - b.order_index)
-    const homeworkStages = (activePlan.lesson_stages ?? [])
-      .filter(s => (s.section ?? 'lesson') === 'homework')
-
-    const stageGroups = lessonStages.reduce((acc, s) => {
+    const lessonStages  = allStages.filter(s => (s.section ?? 'lesson') !== 'homework')
+    const homeworkStages = allStages.filter(s => s.section === 'homework')
+    const stageGroups   = lessonStages.reduce((acc, s) => {
       const num = s.stage_number ?? 1
       if (!acc[num]) acc[num] = { number: num, name: s.stage_name, items: [] }
       acc[num].items.push(s)
       return acc
     }, {})
 
-    return (
-      <div className="flow-card dashboard-card">
-        <button className="back-btn" onClick={() => setActivePlan(null)}>← Back to plans</button>
-        <h2 style={{ margin: '0.75rem 0 0.25rem', fontSize: '1.35rem' }}>{activePlan.title}</h2>
-        {activePlan.description && <p className="flow-sub" style={{ marginBottom: '0.75rem' }}>{activePlan.description}</p>}
-        {activePlan.scheduled_at && (
-          <div style={{ marginBottom: '1rem' }}>
-            <span className="admin-level-chip" style={{ color: 'var(--gold)' }}>
-              📅 {new Date(activePlan.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-            </span>
-          </div>
-        )}
+    const planAssignments = assignments.filter(a => a.lesson_plan_id === activePlan.id)
+    const exerciseStages  = allStages.filter(s => s.exercises)
+    const doneCount = exerciseStages.filter(s => {
+      const ex = s.exercises
+      return planAssignments.some(a => (a.exercises?.id === ex.id || a.exercise_id === ex.id) && a.status === 'submitted')
+    }).length
+    const totalCount = exerciseStages.length
 
-        {/* Lesson stages */}
-        <div className="builder-section">
-          <h4 className="builder-section-title">📌 Lesson stages</h4>
-          {Object.values(stageGroups).map(group => (
-            <div key={group.number} style={{ marginBottom: '1rem' }}>
-              <div style={{ fontWeight: 600, marginBottom: '0.4rem', color: 'var(--gold)' }}>
-                Stage {group.number}{group.name ? ` — ${group.name}` : ''}
+    const PLAN_STAGE_COLORS = {
+      controlled_exercise: '#3b82f6',
+      free_exercise:       '#059669',
+      lead_in:             '#d97706',
+      feedback:            '#7c3aed',
+      instruction:         '#64748b',
+      clarification:       '#dc2626',
+    }
+    const stageTypeDef = (type) => STAGE_TYPES.find(t => t.value === type) || { icon: '▸', label: type || 'Activity' }
+
+    const renderStageItem = (stage, isHomework = false) => {
+      const ex         = stage.exercises
+      const exId       = ex?.id || stage.exercise_id
+      const asgn       = exId ? planAssignments.find(a => a.exercises?.id === exId || a.exercise_id === exId) : null
+      const isDone     = asgn?.status === 'submitted'
+      const def        = stageTypeDef(stage.stage_type)
+      const color      = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
+      const isExpanded = activePlanExpanded.has(stage.id)
+      const hasContent = !!(exId)
+      return (
+        <div key={stage.id} style={{
+          background: isDone ? '#f0fdf4' : (isHomework ? '#fafaf8' : '#fff'),
+          borderRadius: '10px',
+          border: `1px solid ${isDone ? '#bbf7d0' : '#e8e3d8'}`,
+          borderLeft: `4px solid ${color}`,
+          marginBottom: '0.45rem',
+          overflow: 'hidden',
+        }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', padding: '0.65rem 0.85rem',
+            cursor: hasContent ? 'pointer' : 'default' }}
+            onClick={() => hasContent && togglePlanStage(stage.id)}>
+            <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1 }}>{def.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: isDone ? '#15803d' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {ex?.title || stage.title || def.label}
               </div>
-              {group.items.map(stage => {
-                const ex = stage.exercises
-                return (
-                  <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', background: '#fff', borderRadius: '7px', border: '1px solid #e8e3d8', marginBottom: '0.4rem' }}>
-                    <span style={{ flex: 1, fontSize: '0.9rem' }}>{ex?.title || stage.title || 'Stage item'}</span>
-                    {ex && (
-                      <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem', whiteSpace: 'nowrap' }}
-                        onClick={() => openPlanExercise(ex.id)}
-                        disabled={loadingPlanExId === ex.id}>
-                        {loadingPlanExId === ex.id ? '…' : '▶ Open'}
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.1rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>
+                  {def.label}
+                </span>
+                {stage.duration_minutes && (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
+                )}
+              </div>
             </div>
-          ))}
-          {Object.keys(stageGroups).length === 0 && (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No stages yet.</p>
+            {/* Action buttons — always visible */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+              {isDone ? (
+                <>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#16a34a' }}>✓ Done</span>
+                  {ex && (
+                    <>
+                      <button className="btn-ghost" style={{ fontSize: '0.73rem', padding: '0.18rem 0.48rem' }}
+                        onClick={e => { e.stopPropagation(); openPlanSubmission(ex.id) }}
+                        disabled={loadingViewPlanExId === ex.id}>
+                        {loadingViewPlanExId === ex.id ? '…' : '👁 View'}
+                      </button>
+                      <button className="btn-ghost" style={{ fontSize: '0.73rem', padding: '0.18rem 0.48rem' }}
+                        onClick={e => { e.stopPropagation(); openPlanExercise(activePlan.id, ex.id) }}
+                        disabled={loadingPlanExId === ex.id}>
+                        {loadingPlanExId === ex.id ? '…' : '↩ Redo'}
+                      </button>
+                    </>
+                  )}
+                </>
+              ) : ex ? (
+                <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.4rem 0.85rem', whiteSpace: 'nowrap' }}
+                  onClick={e => { e.stopPropagation(); openPlanExercise(activePlan.id, ex.id) }}
+                  disabled={loadingPlanExId === ex.id}>
+                  {loadingPlanExId === ex.id ? '…' : '▶ Start'}
+                </button>
+              ) : null}
+              {hasContent && (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginLeft: '0.2rem' }}>
+                  {isExpanded ? '▲' : '▼'}
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Expanded preview */}
+          {isExpanded && exId && (
+            <div style={{ borderTop: `1px solid ${isDone ? '#d1fae5' : '#f0ede6'}`, padding: '0.75rem 0.85rem' }}>
+              <InlineExerciseContent
+                exerciseId={exId}
+                exerciseCache={activePlanExCache}
+                loadingExercises={activePlanLoadingEx}
+                demoAnswers={activePlanDemoAns}
+                setDemoAnswers={setActivePlanDemoAns}
+              />
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="flow-card dashboard-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {/* ── Header ── */}
+        <div style={{ padding: '1.2rem 1.25rem 0.9rem', borderBottom: '1px solid #f0ede6' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.65rem' }}>
+            <button className="back-btn" onClick={() => setActivePlan(null)}>
+              ← Back to My Lessons
+            </button>
+            <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem', marginLeft: 'auto' }} onClick={() => window.print()}>🖨 Print</button>
+          </div>
+          <h2 style={{ margin: '0 0 0.2rem', fontSize: '1.25rem', lineHeight: 1.3 }}>{activePlan.title}</h2>
+          {activePlan.description && (
+            <p style={{ margin: '0 0 0.5rem', color: 'var(--text-muted)', fontSize: '0.87rem', lineHeight: 1.5 }}>{activePlan.description}</p>
+          )}
+          {totalCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginTop: '0.6rem' }}>
+              <div style={{ flex: 1, height: '6px', background: '#e8e3d8', borderRadius: '9px', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: '9px', transition: 'width 0.4s ease',
+                  background: doneCount === totalCount ? '#22c55e' : 'var(--gold)',
+                  width: `${(doneCount / totalCount) * 100}%`,
+                }} />
+              </div>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flexShrink: 0, fontWeight: 600 }}>
+                {doneCount}/{totalCount} done
+              </span>
+            </div>
           )}
         </div>
 
-        {/* Homework section */}
-        {homeworkStages.length > 0 && (
-          <div className="builder-section" style={{ marginTop: '1rem' }}>
-            <h4 className="builder-section-title">📚 Homework</h4>
-            {homeworkStages.map(stage => {
-              const ex = stage.exercises
-              return (
-                <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', background: '#fff', borderRadius: '7px', border: '1px solid #e8e3d8', marginBottom: '0.4rem' }}>
-                  <span style={{ flex: 1, fontSize: '0.9rem' }}>
-                    {ex?.title || stage.title || 'Homework exercise'}
-                    {stage.content_text && (
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginLeft: '0.5rem' }}>— {stage.content_text}</span>
-                    )}
+        {/* ── Lesson stages ── */}
+        <div style={{ padding: '0.9rem 1.25rem' }}>
+          {Object.values(stageGroups).length > 0 ? (
+            Object.values(stageGroups).map(group => (
+              <div key={group.number} style={{ marginBottom: '1.1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.55rem' }}>
+                  <div style={{
+                    background: 'var(--gold)', color: '#fff',
+                    borderRadius: '50%', width: '22px', height: '22px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.72rem', fontWeight: 700, flexShrink: 0,
+                  }}>
+                    {group.number}
+                  </div>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    {group.name || `Stage ${group.number}`}
                   </span>
-                  {ex && (
-                    <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem', whiteSpace: 'nowrap' }}
-                      onClick={() => openPlanExercise(ex.id)}
-                      disabled={loadingPlanExId === ex.id}>
-                      {loadingPlanExId === ex.id ? '…' : '▶ Open'}
-                    </button>
-                  )}
                 </div>
-              )
-            })}
+                {group.items.map(s => renderStageItem(s))}
+              </div>
+            ))
+          ) : (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', padding: '0.25rem 0' }}>No lesson stages yet.</p>
+          )}
+        </div>
+
+        {/* ── Homework ── */}
+        {homeworkStages.length > 0 && (
+          <div style={{ borderTop: '1px solid #f0ede6', padding: '0.75rem 1.25rem 0.9rem' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.6rem' }}>
+              📚 Homework
+            </div>
+            {homeworkStages.map(s => renderStageItem(s, true))}
           </div>
         )}
 
-        {/* Plan-level notes (not tied to a specific exercise) */}
-        <div style={{ marginTop: '1.5rem' }}>
+        {/* ── Notes ── */}
+        <div style={{ borderTop: '1px solid #f0ede6', padding: '0.75rem 1.25rem 1.25rem' }}>
           <NotesSection
             planId={activePlan.id}
             exerciseId={null}
@@ -2127,6 +2771,67 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
             setTakingTest(false)
           }}
         />
+      </div>
+    )
+  }
+
+  // Prospect gate — show only test, nothing else
+  if (profile?.access_level === 'prospect') {
+    const pendingTest = myTestAssignments.find(t => t.status === 'assigned')
+    const completedTest = myTestAssignments.find(t => t.status === 'completed')
+
+    if (activeTest) {
+      return (
+        <div>
+          <TestPlayer
+            assignment={activeTest}
+            studentId={user.id}
+            onDone={() => {
+              setActiveTest(null)
+              fetchMyTestAssignments(user.id).then(setMyTestAssignments)
+            }}
+          />
+        </div>
+      )
+    }
+
+    return (
+      <div className="flow-wrapper">
+        <div className="flow-header">
+          <span className="flow-header-logo">English with Dogukan</span>
+          <button className="back-link" onClick={onSignOut}>Sign out</button>
+        </div>
+        <div className="flow-content">
+          <div className="flow-card" style={{ maxWidth: '520px', textAlign: 'center' }}>
+            {completedTest ? (
+              <>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
+                <h2 style={{ marginBottom: '0.5rem' }}>Your results are being reviewed</h2>
+                <p className="flow-sub">
+                  Dogukan has received your diagnostic test results and will be in touch with you shortly.
+                </p>
+              </>
+            ) : pendingTest ? (
+              <>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📋</div>
+                <h2 style={{ marginBottom: '0.5rem' }}>Your diagnostic test is ready</h2>
+                <p className="flow-sub" style={{ marginBottom: '1.75rem' }}>
+                  This test takes around 25 minutes. It helps Dogukan understand your current level and plan your lessons around you.
+                </p>
+                <button className="btn-gold btn-full" style={{ fontSize: '1rem', padding: '0.85rem' }}
+                  onClick={() => setActiveTest(pendingTest)}>
+                  Start test →
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👋</div>
+                <h2 style={{ marginBottom: '0.5rem' }}>Welcome!</h2>
+                <p className="flow-sub">Your teacher will assign your diagnostic test shortly. Check back soon.</p>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
@@ -2173,74 +2878,132 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
               <AccessBadge level={accessLevel} />
               <p className="access-card-desc">{ACCESS_META[accessLevel]?.desc}</p>
             </div>
-            {accessLevel === 'bundle_12' && (
+            {!isPending && (
               <div className="access-bundle-progress">
-                <span className="access-bundle-count">{completedCount}<span>/12</span></span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>lessons done</span>
+                <span className="access-bundle-count">
+                  {completedCount}{accessLevel === 'bundle_12' ? <span>/12</span> : null}
+                </span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  lesson{completedCount !== 1 ? 's' : ''} done
+                </span>
+                {accessLevel === 'bundle_12' && (
+                  <div style={{ width: '100%', background: '#e8e3d8', borderRadius: '4px', height: '4px', marginTop: '0.3rem' }}>
+                    <div style={{ background: 'var(--gold)', height: '4px', borderRadius: '4px', width: `${Math.min((completedCount / 12) * 100, 100)}%`, transition: 'width 0.3s ease' }} />
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {isPending ? (
             <div className="dashboard-pending-msg">
-              <p>✉️ Your account is awaiting approval. Dogukan will activate it shortly — usually within 24 hours.</p>
+              <p style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.6rem' }}>👋 You're almost in!</p>
+              <p style={{ marginBottom: '0.75rem', lineHeight: 1.65 }}>
+                Your portal will be activated after your first catch-up with Dogukan — he'll switch it on once you've had your intro consultation together.
+              </p>
+              <p style={{ marginBottom: '0.85rem', lineHeight: 1.65 }}>
+                To get started, make sure you've booked your free consultation using the button below. Once that's done and you've spoken with Dogukan, you'll get full access to everything here. 🎉
+              </p>
+              <a href="https://calendly.com/dogukan-cy/free-english-course-consultation-50-mins" target="_blank" rel="noreferrer"
+                className="btn-gold" style={{ display: 'inline-block', textDecoration: 'none', fontSize: '0.95rem', padding: '0.6rem 1.2rem' }}>
+                📅 Book your free consultation →
+              </a>
             </div>
           ) : (
             <>
-              {/* ── Upcoming lesson ── */}
-              {/* ── Upcoming lessons ── */}
-              {(() => {
-                const now = new Date()
-                const upcoming = lessons
-                  .filter(l => l.scheduled_at && new Date(l.scheduled_at) > now && l.status !== 'cancelled')
-                  .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
-                if (upcoming.length === 0) return null
-                const next = upcoming[0]
-                const rest = upcoming.slice(1, 4) // show up to 3 more
-                const fmtDate = (iso) => {
-                  const d = new Date(iso)
-                  const isToday = d.toDateString() === now.toDateString()
-                  const isTomorrow = d.toDateString() === new Date(now.getTime() + 86400000).toDateString()
-                  const day = isToday ? 'Today' : isTomorrow ? 'Tomorrow'
-                    : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-                  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-                  return `${day} at ${time}`
-                }
-                return (
-                  <>
-                    <div className="upcoming-lesson-card">
-                      <div className="upcoming-lesson-label">📅 Next lesson</div>
-                      <div className="upcoming-lesson-meta">
-                        <strong className="upcoming-lesson-date">
-                          {new Date(next.scheduled_at).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-                        </strong>
-                        <span className="upcoming-lesson-time">
-                          {new Date(next.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                          {next.duration_minutes ? ` · ${next.duration_minutes} min` : ''}
-                        </span>
-                      </div>
-                      {next.title && <p className="upcoming-lesson-title">"{next.title}"</p>}
-                      {next.teacher_notes_public && (
-                        <p className="upcoming-lesson-note">📝 {next.teacher_notes_public}</p>
-                      )}
-                    </div>
-                    {rest.length > 0 && (
-                      <div style={{ marginBottom: '1rem' }}>
-                        <p style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 0.4rem' }}>
-                          Also scheduled
-                        </p>
-                        {rest.map(l => (
-                          <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.45rem 0.75rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '7px', marginBottom: '0.3rem', fontSize: '0.88rem' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>{fmtDate(l.scheduled_at)}</span>
-                            {l.title && <span style={{ fontWeight: 500 }}>{l.title}</span>}
-                            {l.duration_minutes && <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{l.duration_minutes} min</span>}
+              {/* Pending test notification */}
+              {myTestAssignments.filter(t => t.status === 'assigned').map(t => (
+                <div key={t.id} style={{ background: '#E6F1FB', border: '1.5px solid #a8c8e8', borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.2rem' }}>📋 Diagnostic test assigned</div>
+                    <div style={{ fontSize: '0.85rem', color: '#2b72b5' }}>Your teacher has assigned you a diagnostic test (~25 min). Complete it when you're ready.</div>
+                  </div>
+                  <button className="btn-gold" style={{ flexShrink: 0 }} onClick={() => setActiveTest(t)}>
+                    Start test →
+                  </button>
+                </div>
+              ))}
+
+              {/* ── My Lessons ── */}
+              <div className="dashboard-exercises">
+                <h3 className="dashboard-section-title">📅 My Lessons</h3>
+                {lessons.length === 0 ? (
+                  <div className="dashboard-actions">
+                    <button className="btn-gold btn-full btn-lg" onClick={onBook}>
+                      Book your first lesson →
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    {lessons.map((l, idx) => {
+                      const hasDate = !!l.scheduled_at
+                      const plan = l.lesson_plans
+                      const fmtDate = (iso) => {
+                        const d = new Date(iso)
+                        return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                      }
+                      const fmtTime = (iso) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+
+                      return (
+                        <div key={l.id} style={{ background: '#fff', borderRadius: '10px', border: `1px solid ${hasDate ? '#e8e3d8' : '#d4d0c8'}`, padding: '0.8rem 1rem', opacity: l.status === 'cancelled' ? 0.55 : 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>
+                                {l.lesson_no ? `Lesson ${l.lesson_no}` : `Lesson ${idx + 1}`}
+                                {l.title && <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: '0.4rem' }}>— {l.title}</span>}
+                              </div>
+                              {hasDate ? (
+                                <div style={{ fontSize: '0.82rem', color: 'var(--gold)', marginTop: '0.15rem' }}>
+                                  📅 {fmtDate(l.scheduled_at)} at {fmtTime(l.scheduled_at)}
+                                  {l.duration_minutes && ` · ${l.duration_minutes} min`}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.15rem', fontStyle: 'italic' }}>
+                                  Not yet scheduled
+                                </div>
+                              )}
+                              {l.teacher_notes_public && (
+                                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem', fontStyle: 'italic' }}
+                                  dangerouslySetInnerHTML={{ __html: '💬 ' + l.teacher_notes_public }} />
+                              )}
+                              {l.status === 'completed' && (
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#22c55e', marginTop: '0.2rem', display: 'inline-block' }}>✓ Completed</span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
+                              {plan ? (
+                                <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.35rem 0.8rem', whiteSpace: 'nowrap' }}
+                                  onClick={() => setActivePlan(plan)}>
+                                  📋 Open lesson →
+                                </button>
+                              ) : !hasDate ? (
+                                <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.8rem', whiteSpace: 'nowrap' }}
+                                  onClick={onBook}>
+                                  📅 Book this lesson →
+                                </button>
+                              ) : null}
+                              {l.whiteboard_pdf_url && (
+                                <a href={l.whiteboard_pdf_url} target="_blank" rel="noreferrer"
+                                  style={{ fontSize: '0.78rem', color: 'var(--gold)', textDecoration: 'underline' }}>
+                                  📄 View whiteboard
+                                </a>
+                              )}
+                            </div>
                           </div>
-                        ))}
+                        </div>
+                      )
+                    })}
+                    {/* Book more lessons CTA for non-bundle */}
+                    {accessLevel !== 'bundle_12' && (
+                      <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
+                        <button className="btn-ghost" style={{ fontSize: '0.88rem' }} onClick={onBook}>
+                          + Book another lesson
+                        </button>
                       </div>
                     )}
-                  </>
-                )
-              })()}
+                  </div>
+                )}
+              </div>
 
               {/* ── Placement test CTA (test_approved, no result yet) ── */}
               {isTestApproved && !hasTestResult && (
@@ -2279,140 +3042,6 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                   </div>
                 </div>
               ) : null}
-
-              <div className="dashboard-actions">
-                <button className="btn-gold btn-full btn-lg" onClick={onBook}>
-                  Book your next lesson →
-                </button>
-              </div>
-
-              {/* ── Lesson history ── */}
-              <StudentLessonList lessons={lessons} onFeedbackSaved={(id, fb) =>
-                setLessons(prev => prev.map(l => l.id === id ? { ...l, student_feedback: fb } : l))} />
-
-              {/* ── Lesson Plans (live session plans with notes) ── */}
-              {myPlans.length > 0 && (
-                <div className="dashboard-exercises">
-                  <h3 className="dashboard-section-title">🗂 My Lesson Plans</h3>
-                  <div className="plan-card-list">
-                    {myPlans.map(plan => {
-                      const stageCount = (plan.lesson_stages ?? []).filter(s => (s.section ?? 'lesson') !== 'homework').length
-                      const hwCount    = (plan.lesson_stages ?? []).filter(s => (s.section ?? 'lesson') === 'homework').length
-                      return (
-                        <div key={plan.id} className="plan-card" style={{ cursor: 'pointer' }} onClick={() => setActivePlan(plan)}>
-                          <div className="plan-card-header">
-                            <div style={{ flex: 1 }}>
-                              <strong className="plan-card-title">{plan.title}</strong>
-                              <span className="plan-card-progress">
-                                {stageCount} stage{stageCount !== 1 ? 's' : ''}{hwCount > 0 ? ` · ${hwCount} homework` : ''}
-                              </span>
-                            </div>
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Open →</span>
-                          </div>
-                          {plan.description && (
-                            <p className="plan-card-desc">{plan.description}</p>
-                          )}
-                          {plan.scheduled_at && (
-                            <p className="plan-card-desc" style={{ color: 'var(--gold)', marginTop: '0.25rem' }}>
-                              📅 {new Date(plan.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Exercises (grouped by lesson plan, then solo) ── */}
-              {(() => {
-                const planAsgns = assignments.filter(a => a.lesson_plan_id)
-                const soloAsgns = assignments.filter(a => !a.lesson_plan_id)
-                // Group plan assignments by plan id, preserving insertion order
-                const planMap = {}
-                planAsgns.forEach(a => {
-                  if (!planMap[a.lesson_plan_id]) planMap[a.lesson_plan_id] = { plan: a.lesson_plans, items: [] }
-                  planMap[a.lesson_plan_id].items.push(a)
-                })
-                const planGroups = Object.entries(planMap)
-
-                const renderExerciseRow = (a) => {
-                  const ex = a.exercises
-                  const submitted = a.status === 'submitted'
-                  return (
-                    <div key={a.id} className={`exercise-row ${submitted ? 'exercise-row--done' : ''}`}>
-                      <div className="exercise-row-left">
-                        <span className="exercise-mode-chip">
-                          {a.mode === 'homework' ? '🏠 Homework' : '🎓 In class'}
-                        </span>
-                        <strong className="exercise-title">{ex?.title}</strong>
-                        {a.note && <p className="exercise-note">💬 {a.note}</p>}
-                        {!a.lesson_plan_id && (
-                          <span className="exercise-date">
-                            {submitted
-                              ? `Submitted ${new Date(a.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                              : `Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
-                          </span>
-                        )}
-                      </div>
-                      <div className="exercise-row-right">
-                        {submitted ? (
-                          <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
-                            onClick={() => handleViewSubmission(a)}>View →</button>
-                        ) : (
-                          <button className="btn-gold" onClick={() => openExercise(a)}>Start →</button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                }
-
-                return (
-                  <>
-                    {planGroups.length > 0 && (
-                      <div className="dashboard-exercises">
-                        <h3 className="dashboard-section-title">📚 My Lesson Plans</h3>
-                        <div className="plan-card-list">
-                          {planGroups.map(([planId, { plan, items }]) => {
-                            const doneCount = items.filter(a => a.status === 'submitted').length
-                            return (
-                              <div key={planId} className="plan-card">
-                                <div className="plan-card-header">
-                                  <div>
-                                    <strong className="plan-card-title">{plan?.title || 'Lesson Plan'}</strong>
-                                    <span className="plan-card-progress">
-                                      {doneCount}/{items.length} done
-                                    </span>
-                                  </div>
-                                </div>
-                                {plan?.description && (
-                                  <p className="plan-card-desc">{plan.description}</p>
-                                )}
-                                <div className="plan-exercises">
-                                  {items.map(a => renderExerciseRow(a))}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {assignments.length === 0 ? (
-                      <div className="dashboard-exercises">
-                        <h3 className="dashboard-section-title">📝 My Exercises</h3>
-                        <p className="dashboard-empty-small">No exercises assigned yet.</p>
-                      </div>
-                    ) : soloAsgns.length > 0 && (
-                      <div className="dashboard-exercises">
-                        <h3 className="dashboard-section-title">📝 My Exercises</h3>
-                        <div className="exercise-list">
-                          {soloAsgns.map(a => renderExerciseRow(a))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
 
               {/* ── Achievements ── */}
               {badgeDefs.length > 0 && (
@@ -2504,10 +3133,17 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                       {addingVocab ? 'Cancel' : '+ Add word'}
                     </button>
                     {vocabulary.length > 0 && (
-                      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }}
-                        onClick={() => setShowVocab(v => !v)}>
-                        {showVocab ? 'Hide' : 'Show all'}
-                      </button>
+                      <>
+                        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }}
+                          onClick={() => setShowVocab(v => !v)}>
+                          {showVocab ? 'Hide' : 'Show all'}
+                        </button>
+                        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem' }}
+                          onClick={handleDownloadVocab}
+                          title="Download vocabulary list as a spreadsheet file">
+                          ⬇ Export
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2562,80 +3198,6 @@ function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
           )}
         </>
       )}
-    </div>
-  )
-}
-
-// ─── StudentLessonList ────────────────────────────────────────
-function StudentLessonList({ lessons, onFeedbackSaved }) {
-  const [feedbackId,   setFeedbackId]   = useState(null)
-  const [feedbackText, setFeedbackText] = useState('')
-  const [saving,       setSaving]       = useState(false)
-
-  if (lessons.length === 0) return null
-
-  const handleFeedbackSave = async (lessonId) => {
-    setSaving(true)
-    const ok = await submitLessonFeedback(lessonId, feedbackText)
-    setSaving(false)
-    if (ok) { onFeedbackSaved(lessonId, feedbackText); setFeedbackId(null); setFeedbackText('') }
-  }
-
-  return (
-    <div className="dashboard-exercises">
-      <h3 className="dashboard-section-title">📅 My Lessons</h3>
-      <div className="lesson-list">
-        {lessons.map((l) => (
-          <div key={l.id} className="lesson-row">
-            <div className="lesson-row-top">
-              <div className="lesson-row-left">
-                <span className={`lesson-status-chip lesson-status-chip--${l.status}`}>
-                  {l.status === 'completed' ? '✓ Completed' : l.status === 'cancelled' ? '✕ Cancelled' : '◷ Upcoming'}
-                </span>
-                <span className="lesson-title">
-                  {l.lesson_no ? `Lesson ${l.lesson_no}` : 'Lesson'}
-                  {l.title ? ` — ${l.title}` : ''}
-                </span>
-                {l.scheduled_at && (
-                  <span className="lesson-date">
-                    {new Date(l.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
-                {l.duration_minutes && (
-                  <span className="lesson-duration-chip">⏱ {l.duration_minutes} min</span>
-                )}
-              </div>
-            </div>
-            {(l.teacher_notes_public || (l.notes_visible && l.teacher_notes)) && (
-              <div className="lesson-teacher-note">
-                <span className="lesson-note-label">📝 Note from Dogukan:</span>
-                <p>{l.teacher_notes_public || l.teacher_notes}</p>
-              </div>
-            )}
-            {l.student_feedback ? (
-              <p className="lesson-my-feedback">Your feedback: {l.student_feedback}</p>
-            ) : l.status === 'completed' && feedbackId !== l.id ? (
-              <button className="lesson-feedback-btn" onClick={() => { setFeedbackId(l.id); setFeedbackText('') }}>
-                + Leave feedback
-              </button>
-            ) : feedbackId === l.id ? (
-              <div className="lesson-feedback-form">
-                <textarea className="writing-input" rows={2} style={{ marginBottom: 0 }}
-                  placeholder="How did the lesson go? What did you find helpful?"
-                  value={feedbackText} onChange={e => setFeedbackText(e.target.value)} />
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
-                    onClick={() => handleFeedbackSave(l.id)} disabled={saving || !feedbackText.trim()}>
-                    {saving ? 'Saving…' : 'Save feedback'}
-                  </button>
-                  <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}
-                    onClick={() => setFeedbackId(null)}>Cancel</button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -2789,37 +3351,66 @@ function WordChoiceQuestion({ template, answer, onChange, disabled = false }) {
     onChange(JSON.stringify({ ...current, [tokenIdx]: val }))
   }
 
+  // Split tokens into lines wherever a text token contains \n
+  const lines = (() => {
+    const result = [[]]
+    tokens.forEach(tok => {
+      if (tok.type === 'text') {
+        const parts = tok.value.split('\n')
+        parts.forEach((part, pi) => {
+          if (pi > 0) result.push([]) // start a new line
+          if (part) result[result.length - 1].push({ ...tok, value: part })
+        })
+      } else {
+        result[result.length - 1].push(tok)
+      }
+    })
+    return result.filter(line => line.length > 0)
+  })()
+
+  const renderToken = (tok, i) => {
+    if (tok.type === 'text')
+      return <span key={i} className="word-choice-text">{tok.value}</span>
+
+    if (tok.type === 'choice') {
+      const selected = current[tok.index]
+      return (
+        <span key={i} className="word-choice-group">
+          {tok.options.map(opt => {
+            const isSelected   = selected === opt
+            const isEliminated = selected && selected !== opt
+            return (
+              <button key={opt} type="button" disabled={disabled}
+                className={`word-choice-btn${isSelected ? ' word-choice-btn--selected' : ''}${isEliminated ? ' word-choice-btn--eliminated' : ''}`}
+                onClick={() => !disabled && setChoice(tok.index, opt)}>
+                {opt}
+              </button>
+            )
+          })}
+        </span>
+      )
+    }
+
+    if (tok.type === 'blank')
+      return (
+        <input key={i} type="text" className="word-choice-blank"
+          disabled={disabled}
+          placeholder="___"
+          value={current[tok.index] || ''}
+          onChange={e => !disabled && setBlank(tok.index, e.target.value)}
+        />
+      )
+
+    return null
+  }
+
   return (
     <div className="word-choice-sentence">
-      {tokens.map((tok, i) => {
-        if (tok.type === 'text')
-          return <span key={i} className="word-choice-text">{tok.value}</span>
-
-        if (tok.type === 'choice')
-          return (
-            <span key={i} className="word-choice-group">
-              {tok.options.map(opt => (
-                <button key={opt} type="button" disabled={disabled}
-                  className={`word-choice-btn ${current[tok.index] === opt ? 'word-choice-btn--selected' : ''}`}
-                  onClick={() => !disabled && setChoice(tok.index, opt)}>
-                  {opt}
-                </button>
-              ))}
-            </span>
-          )
-
-        if (tok.type === 'blank')
-          return (
-            <input key={i} type="text" className="word-choice-blank"
-              disabled={disabled}
-              placeholder="___"
-              value={current[tok.index] || ''}
-              onChange={e => !disabled && setBlank(tok.index, e.target.value)}
-            />
-          )
-
-        return null
-      })}
+      {lines.map((lineTokens, lineIdx) => (
+        <div key={lineIdx} className="word-choice-line">
+          {lineTokens.map((tok, i) => renderToken(tok, i))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -3005,20 +3596,16 @@ function FbBlankEditor({ src, blanks, onChange }) {
 // placed over each detected blank. Students type directly on the image.
 function ImageOverlayFill({ src, blanks, answers, onChange, disabled = false }) {
   const imgRef = useRef(null)
-  const [fontSize, setFontSize] = useState(14)
+  const [renderedH, setRenderedH] = useState(0)
 
-  // Scale font-size to match rendered image height
+  const updateH = () => {
+    if (imgRef.current) setRenderedH(imgRef.current.clientHeight)
+  }
+
   useEffect(() => {
-    const update = () => {
-      if (imgRef.current) {
-        // Assume average blank height is ~5% of image; map to font-size
-        const renderedH = imgRef.current.clientHeight
-        setFontSize(Math.max(10, Math.round(renderedH * 0.035)))
-      }
-    }
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
+    updateH()
+    window.addEventListener('resize', updateH)
+    return () => window.removeEventListener('resize', updateH)
   }, [src])
 
   const current = (() => {
@@ -3028,15 +3615,17 @@ function ImageOverlayFill({ src, blanks, answers, onChange, disabled = false }) 
   const setBlank = (i, val) =>
     onChange(JSON.stringify({ ...current, [i]: val }))
 
+  // Per-blank font size: 60% of the blank's rendered pixel height, clamped 9–28px.
+  // This keeps typed text proportional to the gap in the image regardless of image size.
+  const blankFontSize = (b) => {
+    if (!renderedH || !b.h) return 14
+    return Math.min(28, Math.max(9, Math.round(renderedH * (b.h / 100) * 0.60)))
+  }
+
   return (
     <div className="img-overlay-wrap">
       <img ref={imgRef} src={src} alt="Exercise" className="img-overlay-img"
-        onLoad={() => {
-          if (imgRef.current) {
-            const renderedH = imgRef.current.clientHeight
-            setFontSize(Math.max(10, Math.round(renderedH * 0.035)))
-          }
-        }}
+        onLoad={updateH}
       />
       {blanks.map((b, i) => (
         <input
@@ -3051,7 +3640,7 @@ function ImageOverlayFill({ src, blanks, answers, onChange, disabled = false }) 
             top:      `${b.y}%`,
             width:    `${b.w}%`,
             height:   `${b.h}%`,
-            fontSize: `${fontSize}px`,
+            fontSize: `${blankFontSize(b)}px`,
           }}
         />
       ))}
@@ -3154,7 +3743,7 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
       {ex?.context_text && (
         <div className="exercise-context-text">
           <p className="exercise-context-label">📖 Read this first</p>
-          <div className="exercise-context-passage">{ex.context_text}</div>
+          <div className="exercise-context-passage" dangerouslySetInnerHTML={{ __html: ex.context_text }} />
         </div>
       )}
       {/* ── Context images (skip if fill_blank overlay — the image is shown on the overlay) ── */}
@@ -3172,7 +3761,7 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
 
       <div className="exercise-questions">
         {questions.map((q, idx) => {
-          if (q.type === 'listening' || q.type === 'viewing') return null
+          if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') return null
 
           // Fill-blank: overlay on image if positions detected, otherwise inline text
           if (q.type === 'fill_blank') {
@@ -3210,7 +3799,7 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
                  : 'Written answer'}
               </span>
             </div>
-            {q.type !== 'word_choice' && <p className="eq-prompt">{q.prompt}</p>}
+            {q.type !== 'word_choice' && <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />}
             {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
             {q.type === 'multiple_choice' && (
@@ -3298,14 +3887,97 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
 
 // ─── MatchingQuestion (student drag-and-drop) ─────────────────
 function MatchingQuestion({ pairs, answer, onChange }) {
-  const [rightShuffled] = useState(() => [...pairs.map(p => p.right)].sort(() => Math.random() - 0.5))
-  const [dragOver, setDragOver]   = useState(null)
+  const LETTERS = ['A','B','C','D','E','F','G','H','I','J']
 
+  // Detect new format: pairs = { v:2, left: [], right: [] }
+  const isNew = pairs && !Array.isArray(pairs) && pairs?.v === 2
+
+  // ── All hooks must be called unconditionally (Rules of Hooks) ──
+  // New-format state: shuffle right items once on mount, keep indices stable.
+  const newRight = isNew ? (pairs.right || []) : []
+  const [shuffledIdx] = useState(() => {
+    const idx = newRight.map((_, i) => i)
+    for (let i = idx.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [idx[i], idx[j]] = [idx[j], idx[i]]
+    }
+    return idx
+  })
+  // Legacy-format state: shuffle right values once on mount.
+  const [rightShuffled] = useState(() => [...(!isNew ? (pairs || []) : []).map(p => p.right)].sort(() => Math.random() - 0.5))
+  const [dragOver, setDragOver] = useState(null)
+  // ── End of hooks ──────────────────────────────────────────────
+
+  if (isNew) {
+    const left  = pairs.left  || []
+    const right = pairs.right || []
+    // answer: JSON array where answer[leftIdx] = rightIdx or null
+    const current = (() => { try { return answer ? JSON.parse(answer) : [] } catch { return [] } })()
+    const usedRightIdx = current.filter(v => v != null)
+
+    const setMatch = (li, ri) => {
+      const arr = [...current]
+      while (arr.length <= li) arr.push(null)
+      // remove ri from any other position
+      arr.forEach((v, i) => { if (v === ri) arr[i] = null })
+      arr[li] = ri
+      onChange(JSON.stringify(arr))
+    }
+    const clearMatch = (li) => {
+      const arr = [...current]; arr[li] = null; onChange(JSON.stringify(arr))
+    }
+
+    return (
+      <div className="matching-container">
+        {/* Unmatched right items bank */}
+        {shuffledIdx.filter(ri => !usedRightIdx.includes(ri)).length > 0 && (
+          <div className="matching-bank" style={{ width: '100%' }}>
+            <p className="matching-bank-label">Drag to match ↓</p>
+            <div className="matching-bank-items">
+              {shuffledIdx.filter(ri => !usedRightIdx.includes(ri)).map(ri => (
+                <div key={ri} className="matching-chip"
+                  draggable
+                  onDragStart={e => e.dataTransfer.setData('text/plain', String(ri))}>
+                  <strong style={{ color: '#2563eb', marginRight: '0.3rem' }}>{LETTERS[ri]}.</strong>{right[ri]}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="matching-pairs">
+          {left.map((leftText, li) => {
+            const matchedRi = current[li] != null ? current[li] : null
+            const isOver = dragOver === li
+            return (
+              <div key={li} className="matching-pair-row">
+                <div className="matching-left">
+                  <strong style={{ color: 'var(--gold)', marginRight: '0.3rem' }}>{li+1}.</strong>{leftText}
+                </div>
+                <span className="matching-arrow">→</span>
+                <div
+                  className={`matching-drop${isOver ? ' drag-over' : ''}${matchedRi != null ? ' matched' : ''}`}
+                  onDragOver={e => { e.preventDefault(); setDragOver(li) }}
+                  onDragLeave={() => setDragOver(null)}
+                  onDrop={e => { e.preventDefault(); const ri = parseInt(e.dataTransfer.getData('text/plain')); setMatch(li, ri); setDragOver(null) }}>
+                  {matchedRi != null
+                    ? <><span className="matching-chip matched-chip">
+                        <strong style={{ color: '#2563eb', marginRight: '0.3rem' }}>{LETTERS[matchedRi]}.</strong>{right[matchedRi]}
+                      </span>
+                      <button className="matching-clear" onClick={() => clearMatch(li)}>✕</button></>
+                    : <span className="matching-placeholder">Drop here…</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Legacy format (old pairs array) ──────────────────────────
   const current   = answer ? (() => { try { return JSON.parse(answer) } catch { return {} } })() : {}
   const usedRight = Object.values(current)
-
   const unmatched = rightShuffled.filter(r => !usedRight.includes(r))
-
   const drop = (e, leftVal) => {
     e.preventDefault()
     const rightVal = e.dataTransfer.getData('text/plain')
@@ -3315,13 +3987,9 @@ function MatchingQuestion({ pairs, answer, onChange }) {
     onChange(JSON.stringify(next))
     setDragOver(null)
   }
-
   const clearMatch = (leftVal) => {
-    const next = { ...current }
-    delete next[leftVal]
-    onChange(JSON.stringify(next))
+    const next = { ...current }; delete next[leftVal]; onChange(JSON.stringify(next))
   }
-
   return (
     <div className="matching-container">
       {unmatched.length > 0 && (
@@ -3329,29 +3997,22 @@ function MatchingQuestion({ pairs, answer, onChange }) {
           <p className="matching-bank-label">Drag to match ↓</p>
           <div className="matching-bank-items">
             {unmatched.map(r => (
-              <div key={r} className="matching-chip"
-                draggable
-                onDragStart={e => e.dataTransfer.setData('text/plain', r)}>
-                {r}
-              </div>
+              <div key={r} className="matching-chip" draggable
+                onDragStart={e => e.dataTransfer.setData('text/plain', r)}>{r}</div>
             ))}
           </div>
         </div>
       )}
       <div className="matching-pairs">
-        {pairs.map(pair => {
-          const matched = current[pair.left]
-          const isOver  = dragOver === pair.left
+        {(pairs || []).map(pair => {
+          const matched = current[pair.left]; const isOver = dragOver === pair.left
           return (
             <div key={pair.left} className="matching-pair-row">
               <div className="matching-left">{pair.left}</div>
               <span className="matching-arrow">→</span>
-              <div
-                className={`matching-drop ${isOver ? 'drag-over' : ''} ${matched ? 'matched' : ''}`}
+              <div className={`matching-drop${isOver ? ' drag-over' : ''}${matched ? ' matched' : ''}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(pair.left) }}
-                onDragLeave={() => setDragOver(null)}
-                onDrop={e => drop(e, pair.left)}
-              >
+                onDragLeave={() => setDragOver(null)} onDrop={e => drop(e, pair.left)}>
                 {matched
                   ? <><span className="matching-chip matched-chip">{matched}</span>
                       <button className="matching-clear" onClick={() => clearMatch(pair.left)}>✕</button></>
@@ -3416,6 +4077,96 @@ function EmbeddedMedia({ url, label }) {
   )
 }
 
+// ─── RichTextEditor ───────────────────────────────────────────
+const RTE_COLORS = [
+  { name: 'Black',  hex: '#1a1a1a' },
+  { name: 'Red',    hex: '#dc2626' },
+  { name: 'Green',  hex: '#16a34a' },
+  { name: 'Blue',   hex: '#2563eb' },
+  { name: 'Yellow', hex: '#ca8a04' },
+]
+
+function RichTextEditor({ value = '', onChange, placeholder, minHeight = '80px', className = '', style = {}, resizable = false }) {
+  const ref      = useRef(null)
+  const skipSync = useRef(false)
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, superscript: false })
+
+  useLayoutEffect(() => {
+    if (!ref.current || skipSync.current) return
+    if (ref.current.innerHTML !== value) {
+      ref.current.innerHTML = value
+    }
+  })
+
+  useEffect(() => {
+    const update = () => {
+      if (!ref.current) return
+      // Only update when our editor is focused
+      const active = document.activeElement
+      if (active !== ref.current && !ref.current.contains(active)) return
+      setFmt({
+        bold:        document.queryCommandState('bold'),
+        italic:      document.queryCommandState('italic'),
+        underline:   document.queryCommandState('underline'),
+        superscript: document.queryCommandState('superscript'),
+      })
+    }
+    document.addEventListener('selectionchange', update)
+    return () => document.removeEventListener('selectionchange', update)
+  }, [])
+
+  const emit = () => {
+    skipSync.current = true
+    onChange?.(ref.current?.innerHTML ?? '')
+    requestAnimationFrame(() => { skipSync.current = false })
+  }
+
+  const exec = (cmd, val = null) => {
+    ref.current?.focus()
+    document.execCommand(cmd, false, val)
+    emit()
+    // Re-check format state after execCommand
+    setFmt({
+      bold:        document.queryCommandState('bold'),
+      italic:      document.queryCommandState('italic'),
+      underline:   document.queryCommandState('underline'),
+      superscript: document.queryCommandState('superscript'),
+    })
+  }
+
+  return (
+    <div className={`rte-wrapper ${className}`} style={style}>
+      <div className="rte-toolbar">
+        <button type="button" className={`rte-btn rte-b${fmt.bold ? ' rte-active' : ''}`} title="Bold"
+          onMouseDown={e => { e.preventDefault(); exec('bold') }}>B</button>
+        <button type="button" className={`rte-btn rte-i${fmt.italic ? ' rte-active' : ''}`} title="Italic"
+          onMouseDown={e => { e.preventDefault(); exec('italic') }}>I</button>
+        <button type="button" className={`rte-btn rte-u${fmt.underline ? ' rte-active' : ''}`} title="Underline"
+          onMouseDown={e => { e.preventDefault(); exec('underline') }}>U</button>
+        <button type="button" className={`rte-btn${fmt.superscript ? ' rte-active' : ''}`} title="Superscript"
+          onMouseDown={e => { e.preventDefault(); exec('superscript') }}
+          style={{ fontSize: '0.78rem' }}>X²</button>
+        <span className="rte-sep" />
+        {RTE_COLORS.map(c => (
+          <button key={c.hex} type="button" className="rte-color-dot" title={c.name}
+            style={{ background: c.hex }}
+            onMouseDown={e => { e.preventDefault(); exec('foreColor', c.hex) }} />
+        ))}
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        className="rte-content"
+        data-placeholder={placeholder}
+        style={{ minHeight, ...(resizable ? { resize: 'vertical', overflow: 'auto' } : {}) }}
+        onInput={emit}
+        onBlur={emit}
+      />
+    </div>
+  )
+}
+
 // ─── NotesSection ─────────────────────────────────────────────
 // Per-exercise (or plan-level) notes panel shown during live lessons.
 // Teacher and student can both read and write notes.
@@ -3437,10 +4188,10 @@ function NotesSection({ planId, exerciseId = null, authorId, authorEmail }) {
   }, [planId, exerciseId])
 
   const handleSave = async () => {
-    const trimmed = text.trim()
-    if (!trimmed || !authorId) return
+    const stripped = text.replace(/<[^>]*>/g, '').trim()
+    if (!stripped || !authorId) return
     setSaving(true)
-    const saved = await saveNote({ planId, exerciseId, authorId, content: trimmed })
+    const saved = await saveNote({ planId, exerciseId, authorId, content: text })
     setSaving(false)
     if (saved) {
       // Attach a minimal author object so the note renders immediately
@@ -3500,33 +4251,30 @@ function NotesSection({ planId, exerciseId = null, authorId, authorEmail }) {
                       >✕</button>
                     )}
                   </div>
-                  <p className="note-content">{note.content}</p>
+                  <div className="note-content" dangerouslySetInnerHTML={{ __html: note.content }} />
                 </div>
               ))}
             </div>
           )}
 
           {/* New note input */}
-          <div className="notes-input-row">
-            <textarea
-              className="notes-textarea"
-              rows={2}
-              placeholder="Write a note for this exercise…"
+          <div className="notes-input-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+            <RichTextEditor
               value={text}
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave()
-              }}
+              onChange={v => setText(v)}
+              placeholder="Write a note for this exercise…"
+              minHeight="64px"
             />
-            <button
-              className="btn-gold notes-save-btn"
-              disabled={saving || !text.trim()}
-              onClick={handleSave}
-            >
-              {saving ? '…' : 'Save note'}
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.4rem' }}>
+              <button
+                className="btn-gold notes-save-btn"
+                disabled={saving || !text.replace(/<[^>]*>/g, '').trim()}
+                onClick={handleSave}
+              >
+                {saving ? '…' : 'Save note'}
+              </button>
+            </div>
           </div>
-          <p className="notes-hint">Ctrl+Enter to save quickly</p>
         </div>
       )}
     </div>
@@ -3547,6 +4295,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false, les
     : t === 'word_choice'   ? 'Word choice'
     : t === 'listening'     ? 'Listening'
     : t === 'viewing'       ? 'Viewing'
+    : t === 'speaking'      ? 'Speaking'
     : 'Written answer'
 
   const inner = (
@@ -3590,7 +4339,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false, les
           </div>
         )}
         {(questions || []).map((q, idx) => {
-          if (q.type === 'listening' || q.type === 'viewing') return null
+          if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') return null
 
           // Fill-blank: overlay on image (demo/screen-share mode — Dogukan can type too)
           if (q.type === 'fill_blank') {
@@ -3622,7 +4371,7 @@ function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = false, les
                 <span className="eq-num">Q{idx + 1}</span>
                 <span className="eq-type">{typeLabel(q.type)}</span>
               </div>
-              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />}
               {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
 
               {q.type === 'multiple_choice' && (
@@ -3720,7 +4469,7 @@ function VocabCaptureBar({ exerciseId, studentId }) {
 }
 
 // ─── StudentSubmissionReview ──────────────────────────────────
-function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
+function StudentSubmissionReview({ assignment, questions, answerMap, onBack, backLabel = '← Back to dashboard' }) {
   const ex = assignment.exercises
 
   const typeLabel = (t) =>
@@ -3731,12 +4480,13 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
     : t === 'word_choice'   ? 'Word choice'
     : t === 'listening'     ? 'Listening'
     : t === 'viewing'       ? 'Viewing'
+    : t === 'speaking'      ? 'Speaking'
     : 'Written answer'
 
   return (
     <div className="flow-card exercise-player-card">
       <div className="submission-review-toolbar no-print">
-        <button className="back-btn" onClick={onBack}>← Back to dashboard</button>
+        <button className="back-btn" onClick={onBack}>{backLabel}</button>
         <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.4rem 0.8rem' }}
           onClick={() => window.print()}>
           🖨️ Print / Save PDF
@@ -3784,7 +4534,7 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
 
       <div className="exercise-questions">
         {questions.map((q, idx) => {
-          if (q.type === 'listening' || q.type === 'viewing') return null
+          if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') return null
           const sa = answerMap[q.id]
 
           // Fill-blank overlay: show image with typed answers
@@ -3811,7 +4561,7 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack }) {
                 <span className="eq-num">Q{idx + 1}</span>
                 <span className="eq-type">{typeLabel(q.type)}</span>
               </div>
-              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
               <div className="submission-answer-block">
                 <span className="review-label">Your answer:</span>
@@ -3869,12 +4619,19 @@ function AdminLessonStages({ adminUserId }) {
   const [filterUnit,     setFilterUnit]     = useState('')   // unit number filter
   const [filterPage,     setFilterPage]     = useState('')   // page number filter
   const [filterSection,  setFilterSection]  = useState('')   // section text filter
+  const [filterCourse,   setFilterCourse]   = useState('')   // course filter in library tab
+  const [showFilters,    setShowFilters]    = useState(false) // filter panel open
   const [showLabelMgr,   setShowLabelMgr]   = useState(false) // label management panel open
   const [deletingLabelId,setDeletingLabelId]= useState(null)
+  const [showNewLabelForm, setShowNewLabelForm] = useState(false)
+  const [newLabelMgrName,  setNewLabelMgrName]  = useState('')
+  const [newLabelMgrColor, setNewLabelMgrColor] = useState(LABEL_COLORS[0].value)
+  const [savingNewLabelMgr,setSavingNewLabelMgr]= useState(false)
   const [showBookMgr,    setShowBookMgr]    = useState(false) // book management panel open
   const [newBookTitle,   setNewBookTitle]   = useState('')
   const [savingBook,     setSavingBook]     = useState(false)
   const [deletingBookId, setDeletingBookId] = useState(null)
+  const [showRecentlyDeletedEx, setShowRecentlyDeletedEx] = useState(false)
 
   // assign form
   const [assignMode,  setAssignMode]  = useState('exercise') // 'exercise'
@@ -3954,8 +4711,10 @@ function AdminLessonStages({ adminUserId }) {
   }
 
   const handleDeleteExercise = async (id) => {
+    const exToDelete = exercises.find(e => e.id === id)
     const ok = await deleteExercise(id)
     if (ok) {
+      if (exToDelete) logRecentlyDeleted('exercise', id, exToDelete.title)
       setExercises(prev => prev.filter(e => e.id !== id))
       setDeletingId(null)
     }
@@ -4035,43 +4794,184 @@ function AdminLessonStages({ adminUserId }) {
         const sectionFiltered = filterSection.trim()
           ? pageFiltered.filter(ex => (ex.section || '').toLowerCase().includes(filterSection.trim().toLowerCase()))
           : pageFiltered
+        const courseFiltered = filterCourse
+          ? sectionFiltered.filter(ex => ex.level === filterCourse)
+          : sectionFiltered
         const filteredExercises = filterLabelIds.length === 0
-          ? sectionFiltered
-          : sectionFiltered.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
+          ? courseFiltered
+          : courseFiltered.filter(ex => (ex.labels || []).some(l => filterLabelIds.includes(l.id)))
         return (
           <div>
             <div className="admin-exercises-toolbar">
-              <h3 style={{ margin: 0 }}>Stage Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0 || filterBookId || filterUnit || filterPage || filterSection) ? ` / ${exercises.length}` : ''})</h3>
+              <h3 style={{ margin: 0 }}>Exercise Library ({filteredExercises.length}{(filterStageType || filterLabelIds.length > 0 || filterBookId || filterUnit || filterPage || filterSection || filterCourse) ? ` / ${exercises.length}` : ''})</h3>
               <div style={{ display: 'flex', gap: '0.4rem' }}>
+                {/* Filters toggle */}
+                {(() => {
+                  const activeCount = [filterStageType, filterBookId, filterUnit, filterPage, filterSection.trim(), filterCourse].filter(Boolean).length + filterLabelIds.length
+                  return (
+                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', position: 'relative', borderColor: showFilters ? 'var(--gold)' : undefined }}
+                      onClick={() => setShowFilters(p => !p)}>
+                      🔽 Filters
+                      {activeCount > 0 && (
+                        <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--gold)', color: '#fff', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 700, padding: '1px 5px', lineHeight: 1.4 }}>{activeCount}</span>
+                      )}
+                    </button>
+                  )
+                })()}
                 <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                  onClick={() => { setShowBookMgr(false); setShowLabelMgr(p => !p) }}>🏷 Labels</button>
-                <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                  onClick={() => { setShowLabelMgr(false); setShowBookMgr(p => !p) }}>📚 Books</button>
-                <button className="btn-gold" onClick={() => setView('create-stage')}>+ Create lesson stage</button>
+                  onClick={() => { setShowLabelMgr(p => !p) }}>🏷 Manage Labels</button>
+                <button className="btn-gold admin-create-btn" onClick={() => setView('create-stage')}>+ Create exercise</button>
               </div>
             </div>
 
-            {/* ── Stage type filter ── */}
-            <div className="stage-type-filter">
-              <button className={`stage-type-chip ${!filterStageType ? 'active' : ''}`}
-                onClick={() => setFilterStageType(null)}>All</button>
-              {STAGE_TYPES.map(t => (
-                <button key={t.value}
-                  className={`stage-type-chip ${filterStageType === t.value ? 'active' : ''}`}
-                  onClick={() => setFilterStageType(filterStageType === t.value ? null : t.value)}>
-                  {t.icon} {t.label}
-                </button>
-              ))}
-            </div>
+            {/* ── Collapsible filter panel ── */}
+            {showFilters && (
+              <div style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>Filter exercises</span>
+                  {(filterStageType || filterLabelIds.length > 0 || filterBookId || filterUnit || filterPage || filterSection || filterCourse) && (
+                    <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem' }}
+                      onClick={() => { setFilterLabelIds([]); setFilterStageType(null); setFilterBookId(null); setFilterUnit(''); setFilterPage(''); setFilterSection(''); setFilterCourse('') }}>
+                      ✕ Clear all
+                    </button>
+                  )}
+                </div>
+
+                {/* Exercise type */}
+                <div style={{ marginBottom: '0.65rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Exercise type</div>
+                  <div className="stage-type-filter" style={{ margin: 0 }}>
+                    <button className={`stage-type-chip ${!filterStageType ? 'active' : ''}`}
+                      onClick={() => setFilterStageType(null)}>All</button>
+                    {STAGE_TYPES.map(t => (
+                      <button key={t.value}
+                        className={`stage-type-chip ${filterStageType === t.value ? 'active' : ''}`}
+                        onClick={() => setFilterStageType(filterStageType === t.value ? null : t.value)}>
+                        {t.icon} {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Book */}
+                {books.length > 0 && (
+                  <div style={{ marginBottom: '0.65rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Book</div>
+                    <div className="library-filter-row" style={{ margin: 0 }}>
+                      <button className={`filter-chip ${!filterBookId ? 'filter-chip--active' : ''}`}
+                        onClick={() => setFilterBookId(null)}>All</button>
+                      {books.map(bk => (
+                        <button key={bk.id}
+                          className={`filter-chip ${filterBookId === bk.id ? 'filter-chip--active' : ''}`}
+                          onClick={() => setFilterBookId(filterBookId === bk.id ? null : bk.id)}>
+                          {bk.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Unit / Page / Section */}
+                <div style={{ marginBottom: labels.length > 0 ? '0.65rem' : 0 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Location in textbook</div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input type="number" min="1" placeholder="Unit" value={filterUnit}
+                      onChange={e => setFilterUnit(e.target.value)}
+                      className="location-filter-input" />
+                    <input type="number" min="1" placeholder="Page" value={filterPage}
+                      onChange={e => setFilterPage(e.target.value)}
+                      className="location-filter-input" />
+                    <input type="text" placeholder="Section" value={filterSection}
+                      onChange={e => setFilterSection(e.target.value)}
+                      className="location-filter-input location-filter-input--wide" />
+                    {(filterUnit || filterPage || filterSection) && (
+                      <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.22rem 0.55rem' }}
+                        onClick={() => { setFilterUnit(''); setFilterPage(''); setFilterSection('') }}>Clear</button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Labels */}
+                {labels.length > 0 && (
+                  <div style={{ marginBottom: getAdminCourses().length > 0 ? '0.65rem' : 0 }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Label</div>
+                    <div className="library-filter-row" style={{ margin: 0 }}>
+                      <button className={`filter-chip ${filterLabelIds.length === 0 ? 'filter-chip--active' : ''}`}
+                        onClick={() => setFilterLabelIds([])}>All</button>
+                      {labels.map(lbl => (
+                        <button key={lbl.id}
+                          className={`filter-chip ${filterLabelIds.includes(lbl.id) ? 'filter-chip--active' : ''}`}
+                          style={{ '--lbl-color': lbl.color }}
+                          onClick={() => setFilterLabelIds(p =>
+                            p.includes(lbl.id) ? p.filter(x => x !== lbl.id) : [...p, lbl.id]
+                          )}>
+                          {lbl.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Course filter */}
+                {getAdminCourses().length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Course</div>
+                    <select value={filterCourse} onChange={e => setFilterCourse(e.target.value)}
+                      style={{ fontSize: '0.85rem', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+                      <option value="">All courses</option>
+                      {getAdminCourses().map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Label manager ── */}
             {showLabelMgr && (
-              <div className="label-mgr-panel">
-                <p className="label-mgr-title">Manage labels</p>
+              <div className="label-mgr-panel" style={{ background: '#EEF4F8', borderColor: '#c5d8e8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                  <p className="label-mgr-title" style={{ margin: 0 }}>Manage labels</p>
+                  <button className="btn-gold" style={{ fontSize: '0.78rem', padding: '0.28rem 0.75rem' }}
+                    onClick={() => { setShowNewLabelForm(p => !p); setNewLabelMgrName(''); setNewLabelMgrColor(LABEL_COLORS[0].value) }}>
+                    {showNewLabelForm ? '✕ Cancel' : '+ Add New Label'}
+                  </button>
+                </div>
+
+                {showNewLabelForm && (
+                  <div style={{ background: '#fff', border: '1px solid #c5d8e8', borderRadius: '8px', padding: '0.75rem', marginBottom: '0.65rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input type="text" placeholder="Label name (e.g. Elementary)"
+                        value={newLabelMgrName} onChange={e => setNewLabelMgrName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && !savingNewLabelMgr && newLabelMgrName.trim() && (async () => {
+                          setSavingNewLabelMgr(true)
+                          const lbl = await createLabel(newLabelMgrName.trim(), newLabelMgrColor)
+                          setSavingNewLabelMgr(false)
+                          if (lbl) { setLabels(p => [...p, lbl]); setShowNewLabelForm(false); setNewLabelMgrName('') }
+                        })()}
+                        style={{ flex: 1, minWidth: '140px' }} autoFocus />
+                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                        {LABEL_COLORS.map(c => (
+                          <button key={c.value} type="button" title={c.label}
+                            style={{ width: '22px', height: '22px', borderRadius: '50%', border: `2.5px solid ${newLabelMgrColor === c.value ? '#1a2030' : 'transparent'}`, background: c.value, cursor: 'pointer', padding: 0 }}
+                            onClick={() => setNewLabelMgrColor(c.value)} />
+                        ))}
+                      </div>
+                      <button className="btn-gold" style={{ fontSize: '0.8rem', padding: '0.32rem 0.85rem', flexShrink: 0 }}
+                        disabled={savingNewLabelMgr || !newLabelMgrName.trim()}
+                        onClick={async () => {
+                          setSavingNewLabelMgr(true)
+                          const lbl = await createLabel(newLabelMgrName.trim(), newLabelMgrColor)
+                          setSavingNewLabelMgr(false)
+                          if (lbl) { setLabels(p => [...p, lbl]); setShowNewLabelForm(false); setNewLabelMgrName('') }
+                        }}>
+                        {savingNewLabelMgr ? '…' : 'Create'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {labels.length === 0 ? (
-                  <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0 }}>
-                    No labels yet. Create them from inside any exercise.
-                  </p>
+                  <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0 }}>No labels yet — create one above.</p>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                     {labels.map(lbl => (
@@ -4134,130 +5034,66 @@ function AdminLessonStages({ adminUserId }) {
               </div>
             )}
 
-            {/* ── Book filter ── */}
-            {books.length > 0 && (
-              <div className="library-filter-row">
-                <span className="library-filter-label">📚 Book:</span>
-                <button className={`filter-chip ${!filterBookId ? 'filter-chip--active' : ''}`}
-                  onClick={() => setFilterBookId(null)}>All</button>
-                {books.map(bk => (
-                  <button key={bk.id}
-                    className={`filter-chip ${filterBookId === bk.id ? 'filter-chip--active' : ''}`}
-                    onClick={() => setFilterBookId(filterBookId === bk.id ? null : bk.id)}>
-                    {bk.title}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* ── Location filter (unit / page / section) ── */}
-            <div className="library-filter-row library-filter-row--location">
-              <span className="library-filter-label">📍</span>
-              <input type="number" min="1" placeholder="Unit" value={filterUnit}
-                onChange={e => setFilterUnit(e.target.value)}
-                className="location-filter-input" />
-              <input type="number" min="1" placeholder="Page" value={filterPage}
-                onChange={e => setFilterPage(e.target.value)}
-                className="location-filter-input" />
-              <input type="text" placeholder="Section" value={filterSection}
-                onChange={e => setFilterSection(e.target.value)}
-                className="location-filter-input location-filter-input--wide" />
-              {(filterUnit || filterPage || filterSection) && (
-                <button className="btn-ghost"
-                  style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
-                  onClick={() => { setFilterUnit(''); setFilterPage(''); setFilterSection('') }}>
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {/* ── Label filter ── */}
-            {labels.length > 0 && (
-              <div className="library-filter-row">
-                <span className="library-filter-label">Filter:</span>
-                <button className={`filter-chip ${filterLabelIds.length === 0 ? 'filter-chip--active' : ''}`}
-                  onClick={() => setFilterLabelIds([])}>All</button>
-                {labels.map(lbl => (
-                  <button key={lbl.id}
-                    className={`filter-chip ${filterLabelIds.includes(lbl.id) ? 'filter-chip--active' : ''}`}
-                    style={{ '--lbl-color': lbl.color }}
-                    onClick={() => setFilterLabelIds(p =>
-                      p.includes(lbl.id) ? p.filter(x => x !== lbl.id) : [...p, lbl.id]
-                    )}>
-                    {lbl.name}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {loading ? <div className="dashboard-loading">Loading…</div>
             : exercises.length === 0 ? (
               <div className="dashboard-empty">
                 <p>No lesson stages yet.</p>
-                <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "Create lesson stage" to build your first one — or upload a textbook photo.</p>
+                <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Click "+ Create exercise" to build your first one — or upload a textbook photo.</p>
               </div>
             ) : filteredExercises.length === 0 ? (
               <div className="dashboard-empty">
                 <p>No stages match the selected filter.</p>
-                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => { setFilterLabelIds([]); setFilterStageType(null); setFilterBookId(null); setFilterUnit(''); setFilterPage(''); setFilterSection('') }}>Clear filter</button>
+                <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => { setFilterLabelIds([]); setFilterStageType(null); setFilterBookId(null); setFilterUnit(''); setFilterPage(''); setFilterSection(''); setFilterCourse('') }}>Clear filter</button>
               </div>
             ) : (
-              <div className="library-list">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.85rem' }}>
                 {filteredExercises.map(ex => {
                   const stDef = STAGE_TYPES.find(t => t.value === ex.stage_type) || { icon: '✏️', label: 'Exercise' }
                   return (
-                  <div key={ex.id} className="library-row">
-                    {ex.thumbnail && (
-                      <img src={ex.thumbnail} alt="" className="library-row-thumb" />
-                    )}
-                    <div className="library-row-main">
-                      <div className="library-row-info">
-                        <strong style={{ fontSize: '0.95rem' }}>{ex.title}</strong>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.25rem', alignItems: 'center' }}>
-                          <span className="stage-type-badge-sm" style={{ fontSize: '0.75rem', padding: '0.18rem 0.5rem' }}>{stDef.icon} {stDef.label}</span>
-                          {ex.books?.title && <span className="admin-level-chip">📚 {ex.books.title}</span>}
-                          {(ex.unit != null || ex.page != null || ex.section || ex.exercise_no != null) && (
-                            <span className="admin-level-chip location-chip">
-                              {[
-                                ex.unit        != null ? `Unit ${ex.unit}`    : null,
-                                ex.page        != null ? `p.${ex.page}`       : null,
-                                ex.section     || null,
-                                ex.exercise_no != null ? `Ex.${ex.exercise_no}` : null,
-                              ].filter(Boolean).join(' · ')}
-                            </span>
-                          )}
-                          {ex.estimated_minutes && (
-                            <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>⏱ {ex.estimated_minutes} min</span>
-                          )}
-                          {ex.audio_url && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>🎧 Audio</span>}
-                          {ex.context_text && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>📖 Text</span>}
-                          {(ex.labels || []).map(lbl => (
-                            <span key={lbl.id} className="label-chip" style={{ '--lbl-color': lbl.color }}>{lbl.name}</span>
-                          ))}
+                  <div key={ex.id} style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: '10px', padding: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', transition: 'border-color 0.15s', cursor: 'default' }}>
+                    {ex.thumbnail
+                      ? <img src={ex.thumbnail} alt="" style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '6px', marginBottom: '0.25rem' }} />
+                      : <div style={{ width: '100%', height: '120px', borderRadius: '6px', marginBottom: '0.25rem', background: '#f0ede6', border: '1.5px dashed #c8c2b4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                          <span style={{ fontSize: '1.5rem', opacity: 0.35 }}>🖼</span>
+                          <span style={{ fontSize: '0.72rem', color: '#a09888', fontWeight: 500, letterSpacing: '0.03em' }}>No thumbnail</span>
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                        <button className="btn-ghost"
-                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                          onClick={() => openDemo(ex)}>View</button>
-                        <button className="btn-ghost"
-                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                          onClick={() => openEdit(ex)}>Edit</button>
-                        {deletingId === ex.id ? (
-                          <>
-                            <button className="btn-ghost"
-                              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
-                              onClick={() => handleDeleteExercise(ex.id)}>Confirm delete</button>
-                            <button className="btn-ghost"
-                              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-                              onClick={() => setDeletingId(null)}>Cancel</button>
-                          </>
-                        ) : (
+                    }
+                    <strong style={{ fontSize: '0.92rem' }}>{ex.title}</strong>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span className="stage-type-badge-sm" style={{ fontSize: '0.75rem', padding: '0.18rem 0.5rem' }}>{stDef.icon} {stDef.label}</span>
+                      {ex.level && <span className="admin-level-chip" style={{ background: '#EEF4F8', color: 'var(--gold)', fontWeight: 600 }}>{ex.level}</span>}
+                      {ex.books?.title && <span className="admin-level-chip chip-icon-text"><span className="chip-icon">📚</span><span>{ex.books.title}</span></span>}
+                      {ex.estimated_minutes && (
+                        <span className="admin-level-chip chip-icon-text" style={{ color: 'var(--text-muted)' }}><span className="chip-icon">⏱</span><span>{ex.estimated_minutes} min</span></span>
+                      )}
+                      {ex.audio_url && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>🎧 Audio</span>}
+                      {ex.context_text && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>📖 Text</span>}
+                      {(ex.labels || []).map(lbl => (
+                        <span key={lbl.id} className="label-chip" style={{ '--lbl-color': lbl.color }}>{lbl.name}</span>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: 'auto', paddingTop: '0.4rem' }}>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => openDemo(ex)}>View</button>
+                      <button className="btn-ghost"
+                        style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                        onClick={() => openEdit(ex)}>Edit</button>
+                      {deletingId === ex.id ? (
+                        <>
                           <button className="btn-ghost"
-                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
-                            onClick={() => setDeletingId(ex.id)}>Delete</button>
-                        )}
-                      </div>
+                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                            onClick={() => handleDeleteExercise(ex.id)}>Confirm delete</button>
+                          <button className="btn-ghost"
+                            style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                            onClick={() => setDeletingId(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="btn-ghost"
+                          style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
+                          onClick={() => setDeletingId(ex.id)}>Delete</button>
+                      )}
                     </div>
                   </div>
                 )})}
@@ -4266,15 +5102,67 @@ function AdminLessonStages({ adminUserId }) {
           </div>
         )
       })()}
+
+      {/* Recently Deleted button - bottom right */}
+      {exTab === 'library' && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+              onClick={() => setShowRecentlyDeletedEx(p => !p)}>
+              🗑 Recently Deleted
+            </button>
+          </div>
+          {showRecentlyDeletedEx && <RecentlyDeletedPanel type="exercise" onClose={() => setShowRecentlyDeletedEx(false)} />}
+        </>
+      )}
     </div>
   )
 }
 
 // ─── LessonPlanView ───────────────────────────────────────────
+// Collapsible stage cards — click any row to expand/collapse content.
+// No navigate-away: exercise content renders inline.
 function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmail = null }) {
-  const [viewMode,      setViewMode]      = useState('teacher') // 'teacher' | 'student'
-  const [activeExercise, setActiveExercise] = useState(null)    // { exercise, questions }
-  const [loadingExId,    setLoadingExId]    = useState(null)
+  const [viewMode,       setViewMode]       = useState('teacher')
+  const [assignHistory,  setAssignHistory]  = useState([])
+  const [exerciseCache,  setExerciseCache]  = useState({}) // exerciseId → full exercise obj
+  const [loadingEx,      setLoadingEx]      = useState(false)
+  const [expandedStages, setExpandedStages] = useState(new Set()) // stage IDs
+  const [demoAnswers,    setDemoAnswers]    = useState({}) // exerciseId → { qId → val }
+  const [whiteboard, setWhiteboard] = useState(() => {
+    try { return localStorage.getItem('wb_' + plan.id) || '' } catch { return '' }
+  })
+  const saveWb = (v) => {
+    setWhiteboard(v)
+    try { localStorage.setItem('wb_' + plan.id, v) } catch {}
+  }
+
+  useEffect(() => {
+    fetchPlanAssignmentHistory(plan.id).then(setAssignHistory)
+  }, [plan.id])
+
+  // Pre-fetch all exercise data (with questions) on mount
+  useEffect(() => {
+    const ids = [...new Set(
+      (plan.lesson_stages ?? []).map(s => s.exercises?.id || s.exercise_id).filter(Boolean)
+    )]
+    if (!ids.length) return
+    setLoadingEx(true)
+    Promise.all(ids.map(id => fetchExerciseWithQuestions(id))).then(results => {
+      const cache = {}
+      results.forEach(ex => { if (ex) cache[ex.id] = ex })
+      setExerciseCache(cache)
+      setLoadingEx(false)
+    })
+  }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleStage = (stageId) =>
+    setExpandedStages(prev => {
+      const next = new Set(prev)
+      if (next.has(stageId)) next.delete(stageId)
+      else next.add(stageId)
+      return next
+    })
 
   const lessonStages = (plan.lesson_stages ?? [])
     .filter(s => (s.section ?? 'lesson') !== 'homework')
@@ -4283,7 +5171,6 @@ function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmai
   const homeworkStages = (plan.lesson_stages ?? [])
     .filter(s => (s.section ?? 'lesson') === 'homework')
 
-  // Group lesson stages by stage_number
   const stageGroups = lessonStages.reduce((acc, s) => {
     const num = s.stage_number ?? 1
     if (!acc[num]) acc[num] = { number: num, name: s.stage_name, items: [] }
@@ -4293,27 +5180,66 @@ function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmai
 
   const studentName = plan.profiles?.name || plan.profiles?.email || plan.manual_students?.name
 
-  const openExercise = async (exerciseId) => {
-    const ex = exercises.find(e => e.id === exerciseId)
-    if (!ex) return
-    setLoadingExId(exerciseId)
-    const full = await fetchExerciseWithQuestions(exerciseId)
-    setLoadingExId(null)
-    if (full) setActiveExercise(full)
+  const PLAN_STAGE_COLORS = {
+    controlled_exercise: '#3b82f6', free_exercise: '#059669',
+    lead_in: '#d97706', feedback: '#7c3aed', instruction: '#64748b', clarification: '#dc2626',
   }
 
-  if (activeExercise) {
+  const renderStageCard = (stage, isHomework = false) => {
+    const exId       = stage.exercises?.id || stage.exercise_id
+    const ex         = stage.exercises || exercises.find(e => e.id === exId)
+    const isExpanded = expandedStages.has(stage.id)
+    const hasContent = !!(exId || (viewMode === 'teacher' && stage.teacher_notes))
+    const def        = STAGE_TYPES.find(t => t.value === stage.stage_type) || { icon: '▸', label: stage.stage_type || 'Activity' }
+    const color      = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
+
     return (
-      <div>
-        <ExerciseDemoPlayer
-          exercise={activeExercise}
-          questions={activeExercise.questions ?? []}
-          embedded={true}
-          onBack={() => setActiveExercise(null)}
-          lessonPlanId={plan.id}
-          authorId={adminUserId}
-          authorEmail={adminEmail}
-        />
+      <div key={stage.id} style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${isExpanded ? '#d4c9b4' : '#e8e3d8'}`, borderLeft: `4px solid ${color}`, marginBottom: '0.45rem', overflow: 'hidden' }}>
+        {/* Clickable header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.85rem', cursor: hasContent ? 'pointer' : 'default', userSelect: 'none' }}
+          onClick={() => hasContent && toggleStage(stage.id)}>
+          <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1 }}>{def.icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {ex?.title || stage.title || def.label}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>
+                {def.label}
+              </span>
+              {stage.duration_minutes && (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
+              )}
+              {isHomework && stage.content_text && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{stage.content_text}</span>
+              )}
+            </div>
+          </div>
+          {hasContent && (
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', flexShrink: 0 }}>
+              {isExpanded ? '▲' : '▼'}
+            </span>
+          )}
+        </div>
+
+        {/* Expanded content */}
+        {isExpanded && (
+          <div style={{ borderTop: '1px solid #f0ede6', padding: '0.75rem 0.85rem' }}>
+            {viewMode === 'teacher' && stage.teacher_notes && (
+              <div style={{ marginBottom: '0.65rem', fontSize: '0.8rem', color: '#78350f', background: '#fffbeb', borderRadius: '6px', padding: '0.35rem 0.6rem', borderLeft: '3px solid #fbbf24' }}
+                dangerouslySetInnerHTML={{ __html: '🔒 ' + stage.teacher_notes }} />
+            )}
+            {exId && (
+              <InlineExerciseContent
+                exerciseId={exId}
+                exerciseCache={exerciseCache}
+                loadingExercises={loadingEx}
+                demoAnswers={demoAnswers}
+                setDemoAnswers={setDemoAnswers}
+              />
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -4321,55 +5247,75 @@ function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmai
   return (
     <div>
       {/* Header row */}
-      <div style={{ display:'flex', alignItems:'center', gap:'1rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
         <button className="back-btn" onClick={onBack}>← Back to plans</button>
-        <div style={{ display:'flex', gap:'0.5rem', marginLeft:'auto', flexWrap:'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto', flexWrap: 'wrap' }}>
           <button className="btn-ghost"
-            style={{ fontSize:'0.85rem', ...(viewMode==='teacher' ? {background:'var(--gold)', color:'#fff', borderColor:'var(--gold)'} : {}) }}
+            style={{ fontSize: '0.85rem', ...(viewMode === 'teacher' ? { background: 'var(--gold)', color: '#fff', borderColor: 'var(--gold)' } : {}) }}
             onClick={() => setViewMode('teacher')}>👨‍🏫 Teacher view</button>
           <button className="btn-ghost"
-            style={{ fontSize:'0.85rem', ...(viewMode==='student' ? {background:'var(--gold)', color:'#fff', borderColor:'var(--gold)'} : {}) }}
+            style={{ fontSize: '0.85rem', ...(viewMode === 'student' ? { background: 'var(--gold)', color: '#fff', borderColor: 'var(--gold)' } : {}) }}
             onClick={() => setViewMode('student')}>👤 Student view</button>
           {viewMode === 'teacher' && (
-            <button className="btn-ghost" style={{ fontSize:'0.85rem' }} onClick={() => window.print()}>🖨 Print</button>
+            <button className="btn-ghost" style={{ fontSize: '0.85rem' }} onClick={() => window.print()}>🖨 Print</button>
           )}
         </div>
       </div>
 
       {/* Plan title */}
-      <h2 style={{ margin:'0 0 0.5rem', fontSize:'1.4rem' }}>{plan.title}</h2>
+      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>{plan.title}</h2>
 
       {/* Metadata chips */}
-      <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'1rem' }}>
-        {studentName && (
-          <span className="admin-level-chip">👤 {studentName}</span>
-        )}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        {studentName && <span className="admin-level-chip">👤 {studentName}</span>}
         {plan.scheduled_at && (
-          <span className="admin-level-chip" style={{ color:'var(--gold)' }}>
-            📅 {new Date(plan.scheduled_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+          <span className="admin-level-chip" style={{ color: 'var(--gold)' }}>
+            📅 {new Date(plan.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
           </span>
         )}
       </div>
 
-      {/* Teacher-only metadata section */}
+      {/* Whiteboard — teacher only, shown prominently at the very top */}
+      {viewMode === 'teacher' && (
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+            <strong style={{ fontSize: '0.92rem' }}>📝 Whiteboard</strong>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>(visible on screen — share with student)</span>
+            {whiteboard && (
+              <button type="button" className="btn-ghost"
+                style={{ fontSize: '0.72rem', padding: '0.18rem 0.5rem', marginLeft: 'auto', color: '#e05c5c' }}
+                onClick={() => saveWb('')}>✕ Clear</button>
+            )}
+          </div>
+          <RichTextEditor
+            value={whiteboard}
+            onChange={saveWb}
+            placeholder="Type your notes, emerging language, or instructions here — your student sees this on screen share…"
+            minHeight="140px"
+            style={{ border: '2px solid #d4a853', borderRadius: '10px', boxShadow: '0 2px 8px rgba(212,168,83,0.15)' }}
+          />
+        </div>
+      )}
+
+      {/* Teacher-only metadata */}
       {viewMode === 'teacher' && (plan.lesson_aim || plan.teaching_point || plan.language_analysis) && (
-        <div style={{ background:'#FFFBF0', border:'1px solid #f0e8c8', borderRadius:'10px', padding:'1rem', marginBottom:'1.25rem' }}>
+        <div style={{ background: '#FFFBF0', border: '1px solid #f0e8c8', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
           {plan.lesson_aim && (
             <>
               <strong>🎯 Lesson aim</strong>
-              <p style={{ margin:'0.25rem 0 0.75rem', whiteSpace:'pre-wrap' }}>{plan.lesson_aim}</p>
+              <div style={{ margin: '0.25rem 0 0.75rem' }} dangerouslySetInnerHTML={{ __html: plan.lesson_aim }} />
             </>
           )}
           {plan.teaching_point && (
             <>
               <strong>✏️ Teaching point</strong>
-              <p style={{ margin:'0.25rem 0 0.75rem', whiteSpace:'pre-wrap' }}>{plan.teaching_point}</p>
+              <div style={{ margin: '0.25rem 0 0.75rem' }} dangerouslySetInnerHTML={{ __html: plan.teaching_point }} />
             </>
           )}
           {plan.language_analysis && (
             <>
               <strong>🔬 Language analysis</strong>
-              <p style={{ margin:'0.25rem 0', whiteSpace:'pre-wrap' }}>{plan.language_analysis}</p>
+              <div style={{ margin: '0.25rem 0' }} dangerouslySetInnerHTML={{ __html: plan.language_analysis }} />
             </>
           )}
         </div>
@@ -4379,59 +5325,49 @@ function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmai
       <div className="builder-section">
         <h4 className="builder-section-title">📌 Lesson stages</h4>
         {Object.values(stageGroups).map(group => (
-          <div key={group.number} style={{ marginBottom:'1rem' }}>
-            <div style={{ fontWeight:600, marginBottom:'0.4rem', color:'var(--gold)' }}>
+          <div key={group.number} style={{ marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 600, marginBottom: '0.4rem', color: 'var(--gold)' }}>
               Stage {group.number}{group.name ? ` — ${group.name}` : ''}
             </div>
-            {group.items.map(stage => {
-              const ex = exercises.find(e => e.id === stage.exercise_id)
-              return (
-                <div key={stage.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.6rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem' }}>
-                  <span style={{ flex:1, fontSize:'0.9rem' }}>{ex ? ex.title : stage.title || 'Stage item'}</span>
-                  {viewMode === 'teacher' && stage.duration_minutes && (
-                    <span style={{ color:'var(--text-muted)', fontSize:'0.8rem' }}>⏱ {stage.duration_minutes} min</span>
-                  )}
-                  {ex && (
-                    <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.3rem 0.65rem', whiteSpace:'nowrap' }}
-                      onClick={() => openExercise(ex.id)}
-                      disabled={loadingExId === ex.id}>
-                      {loadingExId === ex.id ? '…' : '▶ Open'}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+            {group.items.map(stage => renderStageCard(stage))}
           </div>
         ))}
         {Object.keys(stageGroups).length === 0 && (
-          <p style={{ color:'var(--text-muted)', fontSize:'0.88rem' }}>No stages yet.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No stages yet.</p>
         )}
       </div>
 
-      {/* Homework section */}
+      {/* Homework */}
       {homeworkStages.length > 0 && (
-        <div className="builder-section" style={{ marginTop:'1rem' }}>
+        <div className="builder-section" style={{ marginTop: '1rem' }}>
           <h4 className="builder-section-title">📚 Homework</h4>
-          {homeworkStages.map(stage => {
-            const ex = exercises.find(e => e.id === stage.exercise_id)
-            return (
-              <div key={stage.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.6rem 0.75rem', background:'#fff', borderRadius:'7px', border:'1px solid #e8e3d8', marginBottom:'0.4rem' }}>
-                <span style={{ flex:1, fontSize:'0.9rem' }}>
-                  {ex ? ex.title : stage.title || 'Homework exercise'}
-                  {stage.content_text && (
-                    <span style={{ color:'var(--text-muted)', fontSize:'0.82rem', marginLeft:'0.5rem' }}>— {stage.content_text}</span>
-                  )}
+          {homeworkStages.map(stage => renderStageCard(stage, true))}
+        </div>
+      )}
+
+      {/* Assignment history */}
+      {assignHistory.length > 0 && (
+        <div className="builder-section" style={{ marginTop: '1rem' }}>
+          <h4 className="builder-section-title">👥 Assigned to</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+            {assignHistory.map((row, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.45rem 0.75rem', background: '#fff', borderRadius: '6px', border: '1px solid #e8e3d8', fontSize: '0.88rem' }}>
+                <span style={{ flex: 1 }}>
+                  👤 {row.profiles?.name || row.profiles?.email || 'Unknown student'}
                 </span>
-                {ex && (
-                  <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.3rem 0.65rem', whiteSpace:'nowrap' }}
-                    onClick={() => openExercise(ex.id)}
-                    disabled={loadingExId === ex.id}>
-                    {loadingExId === ex.id ? '…' : '▶ Open'}
-                  </button>
+                {row.scheduled_at ? (
+                  <span style={{ color: 'var(--gold)', fontSize: '0.8rem' }}>
+                    📅 {new Date(row.scheduled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {' at '}{new Date(row.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    Assigned {new Date(row.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                  </span>
                 )}
               </div>
-            )
-          })}
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -4439,6 +5375,530 @@ function LessonPlanView({ plan, exercises, onBack, adminUserId = null, adminEmai
 }
 
 // ─── AdminLessonPlans ─────────────────────────────────────────
+// ─── BoxTextArea ──────────────────────────────────────────────
+// Isolated contenteditable inside each floating box.
+// Keeps its own ref so React re-renders don't reset the cursor.
+function BoxTextArea({ initialText, color, onTextChange }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    if (ref.current && !ref.current._initialised) {
+      ref.current.innerHTML = initialText || ''
+      ref.current._initialised = true
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      style={{ flex: 1, padding: '5px 8px', outline: 'none', minHeight: '28px', cursor: 'text', wordBreak: 'break-word', fontSize: '0.95rem', lineHeight: 1.5, color: '#1a2030' }}
+      onInput={e => onTextChange(e.currentTarget.innerHTML)}
+      onMouseDown={e => e.stopPropagation()} // prevent drag when clicking in text
+    />
+  )
+}
+
+const FILL_COLORS = [
+  { name: 'None (transparent)', value: null },
+  { name: 'Lemon',    value: '#fef9c3' },
+  { name: 'Sky blue', value: '#dbeafe' },
+  { name: 'Mint',     value: '#dcfce7' },
+  { name: 'Rose',     value: '#fce7f3' },
+  { name: 'Lavender', value: '#ede9fe' },
+]
+
+// ─── TeachWhiteboard ──────────────────────────────────────────
+// Custom rich-text whiteboard for the Teach view. Has its own toolbar:
+// bold / italic / underline / strikethrough / colours /
+// insert blank / insert rectangle (with colour options).
+const RECT_COLORS = [
+  { name: 'Blue',   value: '#2563eb' },
+  { name: 'Red',    value: '#dc2626' },
+  { name: 'Green',  value: '#16a34a' },
+  { name: 'Orange', value: '#ea580c' },
+  { name: 'Purple', value: '#7c3aed' },
+  { name: 'Black',  value: '#1a2030' },
+]
+
+function TeachWhiteboard({ value = '', onChange, placeholder, style = {}, storageKey = null }) {
+  const ref        = useRef(null)
+  const skipSync   = useRef(false)
+  const containerRef = useRef(null)
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, strike: false })
+  const [showRectPalette, setShowRectPalette] = useState(false)
+  const [selectedBoxId, setSelectedBoxId] = useState(null)
+  const [pendingBorderColor, setPendingBorderColor] = useState(RECT_COLORS[0].value)
+  const [pendingNoBorder,    setPendingNoBorder]    = useState(false)
+  const [pendingFillColor,   setPendingFillColor]   = useState(null) // null = transparent white
+
+  // Floating boxes — independent of text content
+  const [boxes, setBoxes] = useState(() => {
+    if (!storageKey) return []
+    try { const s = localStorage.getItem(storageKey + '_boxes'); return s ? JSON.parse(s) : [] } catch { return [] }
+  })
+  const [dragging, setDragging] = useState(null)
+  const [resizing, setResizing] = useState(null)
+
+  const persistBoxes = (next) => {
+    setBoxes(next)
+    if (storageKey) { try { localStorage.setItem(storageKey + '_boxes', JSON.stringify(next)) } catch {} }
+  }
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (dragging) {
+        const dx = e.clientX - dragging.startMX
+        const dy = e.clientY - dragging.startMY
+        setBoxes(prev => prev.map(b => b.id === dragging.id
+          ? { ...b, x: dragging.startBX + dx, y: dragging.startBY + dy } : b))
+      }
+      if (resizing) {
+        const dw = e.clientX - resizing.startMX
+        const dh = e.clientY - resizing.startMY
+        setBoxes(prev => prev.map(b => b.id === resizing.id
+          ? { ...b, w: Math.max(40, resizing.startW + dw), h: Math.max(28, resizing.startH + dh) } : b))
+      }
+    }
+    const onUp = () => {
+      if (dragging || resizing) {
+        setBoxes(prev => { if (storageKey) { try { localStorage.setItem(storageKey + '_boxes', JSON.stringify(prev)) } catch {} } return prev })
+        setDragging(null); setResizing(null)
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [dragging, resizing, storageKey])
+
+  useLayoutEffect(() => {
+    if (!ref.current || skipSync.current) return
+    if (ref.current.innerHTML !== value) ref.current.innerHTML = value
+  })
+
+  useEffect(() => {
+    const update = () => {
+      if (!ref.current) return
+      const active = document.activeElement
+      if (active !== ref.current && !ref.current.contains(active)) return
+      setFmt({ bold: document.queryCommandState('bold'), italic: document.queryCommandState('italic'), underline: document.queryCommandState('underline'), strike: document.queryCommandState('strikeThrough') })
+    }
+    document.addEventListener('selectionchange', update)
+    return () => document.removeEventListener('selectionchange', update)
+  }, [])
+
+  const emit = () => {
+    skipSync.current = true
+    onChange?.(ref.current?.innerHTML ?? '')
+    requestAnimationFrame(() => { skipSync.current = false })
+  }
+
+  const exec = (cmd, val = null) => {
+    ref.current?.focus()
+    document.execCommand(cmd, false, val)
+    emit()
+    setFmt({ bold: document.queryCommandState('bold'), italic: document.queryCommandState('italic'), underline: document.queryCommandState('underline'), strike: document.queryCommandState('strikeThrough') })
+  }
+
+  const insertBlank = () => {
+    ref.current?.focus()
+    const sel = window.getSelection()
+    if (!sel || !sel.rangeCount) return
+    const range = sel.getRangeAt(0)
+    range.deleteContents()
+    const blank = document.createElement('span')
+    blank.style.cssText = 'display:inline-block; border-bottom:2.5px solid #1a2030; min-width:80px; margin:0 3px; vertical-align:bottom;'
+    blank.innerHTML = ' '
+    range.insertNode(blank)
+    range.setStartAfter(blank); range.collapse(true)
+    sel.removeAllRanges(); sel.addRange(range)
+    emit()
+  }
+
+  const applyFontSize = (sizePx) => {
+    ref.current?.focus()
+    // Use fontSize=7 trick then replace <font> with a styled <span>
+    document.execCommand('fontSize', false, '7')
+    const fontEls = ref.current?.querySelectorAll('font[size="7"]')
+    fontEls?.forEach(el => {
+      const span = document.createElement('span')
+      span.style.fontSize = sizePx
+      span.innerHTML = el.innerHTML
+      el.parentNode?.replaceChild(span, el)
+    })
+    emit()
+  }
+
+  const getCurrentFontSizePx = () => {
+    const sel = window.getSelection()
+    if (!sel || !sel.rangeCount) return 18
+    const node = sel.getRangeAt(0).startContainer
+    const el = node.nodeType === 3 ? node.parentElement : node
+    return parseFloat(window.getComputedStyle(el).fontSize) || 18
+  }
+
+  const adjustFontSize = (delta) => {
+    ref.current?.focus()
+    const next = Math.max(8, Math.min(72, Math.round(getCurrentFontSizePx() + delta)))
+    applyFontSize(next + 'px')
+  }
+
+  const addBox = () => {
+    setShowRectPalette(false)
+    const newBox = {
+      id: crypto.randomUUID(), x: 24, y: 24, w: 180, h: 72,
+      color: pendingBorderColor,
+      noBorder: pendingNoBorder,
+      fillColor: pendingFillColor,
+      text: '',
+    }
+    persistBoxes([...boxes, newBox])
+  }
+
+  const btnBase = { padding: '0.22rem 0.55rem', borderRadius: '4px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: 'transparent', fontSize: '0.85rem', lineHeight: 1, transition: 'background 0.12s' }
+  const activeS  = { background: 'rgba(0,0,0,0.12)', fontWeight: 700 }
+
+  return (
+    <div className="rte-wrapper" style={style}>
+      <div className="rte-toolbar" style={{ flexWrap: 'wrap', gap: '0.15rem', position: 'relative' }}>
+        <button type="button" title="Bold" style={{ ...btnBase, fontWeight: 700, ...(fmt.bold ? activeS : {}) }}
+          onMouseDown={e => { e.preventDefault(); exec('bold') }}>B</button>
+        <button type="button" title="Italic" style={{ ...btnBase, fontStyle: 'italic', ...(fmt.italic ? activeS : {}) }}
+          onMouseDown={e => { e.preventDefault(); exec('italic') }}>I</button>
+        <button type="button" title="Underline" style={{ ...btnBase, textDecoration: 'underline', ...(fmt.underline ? activeS : {}) }}
+          onMouseDown={e => { e.preventDefault(); exec('underline') }}>U</button>
+        <button type="button" title="Strikethrough" style={{ ...btnBase, textDecoration: 'line-through', ...(fmt.strike ? activeS : {}) }}
+          onMouseDown={e => { e.preventDefault(); exec('strikeThrough') }}>S</button>
+
+        {/* Font size controls: − dropdown + */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', border: '1px solid var(--border)', borderRadius: '5px', overflow: 'hidden', height: '26px' }}>
+          <button type="button" title="Decrease font size"
+            style={{ ...btnBase, padding: '0 0.45rem', fontWeight: 700, fontSize: '1rem', lineHeight: 1, height: '100%', borderRadius: 0, border: 'none' }}
+            onMouseDown={e => { e.preventDefault(); adjustFontSize(-2) }}>−</button>
+          <select
+            title="Font size — select text first"
+            defaultValue=""
+            onChange={e => { if (e.target.value) { applyFontSize(e.target.value); e.target.value = '' } }}
+            style={{ fontSize: '0.78rem', padding: '0.2rem 0.2rem', border: 'none', borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit', height: '100%' }}>
+            <option value="" disabled>Size</option>
+            <option value="12px">12</option>
+            <option value="14px">14</option>
+            <option value="16px">16</option>
+            <option value="18px">18 — Small</option>
+            <option value="20px">20</option>
+            <option value="24px">24 — Normal</option>
+            <option value="28px">28</option>
+            <option value="32px">32 — Large</option>
+            <option value="36px">36</option>
+          </select>
+          <button type="button" title="Increase font size"
+            style={{ ...btnBase, padding: '0 0.45rem', fontWeight: 700, fontSize: '1rem', lineHeight: 1, height: '100%', borderRadius: 0, border: 'none' }}
+            onMouseDown={e => { e.preventDefault(); adjustFontSize(2) }}>+</button>
+        </div>
+
+        <span className="rte-sep" />
+        {RTE_COLORS.map(c => (
+          <button key={c.hex} type="button" className="rte-color-dot" title={c.name}
+            style={{ background: c.hex }}
+            onMouseDown={e => { e.preventDefault(); exec('foreColor', c.hex) }} />
+        ))}
+        <span className="rte-sep" />
+        <button type="button" title="Insert blank placeholder"
+          style={{ ...btnBase, fontSize: '0.78rem', borderBottom: '2.5px solid #1a2030', paddingBottom: '0px', letterSpacing: '0.04em' }}
+          onMouseDown={e => { e.preventDefault(); insertBlank() }}>___</button>
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <button type="button" title="Add a draggable coloured box"
+            style={{ ...btnBase, fontSize: '0.78rem', border: '2px solid #1a2030', borderRadius: '4px' }}
+            onMouseDown={e => { e.preventDefault(); setShowRectPalette(p => !p) }}>
+            ⬜ Box
+          </button>
+          {showRectPalette && (
+            <div style={{ position: 'absolute', top: '110%', left: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.65rem 0.75rem', boxShadow: '0 4px 16px rgba(0,0,0,0.14)', width: '226px', zIndex: 20 }}>
+
+              {/* Border colour */}
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.3rem' }}>Border colour</div>
+              <div style={{ display: 'flex', gap: '0.28rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.55rem' }}>
+                {RECT_COLORS.map(c => (
+                  <button key={c.value} type="button" title={c.name}
+                    style={{ width: '24px', height: '24px', borderRadius: '4px', cursor: 'pointer',
+                      border: pendingBorderColor === c.value && !pendingNoBorder ? `3px solid #1a2030` : `2.5px solid ${c.value}`,
+                      background: pendingBorderColor === c.value && !pendingNoBorder ? `${c.value}30` : 'transparent' }}
+                    onMouseDown={e => { e.preventDefault(); setPendingBorderColor(c.value); setPendingNoBorder(false) }} />
+                ))}
+                <button type="button" title="No border"
+                  style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem', borderRadius: '4px', cursor: 'pointer', fontFamily: 'inherit',
+                    border: `1.5px dashed ${pendingNoBorder ? '#1a2030' : '#ccc'}`,
+                    background: pendingNoBorder ? '#f0f0f0' : 'transparent', color: 'var(--text-muted)' }}
+                  onMouseDown={e => { e.preventDefault(); setPendingNoBorder(p => !p) }}>None</button>
+              </div>
+
+              {/* Fill colour */}
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.3rem' }}>Fill colour</div>
+              <div style={{ display: 'flex', gap: '0.28rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
+                {FILL_COLORS.map(c => (
+                  <button key={c.name} type="button" title={c.name}
+                    style={{ width: '24px', height: '24px', borderRadius: '4px', cursor: 'pointer',
+                      border: pendingFillColor === c.value ? `3px solid #1a2030` : `1.5px solid #ccc`,
+                      background: c.value || 'transparent',
+                      ...(c.value === null ? { backgroundImage: 'repeating-linear-gradient(45deg,#e0e0e0 0,#e0e0e0 2px,transparent 0,transparent 50%)', backgroundSize: '8px 8px' } : {}) }}
+                    onMouseDown={e => { e.preventDefault(); setPendingFillColor(c.value) }} />
+                ))}
+              </div>
+
+              {/* Add box button */}
+              <button type="button"
+                style={{ width: '100%', padding: '0.38rem', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  background: pendingNoBorder ? '#4a5568' : pendingBorderColor, color: '#fff',
+                  fontFamily: 'inherit', fontSize: '0.82rem', fontWeight: 600 }}
+                onMouseDown={e => { e.preventDefault(); addBox() }}>
+                + Add box
+              </button>
+            </div>
+          )}
+        </div>
+        {boxes.length > 0 && (
+          <button type="button" title="Clear all boxes"
+            style={{ ...btnBase, fontSize: '0.72rem', color: '#e05c5c', marginLeft: 'auto' }}
+            onMouseDown={e => { e.preventDefault(); persistBoxes([]) }}>✕ Clear boxes</button>
+        )}
+      </div>
+
+      <div ref={containerRef} className="teach-boxes-container" style={{ position: 'relative' }}>
+        <div
+          ref={ref}
+          contentEditable
+          suppressContentEditableWarning
+          className="rte-content"
+          data-placeholder={placeholder}
+          style={{ minHeight: '160px', resize: 'vertical', overflow: 'auto' }}
+          onInput={emit}
+          onBlur={emit}
+          onClick={() => { setShowRectPalette(false); setSelectedBoxId(null) }}
+        />
+
+        {boxes.map(box => {
+          const isSelected = selectedBoxId === box.id
+          return (
+          <div key={box.id}
+            className="teach-box"
+            style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, minHeight: box.h,
+              border: box.noBorder ? 'none' : `2.5px solid ${box.color}`,
+              borderRadius: '6px',
+              background: box.fillColor || 'rgba(255,255,255,0.96)',
+              boxSizing: 'border-box', userSelect: 'none', zIndex: 5,
+              display: 'flex', flexDirection: 'column' }}
+            onMouseDown={() => setSelectedBoxId(box.id)}>
+
+            {/* Drag handle — narrow bar at top */}
+            <div
+              style={{ height: '10px', background: `${box.color}28`, borderBottom: `1px solid ${box.color}40`,
+                borderRadius: '4px 4px 0 0', cursor: dragging?.id === box.id ? 'grabbing' : 'grab',
+                flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setSelectedBoxId(box.id);
+                setDragging({ id: box.id, startMX: e.clientX, startMY: e.clientY, startBX: box.x, startBY: box.y }) }}>
+              {[0,1,2].map(i => <div key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: box.color, opacity: 0.5 }} />)}
+            </div>
+
+            {/* Editable text area */}
+            <BoxTextArea
+              key={box.id + '_text'}
+              initialText={box.text || ''}
+              color={box.color}
+              onTextChange={text => persistBoxes(boxes.map(b => b.id === box.id ? { ...b, text } : b))}
+            />
+
+            {/* ✕ delete — only when selected */}
+            {isSelected && (
+              <div
+                style={{ position: 'absolute', top: -9, right: -9, width: 17, height: 17, borderRadius: '50%',
+                  background: box.color, color: '#fff', fontSize: '10px', fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 6, lineHeight: 1 }}
+                onMouseDown={e => { e.preventDefault(); e.stopPropagation(); persistBoxes(boxes.filter(b => b.id !== box.id)); setSelectedBoxId(null) }}>
+                ✕
+              </div>
+            )}
+
+            {/* Resize handle */}
+            <div
+              style={{ position: 'absolute', bottom: 2, right: 2, width: 7, height: 7,
+                borderRight: `2px solid ${box.color}`, borderBottom: `2px solid ${box.color}`,
+                cursor: 'se-resize', zIndex: 6, opacity: 0.7 }}
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation();
+                setResizing({ id: box.id, startMX: e.clientX, startMY: e.clientY, startW: box.w, startH: box.h }) }} />
+          </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── TeachView ────────────────────────────────────────────────
+function TeachView({ plan, onBack }) {
+  const [whiteboard,     setWhiteboard]     = useState(() => { try { return localStorage.getItem('wb_' + plan.id) || '' } catch { return '' } })
+  const [exerciseCache,  setExerciseCache]  = useState({})
+  const [loadingEx,      setLoadingEx]      = useState(false)
+  const [expandedStages, setExpandedStages] = useState(new Set())
+  const [demoAnswers,    setDemoAnswers]    = useState({})
+
+  const saveWb = (v) => { setWhiteboard(v); try { localStorage.setItem('wb_' + plan.id, v) } catch {} }
+
+  const lessonStages = (plan.lesson_stages ?? [])
+    .filter(s => (s.section ?? 'lesson') !== 'homework')
+    .sort((a, b) => (a.stage_number || 0) - (b.stage_number || 0) || a.order_index - b.order_index)
+  const homeworkStages = (plan.lesson_stages ?? []).filter(s => s.section === 'homework')
+
+  const stageGroups = lessonStages.reduce((acc, s) => {
+    const num = s.stage_number ?? 1
+    if (!acc[num]) acc[num] = { number: num, name: s.stage_name, items: [] }
+    acc[num].items.push(s)
+    return acc
+  }, {})
+
+  useEffect(() => {
+    const ids = [...new Set(
+      (plan.lesson_stages ?? []).map(s => s.exercises?.id || s.exercise_id).filter(Boolean)
+    )]
+    if (!ids.length) return
+    setLoadingEx(true)
+    Promise.all(ids.map(id => fetchExerciseWithQuestions(id))).then(results => {
+      const cache = {}
+      results.forEach(ex => { if (ex) cache[ex.id] = ex })
+      setExerciseCache(cache)
+      setLoadingEx(false)
+    })
+  }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleStage = (id) => setExpandedStages(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  const PLAN_STAGE_COLORS = {
+    controlled_exercise: '#3b82f6', free_exercise: '#059669',
+    lead_in: '#d97706', feedback: '#7c3aed', instruction: '#64748b', clarification: '#dc2626',
+  }
+
+  const renderStage = (stage) => {
+    const exId = stage.exercises?.id || stage.exercise_id
+    const def = STAGE_TYPES.find(t => t.value === stage.stage_type) || { icon: '▸', label: stage.stage_type || 'Activity' }
+    const color = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
+    const isExpanded = expandedStages.has(stage.id)
+    const hasContent = !!exId
+    const title = stage.exercises?.title || stage.title || def.label
+
+    return (
+      <div key={stage.id} style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${isExpanded ? '#d4c9b4' : '#e8e3d8'}`, borderLeft: `4px solid ${color}`, marginBottom: '0.45rem', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.65rem 0.85rem', cursor: hasContent ? 'pointer' : 'default' }}
+          onClick={() => hasContent && toggleStage(stage.id)}>
+          <span style={{ fontSize: '1rem', flexShrink: 0 }}>{def.icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
+            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>{def.label}</span>
+              {stage.duration_minutes && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>}
+            </div>
+          </div>
+          {hasContent && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>}
+        </div>
+        {isExpanded && exId && (
+          <div style={{ borderTop: '1px solid #e8e3d8', padding: '0.75rem 0.85rem', background: '#fafaf8' }}>
+            <InlineExerciseContent
+              exerciseId={exId}
+              exerciseCache={exerciseCache}
+              loadingExercises={loadingEx}
+              demoAnswers={demoAnswers}
+              setDemoAnswers={setDemoAnswers}
+            />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="teach-view-wrapper" style={{ background: '#F2EFE8', margin: '-1.5rem', padding: '1.5rem', borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', minHeight: '60vh' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+        <button className="back-btn" style={{ margin: 0 }} onClick={onBack}>← Back to lesson plans</button>
+        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem', marginLeft: 'auto' }} onClick={() => window.print()}>🖨 Print</button>
+      </div>
+
+      {/* Title */}
+      <h2 style={{ margin: '0 0 1.25rem', fontSize: '1.6rem', fontFamily: 'Inter, sans-serif', fontWeight: 700 }}>{plan.title}</h2>
+
+      {/* Whiteboard */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+          <strong style={{ fontSize: '0.92rem' }}>📝 Whiteboard</strong>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>(drag bottom-right corner to resize · select text then click ⬜ Box to frame it)</span>
+          {whiteboard && (
+            <button type="button" className="btn-ghost"
+              style={{ fontSize: '0.72rem', padding: '0.18rem 0.5rem', marginLeft: 'auto', color: '#e05c5c' }}
+              onClick={() => saveWb('')}>✕ Clear</button>
+          )}
+        </div>
+        <TeachWhiteboard
+          value={whiteboard}
+          onChange={saveWb}
+          placeholder="Type your notes, emerging language, or instructions here…"
+          style={{ border: '2px solid var(--gold)', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,102,153,0.10)' }}
+          storageKey={`teach_boxes_${plan.id}`}
+        />
+      </div>
+
+      {/* Lesson stages */}
+      {Object.keys(stageGroups).length > 0 && (
+        <div className="builder-section">
+          <h4 className="builder-section-title">📌 Lesson stages</h4>
+          {Object.values(stageGroups).map(group => (
+            <div key={group.number} style={{ marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', marginBottom: '0.4rem', color: 'var(--gold)' }}>
+                {group.number}{group.name ? ` — ${group.name}` : ''}
+              </div>
+              {group.items.map(stage => renderStage(stage))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Homework */}
+      {homeworkStages.length > 0 && (
+        <div className="builder-section" style={{ marginTop: '1rem' }}>
+          <h4 className="builder-section-title">📚 Homework</h4>
+          {homeworkStages.map(stage => renderStage(stage))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecentlyDeletedPanel({ type, onClose }) {
+  const items = getRecentlyDeleted().filter(i => i.type === type)
+  return (
+    <div style={{ position: 'fixed', bottom: '5rem', right: '1.5rem', width: '320px', background: '#fff', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-darker)' }}>
+        <strong style={{ fontSize: '0.88rem' }}>🗑 Recently Deleted</strong>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: 'var(--text-muted)', padding: '0.1rem 0.3rem' }}>✕</button>
+      </div>
+      <div style={{ maxHeight: '280px', overflowY: 'auto', padding: '0.5rem' }}>
+        {items.length === 0 ? (
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1rem 0' }}>No recently deleted items.</p>
+        ) : (
+          items.map((item, i) => (
+            <div key={i} style={{ padding: '0.5rem 0.6rem', borderRadius: '6px', marginBottom: '0.25rem', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                Deleted {new Date(item.deletedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AdminLessonPlans({ adminUserId }) {
   const [exercises,      setExercises]      = useState([])
   const [plans,          setPlans]          = useState([])
@@ -4450,22 +5910,34 @@ function AdminLessonPlans({ adminUserId }) {
   const [view,           setView]           = useState('list') // 'list' | 'create' | 'edit' | 'view'
   const [editingPlan,    setEditingPlan]    = useState(null)
   const [viewingPlan,    setViewingPlan]    = useState(null)
+  const [teachingPlan,   setTeachingPlan]   = useState(null)
   const [deletingPlanId, setDeletingPlanId] = useState(null)
 
   // Filters
   const [filterEnglishLevel, setFilterEnglishLevel] = useState('')
   const [filterLessonLevel,  setFilterLessonLevel]  = useState('')
+  const [showPlanFilters,    setShowPlanFilters]    = useState(false)
+  const [showRecentlyDeleted, setShowRecentlyDeleted] = useState(false)
+
+  // Draft indicator — check if a draft was saved by this admin
+  const draftStorageKey = adminUserId ? `lessonPlanDraft_${adminUserId}` : null
+  const [hasDraft, setHasDraft] = useState(() => {
+    if (!draftStorageKey) return false
+    try { return !!localStorage.getItem(draftStorageKey) } catch { return false }
+  })
 
   // Assign plan to student
   const [assigningPlanId, setAssigningPlanId] = useState(null)
   const [apStudentId,     setApStudentId]     = useState('')
   const [apMode,          setApMode]          = useState('homework')
   const [apNote,          setApNote]          = useState('')
+  const [apScheduledAt,   setApScheduledAt]   = useState('')
   const [apSaving,        setApSaving]        = useState(false)
   const [apError,         setApError]         = useState(null)
   const [apDone,          setApDone]          = useState(false)
   const [apMultiIds,      setApMultiIds]      = useState([]) // selected student IDs for bulk assign
   const [apBulkDone,      setApBulkDone]      = useState([]) // track which student IDs succeeded
+  const [apIsMulti,       setApIsMulti]       = useState(false) // toggle between single/multi mode
 
   useEffect(() => {
     setLoading(true)
@@ -4489,47 +5961,27 @@ function AdminLessonPlans({ adminUserId }) {
   const handleAssignPlan = async (planId) => {
     if (!apStudentId) { setApError('Please select a student.'); return }
     setApSaving(true); setApError(null)
-    const ok = await assignLessonPlan({ planId, studentId: apStudentId, assignedBy: adminUserId, mode: apMode, note: apNote || null })
+    const ok = await assignLessonPlan({ planId, studentId: apStudentId, assignedBy: adminUserId, mode: apMode, note: apNote || null, scheduledAt: apScheduledAt ? new Date(apScheduledAt).toISOString() : null })
     setApSaving(false)
-    if (ok) {
+    if (ok === true) {
       setApDone(true)
-      setTimeout(() => { setAssigningPlanId(null); setApDone(false); setApStudentId(''); setApNote('') }, 2000)
-    } else { setApError('Assignment failed — this plan may have no exercises, or student already has them.') }
+      setTimeout(() => { setAssigningPlanId(null); setApDone(false); setApStudentId(''); setApNote(''); setApScheduledAt('') }, 2000)
+    } else { setApError('Assignment failed: ' + (ok?.error || 'Unknown error — check the browser console for details.')) }
   }
 
   const handleBulkAssign = async (planId) => {
     if (!apMultiIds.length) { setApError('Select at least one student.'); return }
     setApSaving(true); setApError(null)
     const results = await Promise.all(
-      apMultiIds.map(sid => assignLessonPlan({ planId, studentId: sid, assignedBy: adminUserId, mode: apMode, note: apNote || null }))
+      apMultiIds.map(sid => assignLessonPlan({ planId, studentId: sid, assignedBy: adminUserId, mode: apMode, note: apNote || null, scheduledAt: apScheduledAt ? new Date(apScheduledAt).toISOString() : null }))
     )
     setApSaving(false)
     const succeeded = apMultiIds.filter((_, i) => results[i])
     setApBulkDone(succeeded)
     if (succeeded.length === apMultiIds.length) {
-      setTimeout(() => { setAssigningPlanId(null); setApMultiIds([]); setApBulkDone([]); setApNote('') }, 2000)
+      setTimeout(() => { setAssigningPlanId(null); setApMultiIds([]); setApBulkDone([]); setApNote(''); setApScheduledAt('') }, 2000)
     }
   }
-
-  // Push a history entry when entering create/edit so the browser ← button
-  // returns to the plan list rather than leaving the admin panel entirely.
-  useEffect(() => {
-    if (view !== 'list') {
-      window.history.pushState({ adminPlanEdit: true }, '', '/admin')
-    }
-  }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const handlePop = () => {
-      if (view !== 'list') {
-        setView('list')
-        setEditingPlan(null)
-        setViewingPlan(null)
-      }
-    }
-    window.addEventListener('popstate', handlePop)
-    return () => window.removeEventListener('popstate', handlePop)
-  }, [view])
 
   const builderProps = {
     exercises, labels, books, authStudents, manualStudents, adminUserId,
@@ -4537,8 +5989,13 @@ function AdminLessonPlans({ adminUserId }) {
 
   if (view === 'create') {
     return <LessonStageBuilder {...builderProps}
-      onCancel={() => setView('list')}
-      onSaved={() => { reloadAll(); setView('list') }} />
+      onCancel={() => {
+        // Re-check if a draft was saved while in the builder
+        const stillHasDraft = draftStorageKey ? !!localStorage.getItem(draftStorageKey) : false
+        setHasDraft(stillHasDraft)
+        setView('list')
+      }}
+      onSaved={() => { setHasDraft(false); reloadAll(); setView('list') }} />
   }
   if (view === 'edit' && editingPlan) {
     return <LessonStageBuilder {...builderProps}
@@ -4555,13 +6012,56 @@ function AdminLessonPlans({ adminUserId }) {
       adminEmail={ADMIN_EMAIL}
     />
   }
+  if (view === 'teach' && teachingPlan) {
+    return <TeachView
+      plan={teachingPlan}
+      onBack={() => { setView('list'); setTeachingPlan(null) }}
+    />
+  }
 
   return (
     <div>
       <div className="admin-exercises-toolbar">
         <h3 style={{ margin: 0 }}>Lesson Plans ({plans.length})</h3>
-        <button className="btn-gold" onClick={() => setView('create')}>+ Create plan</button>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', position: 'relative' }}
+            onClick={() => setShowPlanFilters(p => !p)}>
+            🔽 Filters
+            {filterEnglishLevel && <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--gold)', color: '#fff', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 700, padding: '1px 5px', lineHeight: 1.4 }}>1</span>}
+          </button>
+          <button className="btn-gold" onClick={() => setView('create')}>+ Create plan</button>
+        </div>
       </div>
+
+      {/* Draft in progress banner */}
+      {hasDraft && (
+        <div style={{
+          background: 'linear-gradient(135deg, #fef9ec 0%, #fdf3d3 100%)',
+          border: '1.5px solid var(--gold)', borderRadius: '10px',
+          padding: '0.9rem 1.1rem', marginBottom: '1rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
+        }}>
+          <div>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>📋 Draft in progress</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginLeft: '0.6rem' }}>
+              You have an unsaved lesson plan draft.
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+            <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.45rem 1rem' }}
+              onClick={() => setView('create')}>
+              Resume →
+            </button>
+            <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', color: '#e05c5c' }}
+              onClick={() => {
+                if (draftStorageKey) { try { localStorage.removeItem(draftStorageKey) } catch { /* ignore */ } }
+                setHasDraft(false)
+              }}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Assign-to-student panel */}
       {assigningPlanId && (() => {
@@ -4572,23 +6072,32 @@ function AdminLessonPlans({ adminUserId }) {
             <div className="form-field">
               <label>Student(s)</label>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <button type="button" className={`radio-option ${!apMultiIds.length ? 'selected' : ''}`}
+                <button type="button" className={`radio-option ${!apIsMulti ? 'selected' : ''}`}
                   style={{ flex: 1, justifyContent: 'center', fontSize: '0.82rem' }}
-                  onClick={() => { setApMultiIds([]); setApStudentId('') }}>
+                  onClick={() => { setApIsMulti(false); setApMultiIds([]) }}>
                   Single student
                 </button>
-                <button type="button" className={`radio-option ${apMultiIds.length > 0 ? 'selected' : ''}`}
+                <button type="button" className={`radio-option ${apIsMulti ? 'selected' : ''}`}
                   style={{ flex: 1, justifyContent: 'center', fontSize: '0.82rem' }}
-                  onClick={() => { setApStudentId(''); setApMultiIds([]) }}>
+                  onClick={() => { setApIsMulti(true); setApStudentId('') }}>
                   Multiple students
                 </button>
               </div>
-              {apMultiIds.length === 0 ? (
+              {!apIsMulti ? (
                 <select value={apStudentId} onChange={e => setApStudentId(e.target.value)}>
                   <option value="">Select student…</option>
-                  {authStudents.filter(s => s.access_level !== 'pending').map(s => (
-                    <option key={s.id} value={s.id}>{s.name || s.email}</option>
-                  ))}
+                  <optgroup label="Registered students">
+                    {authStudents.filter(s => s.access_level !== 'pending').map(s => (
+                      <option key={s.id} value={s.id}>{s.name || s.email}</option>
+                    ))}
+                  </optgroup>
+                  {manualStudents.length > 0 && (
+                    <optgroup label="Manual students (no portal access)">
+                      {manualStudents.map(s => (
+                        <option key={s.id} value={s.id}>📝 {s.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '180px', overflowY: 'auto', padding: '0.25rem 0' }}>
@@ -4602,20 +6111,28 @@ function AdminLessonPlans({ adminUserId }) {
                       {apBulkDone.includes(s.id) && <span style={{ color: '#22c55e', fontSize: '0.75rem' }}>✓</span>}
                     </label>
                   ))}
+                  {manualStudents.length > 0 && (
+                    <>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, paddingTop: '0.35rem', paddingLeft: '0.1rem' }}>Manual students (no portal access)</div>
+                      {manualStudents.map(s => (
+                        <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.87rem' }}>
+                          <input type="checkbox" checked={apMultiIds.includes(s.id)}
+                            onChange={e => setApMultiIds(prev =>
+                              e.target.checked ? [...prev, s.id] : prev.filter(x => x !== s.id)
+                            )} />
+                          📝 {s.name}
+                          {apBulkDone.includes(s.id) && <span style={{ color: '#22c55e', fontSize: '0.75rem' }}>✓</span>}
+                        </label>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
-            <div className="form-field">
-              <label>Mode</label>
-              <div className="radio-group" style={{ flexDirection: 'row', gap: '0.5rem' }}>
-                {['homework', 'in_class'].map(m => (
-                  <button key={m} type="button"
-                    className={`radio-option ${apMode === m ? 'selected' : ''}`}
-                    style={{ flex: 1, justifyContent: 'center' }} onClick={() => setApMode(m)}>
-                    {m === 'homework' ? '🏠 Homework' : '🎓 In class'}
-                  </button>
-                ))}
-              </div>
+            <div className="form-field" style={{ marginTop: '0.5rem' }}>
+              <label style={{ fontSize: '0.82rem' }}>📅 Lesson date &amp; time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input type="datetime-local" value={apScheduledAt} onChange={e => setApScheduledAt(e.target.value)}
+                style={{ fontSize: '0.85rem' }} />
             </div>
             <div className="form-field">
               <label>Note <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
@@ -4630,12 +6147,12 @@ function AdminLessonPlans({ adminUserId }) {
               </div>
             )}
             <button className="btn-gold btn-full"
-              disabled={apSaving || (!apStudentId && apMultiIds.length === 0) || apDone}
-              onClick={() => apMultiIds.length > 0
+              disabled={apSaving || (apIsMulti ? apMultiIds.length === 0 : !apStudentId) || apDone}
+              onClick={() => apIsMulti
                 ? handleBulkAssign(assigningPlanId)
                 : handleAssignPlan(assigningPlanId)}>
               {apSaving ? 'Assigning…'
-                : apMultiIds.length > 0
+                : apIsMulti
                   ? `Assign to ${apMultiIds.length} student${apMultiIds.length > 1 ? 's' : ''} →`
                   : 'Assign all exercises to student →'}
             </button>
@@ -4643,34 +6160,32 @@ function AdminLessonPlans({ adminUserId }) {
         )
       })()}
 
-      {/* Filter bar */}
-      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', marginBottom:'1rem', padding:'0.75rem', background:'var(--bg-darker)', borderRadius:'8px' }}>
-        <select value={filterEnglishLevel} onChange={e => setFilterEnglishLevel(e.target.value)}
-          style={{ fontSize:'0.85rem', padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--border)', background:'#fff' }}>
-          <option value="">All levels</option>
-          <option value="elementary">Elementary</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
-        </select>
-        <select value={filterLessonLevel} onChange={e => setFilterLessonLevel(e.target.value)}
-          style={{ fontSize:'0.85rem', padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--border)', background:'#fff' }}>
-          <option value="">All lesson levels</option>
-          {Array.from({length: 12}, (_, i) => (
-            <option key={i+1} value={`Level ${i+1}`}>Level {i+1}</option>
-          ))}
-        </select>
-        {(filterEnglishLevel || filterLessonLevel) && (
-          <button className="btn-ghost" style={{ fontSize:'0.82rem', padding:'0.35rem 0.7rem' }}
-            onClick={() => { setFilterEnglishLevel(''); setFilterLessonLevel('') }}>✕ Clear filters</button>
-        )}
-      </div>
+      {/* Collapsible filter panel */}
+      {showPlanFilters && (
+        <div style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>Filter lesson plans</span>
+            {filterEnglishLevel && (
+              <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem' }}
+                onClick={() => setFilterEnglishLevel('')}>✕ Clear</button>
+            )}
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Course</div>
+            <select value={filterEnglishLevel} onChange={e => setFilterEnglishLevel(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border)', background: '#fff' }}>
+              <option value="">All courses</option>
+              {getAdminCourses().map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {loading ? <p>Loading…</p> : plans.length === 0 ? (
         <div className="dashboard-empty"><p>No lesson plans yet.</p></div>
       ) : (() => {
         const filteredPlans = plans.filter(p =>
-          (!filterEnglishLevel || p.english_level === filterEnglishLevel) &&
-          (!filterLessonLevel  || p.lesson_level  === filterLessonLevel)
+          (!filterEnglishLevel || p.english_level === filterEnglishLevel)
         )
         return (
         <div className="plan-list">
@@ -4678,51 +6193,34 @@ function AdminLessonPlans({ adminUserId }) {
             <div className="dashboard-empty"><p>No plans match the current filters.</p></div>
           )}
           {filteredPlans.map(p => {
-            const stageCount  = (p.lesson_stages ?? []).length
-            const legacyCount = (p.lesson_plan_exercises ?? []).length
-            const count       = stageCount > 0 ? stageCount : legacyCount
-            const totalMins   = (p.lesson_stages ?? []).reduce((s, st) => s + (st.duration_minutes || 0), 0)
+            const studentName = p.profiles?.name || p.profiles?.email || p.manual_students?.name || null
             return (
               <div key={p.id} className="plan-row">
                 <div>
                   <strong>{p.title}</strong>
                   {p.description && <span className="plan-desc"> — {p.description}</span>}
-                  <div style={{ marginTop: '0.25rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {(p.profiles || p.manual_students) && (
-                      <span className="admin-level-chip">
-                        👤 {(p.profiles?.name || p.profiles?.email) ?? (p.manual_students?.name)}
-                        {(p.profiles?.english_level || p.manual_students?.english_level) && (
-                          <> · <span style={{ textTransform: 'capitalize' }}>
-                            {p.profiles?.english_level || p.manual_students?.english_level}
-                          </span></>
-                        )}
-                      </span>
+                  <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {p.english_level && (
+                      <span className="admin-level-chip" style={{ background: '#EEF4F8', color: 'var(--gold)', fontWeight: 600 }}>{p.english_level}</span>
                     )}
-                    {p.english_level && <span className="admin-level-chip" style={{textTransform:'capitalize'}}>{p.english_level}</span>}
-                    {p.lesson_level  && <span className="admin-level-chip">{p.lesson_level}</span>}
+                    {studentName && (
+                      <span className="admin-level-chip">👤 {studentName}</span>
+                    )}
                     {p.scheduled_at && (
                       <span className="admin-level-chip" style={{ color: 'var(--gold)' }}>
                         📅 {new Date(p.scheduled_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
                       </span>
                     )}
-                    <span className="admin-level-chip">{count} stage{count !== 1 ? 's' : ''}</span>
-                    {totalMins > 0 && <span className="admin-level-chip">⏱ {totalMins} min</span>}
                   </div>
-                  {/* Stage summary */}
-                  {stageCount > 0 && (
-                    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      {(p.lesson_stages ?? []).slice().sort((a,b)=>a.order_index-b.order_index).map(st => {
-                        const def = STAGE_TYPES.find(t => t.value === st.stage_type) || {}
-                        return (
-                          <span key={st.id} className="admin-level-chip" style={{ fontSize: '0.78rem' }}>
-                            {def.icon} {st.title || def.label}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                  <button
+                    style={{ fontSize: '0.88rem', fontWeight: 700, padding: '0.4rem 1.1rem', borderRadius: '8px', border: 'none', background: 'var(--gold)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.02em', boxShadow: '0 2px 6px rgba(0,102,153,0.25)', transition: 'filter 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.12)'}
+                    onMouseLeave={e => e.currentTarget.style.filter = ''}
+                    onClick={() => { setTeachingPlan(p); setView('teach') }}>
+                    🎓 Teach
+                  </button>
                   <button className="btn-ghost"
                     style={{ fontSize: '0.85rem', color: assigningPlanId === p.id ? undefined : 'var(--gold)', borderColor: assigningPlanId === p.id ? undefined : 'var(--gold)' }}
                     onClick={() => {
@@ -4746,7 +6244,11 @@ function AdminLessonPlans({ adminUserId }) {
                         style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c', borderColor: '#e05c5c' }}
                         onClick={async () => {
                           const ok = await deleteLessonPlan(p.id)
-                          if (ok) { setPlans(prev => prev.filter(x => x.id !== p.id)); setDeletingPlanId(null) }
+                          if (ok) {
+                            logRecentlyDeleted('lesson_plan', p.id, p.title)
+                            setPlans(prev => prev.filter(x => x.id !== p.id))
+                            setDeletingPlanId(null)
+                          }
                         }}>Confirm delete</button>
                       <button className="btn-ghost"
                         style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
@@ -4764,11 +6266,55 @@ function AdminLessonPlans({ adminUserId }) {
         </div>
         )
       })()}
+
+      {/* Recently Deleted button - bottom right */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+          onClick={() => setShowRecentlyDeleted(p => !p)}>
+          🗑 Recently Deleted
+        </button>
+      </div>
+      {showRecentlyDeleted && <RecentlyDeletedPanel type="lesson_plan" onClose={() => setShowRecentlyDeleted(false)} />}
     </div>
   )
 }
 
 // ─── ExerciseBuilder ─────────────────────────────────────────
+const EXERCISE_LEVELS = [
+  'Elementary',
+  'Lower Intermediate',
+  'Upper Intermediate',
+  'Advanced',
+  'Elementary Business',
+  'Intermediate Business',
+  'Hospitality English',
+]
+
+function getAdminCourses() {
+  try {
+    const newData = localStorage.getItem('admin_courses_v1')
+    if (newData) return JSON.parse(newData)
+    const oldData = localStorage.getItem('admin_levels_v1')
+    if (oldData) return JSON.parse(oldData).map(l => ({ id: l.id, name: l.name }))
+    return []
+  } catch { return [] }
+}
+
+function logRecentlyDeleted(type, id, title) {
+  try {
+    const key = 'recently_deleted_v1'
+    const existing = JSON.parse(localStorage.getItem(key) || '[]')
+    const updated = [{ type, id, title, deletedAt: new Date().toISOString() }, ...existing].slice(0, 50)
+    localStorage.setItem(key, JSON.stringify(updated))
+  } catch {}
+}
+
+function getRecentlyDeleted() {
+  try {
+    return JSON.parse(localStorage.getItem('recently_deleted_v1') || '[]')
+  } catch { return [] }
+}
+
 const BUILDER_TYPES = [
   { value: 'multiple_choice', label: 'Multiple Choice', icon: '☑️' },
   { value: 'fill_blank',      label: 'Fill in the Blank', icon: '✏️' },
@@ -4777,13 +6323,30 @@ const BUILDER_TYPES = [
   { value: 'word_choice',     label: 'Word Choice', icon: '↕️' },
   { value: 'listening',       label: 'Listening', icon: '🎧' },
   { value: 'viewing',         label: 'Viewing',   icon: '🎥' },
+  { value: 'speaking',        label: 'Speaking',  icon: '🎙️' },
 ]
+
+// ─── Stage group & card color palettes ───────────────────────
+const STAGE_GROUP_COLORS = [
+  { bg: '#EAF3DE', border: '#c5dfa3', pill: '#4a8a1a' },  // green
+  { bg: '#E6F1FB', border: '#a8c8e8', pill: '#2b72b5' },  // blue
+  { bg: '#EEEDFE', border: '#c4c1f5', pill: '#6058cc' },  // purple
+  { bg: '#FDF6E0', border: '#e8d99a', pill: '#a07a10' },  // amber
+]
+const STAGE_TYPE_CARD_BG = {
+  'controlled_exercise': '#FAEEDA',
+  'free_exercise':       '#FBEAF0',
+  'lead_in':             '#EEEDFE',
+  'instruction':         '#E1F5EE',
+  'feedback':            '#E6F1FB',
+  'clarification':       '#F1EFE8',
+}
 
 // ─── Lesson stage types ───────────────────────────────────────
 const STAGE_TYPES = [
   { value: 'controlled_exercise', label: 'Controlled Exercise', icon: '✏️',  hasExercise: true,  hasQuestions: true  },
   { value: 'free_exercise',       label: 'Free Exercise',       icon: '🗣️', hasExercise: true,  hasQuestions: true  },
-  { value: 'lead_in',             label: 'Lead-in / Input',     icon: '📥', hasExercise: false, hasQuestions: false },
+  { value: 'lead_in',             label: 'Lead-in',     icon: '📥', hasExercise: false, hasQuestions: false },
   { value: 'feedback',            label: 'Feedback',            icon: '💬', hasExercise: false, hasQuestions: false },
   { value: 'instruction',         label: 'Instruction',         icon: '📋', hasExercise: false, hasQuestions: false },
   { value: 'clarification',       label: 'Clarification',       icon: '❓', hasExercise: false, hasQuestions: false },
@@ -4800,6 +6363,7 @@ function newStage(type) {
     contentText:     '',
     audioUrl:        '',
     contentImages:   [],
+    teacherNotes:    '',
   }
 }
 
@@ -4821,6 +6385,7 @@ function initStagesFromPlan(plan) {
       contentText:     s.content_text || '',
       audioUrl:        s.audio_url    || '',
       contentImages:   s.content_images || [],
+      teacherNotes:    s.teacher_notes || '',
     }))
   }
   // Fallback: convert legacy lesson_plan_exercises to controlled_exercise stages
@@ -4838,6 +6403,7 @@ function initStagesFromPlan(plan) {
       contentText:     '',
       audioUrl:        '',
       contentImages:   [],
+      teacherNotes:    '',
     }))
 }
 
@@ -4856,7 +6422,7 @@ function initStageGroupsFromPlan(plan) {
       .map(lpe => ({
         id: crypto.randomUUID(), type: 'controlled_exercise', title: '',
         durationMinutes: null, customDuration: '', exerciseId: lpe.exercises.id,
-        exerciseTitle: lpe.exercises.title || '', contentText: '', audioUrl: '', contentImages: [],
+        exerciseTitle: lpe.exercises.title || '', contentText: '', audioUrl: '', contentImages: [], teacherNotes: '',
       }))
     return [{ number: 1, name: '', items: legacyItems }]
   }
@@ -4873,7 +6439,7 @@ function initStageGroupsFromPlan(plan) {
                       ? String(s.duration_minutes) : '',
       exerciseId: s.exercise_id || null, exerciseTitle: s.exercises?.title || '',
       contentText: s.content_text || '', audioUrl: s.audio_url || '',
-      contentImages: s.content_images || [],
+      contentImages: s.content_images || [], teacherNotes: s.teacher_notes || '',
     })
   })
   return Object.values(groups).sort((a, b) => a.number - b.number)
@@ -4886,7 +6452,7 @@ function newQ(type) {
     prompt:         '',
     options:        type === 'multiple_choice' ? ['', '', '', '']
                   : type === 'true_false'      ? ['True', 'False']
-                  : type === 'matching'        ? [{ left: '', right: '' }]
+                  : type === 'matching'        ? { v: 2, left: Array(5).fill(''), right: Array(5).fill('') }
                   : null,
     correct_answer: type === 'true_false' ? 'True' : '',
     hint:           '',
@@ -4913,6 +6479,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   const [exPage,         setExPage]         = useState(initialExercise?.page        ?? null)
   const [exSection,      setExSection]      = useState(initialExercise?.section     ?? '')
   const [exNo,           setExNo]           = useState(initialExercise?.exercise_no ?? null)
+  const [exLevel,        setExLevel]        = useState(initialExercise?.level       ?? null)
   const [thumbnail,      setThumbnail]      = useState(initialExercise?.thumbnail   ?? null)
   const [thumbLoading,   setThumbLoading]   = useState(false)
   const [localBooks,     setLocalBooks]     = useState(allBooks)
@@ -4946,10 +6513,10 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
 
   // ── Context images ──────────────────────────────────────────
   const handleContextImages = async (e) => {
-    const files = Array.from(e.target.files || []).slice(0, 3 - contextImages.length)
+    const files = Array.from(e.target.files || []).slice(0, 10 - contextImages.length)
     if (!files.length) return
     const compressed = await Promise.all(files.map(f => compressImage(f)))
-    setContextImages(prev => [...prev, ...compressed].slice(0, 3))
+    setContextImages(prev => [...prev, ...compressed].slice(0, 10))
     e.target.value = ''
   }
 
@@ -5073,12 +6640,15 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   // ── Save ────────────────────────────────────────────────────
   const handleSave = async () => {
     const stDef = STAGE_TYPES.find(t => t.value === stageType)
-    const isVerbal = selType === 'listening' || selType === 'viewing'
+    const isVerbal = selType === 'listening' || selType === 'viewing' || selType === 'speaking'
     if (!title.trim()) return
+    if (!exLevel) { setSaveError('Please select a course for this exercise.'); return }
+    const _courses = getAdminCourses()
+    if (!_courses.find(c => c.name === exLevel)) { setSaveError('The selected course was deleted. Please choose a valid course.'); return }
     if (stDef?.hasQuestions && !selType) return
     if (stDef?.hasQuestions && !isVerbal && !questions.length) return
     // Location fields are required for exercise stages
-    if (stDef?.hasQuestions && (!exUnit || !exPage || !exSection.trim() || !exNo)) {
+    if (stDef?.hasQuestions && !isVerbal && (!exUnit || !exPage || !exSection.trim() || !exNo)) {
       setSaveError('Please fill in the location fields (unit, page, section, exercise number) — these are required for exercises.')
       return
     }
@@ -5094,6 +6664,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       section:   exSection.trim() || null,
       exerciseNo: exNo    || null,
       thumbnail: thumbnail || null,
+      level:     exLevel  || null,
     }
     // For listening/viewing: auto-create one dummy question as the activity type marker
     const questionsToSave = isVerbal
@@ -5147,10 +6718,34 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       {/* ── Stage type badge ── */}
       <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <span className="stage-type-badge-sm">{stageTypeDef.icon} {stageTypeDef.label}</span>
-        {!isEdit && (
-          <button type="button" style={{ fontSize: '0.78rem', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-            onClick={() => setStageType(null)}>Change</button>
-        )}
+        <button type="button" style={{ fontSize: '0.78rem', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+          onClick={() => setStageType(null)}>Change</button>
+      </div>
+
+      {/* ── Course (mandatory, shown first) ── */}
+      <div className="builder-section">
+        <h4 className="builder-section-title">📚 Course <span className="required-star">*</span></h4>
+        {(() => {
+          const adminCourses = getAdminCourses()
+          const courseExists = adminCourses.find(c => c.name === exLevel)
+          return (
+            <>
+              <select value={exLevel || ''} onChange={e => setExLevel(e.target.value || null)}
+                style={{ fontSize: '0.88rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: `1px solid ${!exLevel ? '#e05c5c' : 'var(--border)'}`, background: '#fff', minWidth: '220px' }}>
+                <option value="">— Select course (required) —</option>
+                {adminCourses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                {exLevel && !courseExists && (
+                  <option value={exLevel} disabled style={{ color: '#e05c5c' }}>{exLevel} (deleted — please re-select)</option>
+                )}
+              </select>
+              {exLevel && !courseExists && (
+                <p style={{ fontSize: '0.8rem', color: '#e05c5c', marginTop: '0.35rem' }}>
+                  The course "{exLevel}" was deleted. Please select a new course before saving.
+                </p>
+              )}
+            </>
+          )
+        })()}
       </div>
 
       {/* ── 1. Exercise type (for exercise stages) ── */}
@@ -5381,10 +6976,10 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
             <h4 className="builder-section-title">📖 Context material</h4>
             <p className="builder-section-sub">Reading text, vocab list or images from the book — your student sees these above the exercise</p>
           </div>
-          {contextImages.length < 3 && (
+          {contextImages.length < 10 && (
             <button className="builder-upload-btn"
               onClick={() => contextFileRef.current?.click()}>
-              + Upload photo {contextImages.length > 0 ? `(${contextImages.length}/3)` : '(up to 3)'}
+              + Upload photo {contextImages.length > 0 ? `(${contextImages.length}/10)` : '(up to 10)'}
             </button>
           )}
         </div>
@@ -5411,9 +7006,10 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>📖 Reading text <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — shown above exercise)</span></label>
-          <textarea className="writing-input" rows={5}
+          <RichTextEditor
+            value={contextText} onChange={v => setContextText(v)}
             placeholder="Paste or type a reading passage here. Students read it before answering the questions."
-            value={contextText} onChange={e => setContextText(e.target.value)} />
+            minHeight="110px" />
         </div>
       </div>}
       {/* fill_blank audio link (shown separately since context material section is hidden) */}
@@ -5582,13 +7178,13 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
-          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!selType || (selType !== 'listening' && selType !== 'viewing' && !questions.length)))}>
+          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!selType || (selType !== 'listening' && selType !== 'viewing' && selType !== 'speaking' && !questions.length)))}>
           {saving
             ? 'Saving…'
             : isEdit
-              ? (stageTypeDef.hasQuestions ? `Update stage (${(selType === 'listening' || selType === 'viewing') ? selType : questions.length + ' Q'})` : 'Update stage')
+              ? (stageTypeDef.hasQuestions ? `Update stage (${(selType === 'listening' || selType === 'viewing' || selType === 'speaking') ? selType : questions.length + ' Q'})` : 'Update stage')
               : (stageTypeDef.hasQuestions
-                  ? ((selType === 'listening' || selType === 'viewing')
+                  ? ((selType === 'listening' || selType === 'viewing' || selType === 'speaking')
                       ? `Save ${selType} stage`
                       : `Save stage (${questions.length} question${questions.length !== 1 ? 's' : ''})`)
                   : 'Save stage')}
@@ -5624,6 +7220,34 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
       ? Array.from({ length: fbBlankCount }, (_, j) => j === i ? val : (fbAnswers[j] || ''))
       : [val]
     onChange('correct_answer', JSON.stringify(next))
+  }
+
+  const matchLeftPhotoRef  = useRef(null)
+  const matchRightPhotoRef = useRef(null)
+  const [mOcrLoading, setMOcrLoading] = useState(null)
+  const wcLineRefs = useRef([]) // refs for word-choice line inputs
+
+  // Word-choice helpers
+  const wcLines = type === 'word_choice' ? (prompt || '').split('\n') : []
+  const wcUpdateLine = (idx, val) => {
+    const next = [...wcLines]; next[idx] = val
+    onChange('prompt', next.join('\n'))
+  }
+  const wcAddLine = () => onChange('prompt', (prompt ? prompt + '\n' : '') + '')
+  const wcRemoveLine = (idx) => {
+    const next = wcLines.filter((_, i) => i !== idx)
+    onChange('prompt', next.join('\n'))
+  }
+  const wcInsert = (lineIdx, text) => {
+    const input = wcLineRefs.current[lineIdx]
+    const cur = wcLines[lineIdx] || ''
+    const start = input ? input.selectionStart : cur.length
+    const end   = input ? input.selectionEnd   : start
+    const next  = cur.slice(0, start) + text + cur.slice(end)
+    wcUpdateLine(lineIdx, next)
+    requestAnimationFrame(() => {
+      if (input) { input.selectionStart = input.selectionEnd = start + text.length; input.focus() }
+    })
   }
 
   return (
@@ -5684,29 +7308,52 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
 
       {type === 'word_choice' && (
         <div className="form-field">
-          <label>Sentence template</label>
-          <p className="builder-section-sub" style={{ marginBottom: '0.5rem' }}>
-            Write the sentence. Use <code>[word1/word2]</code> for a two-option choice and <code>[___]</code> for a fill-in blank.
+          <label>Sentences</label>
+          <p className="builder-section-sub" style={{ marginBottom: '0.75rem' }}>
+            Each line is one sentence. Use <code>[word1/word2]</code> for a two-option choice and <code>[___]</code> for a fill-in blank.
           </p>
-          <div className="wc-toolbar">
-            <button type="button" className="btn-ghost"
-              style={{ fontSize: '0.78rem', padding: '0.28rem 0.65rem' }}
-              onClick={() => onChange('prompt', (prompt || '') + '[option1/option2]')}>
-              + Insert choice [A/B]
-            </button>
-            <button type="button" className="btn-ghost"
-              style={{ fontSize: '0.78rem', padding: '0.28rem 0.65rem' }}
-              onClick={() => onChange('prompt', (prompt || '') + '[___]')}>
-              + Insert blank [___]
-            </button>
-          </div>
-          <textarea className="writing-input" rows={3}
-            placeholder="e.g. Maria [is/isn't] a good teacher. She [goes/go] to work every day."
-            value={prompt || ''}
-            onChange={e => onChange('prompt', e.target.value)}
-          />
+
+          {(wcLines.length === 0 ? [''] : wcLines).map((line, li) => (
+            <div key={li} style={{ marginBottom: '0.65rem', background: 'var(--bg-darker)', borderRadius: '8px', padding: '0.6rem 0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', minWidth: '16px' }}>{li + 1}.</span>
+                <button type="button" className="btn-ghost"
+                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                  onClick={() => wcInsert(li, '[option1/option2]')}>
+                  + Choice [A/B]
+                </button>
+                <button type="button" className="btn-ghost"
+                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                  onClick={() => wcInsert(li, '[___]')}>
+                  + Blank [___]
+                </button>
+                {wcLines.length > 1 && (
+                  <button type="button" className="btn-ghost"
+                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: '#e05c5c', marginLeft: 'auto' }}
+                    onClick={() => wcRemoveLine(li)}>
+                    ✕ Remove
+                  </button>
+                )}
+              </div>
+              <input
+                ref={el => { wcLineRefs.current[li] = el }}
+                type="text"
+                style={{ width: '100%', fontSize: '0.9rem' }}
+                placeholder="e.g. Maria [is/isn't] a good teacher."
+                value={line}
+                onChange={e => wcUpdateLine(li, e.target.value)}
+              />
+            </div>
+          ))}
+
+          <button type="button" className="btn-ghost"
+            style={{ fontSize: '0.82rem', padding: '0.35rem 0.85rem' }}
+            onClick={wcAddLine}>
+            + Add sentence
+          </button>
+
           {prompt?.includes('[') && (
-            <div style={{ marginTop: '0.6rem' }}>
+            <div style={{ marginTop: '0.85rem' }}>
               <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 Preview:
               </label>
@@ -5773,36 +7420,106 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
         </div>
       )}
 
-      {type === 'matching' && (
-        <div className="form-field">
-          <label>Pairs <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(left ↔ right)</span></label>
-          <div className="builder-pairs">
-            {(options || []).map((pair, i) => (
-              <div key={i} className="builder-pair-row">
-                <input type="text" placeholder="Left (word)" value={pair.left || ''}
-                  onChange={e => {
-                    const nxt = [...options]; nxt[i] = { ...nxt[i], left: e.target.value }
-                    onChange('options', nxt)
-                  }} />
-                <span className="builder-pair-arrow">↔</span>
-                <input type="text" placeholder="Right (match)" value={pair.right || ''}
-                  onChange={e => {
-                    const nxt = [...options]; nxt[i] = { ...nxt[i], right: e.target.value }
-                    onChange('options', nxt)
-                  }} />
-                {options.length > 1 && (
-                  <button type="button" className="builder-q-remove"
-                    onClick={() => onChange('options', options.filter((_, j) => j !== i))}>✕</button>
-                )}
+      {type === 'matching' && (() => {
+        const LETTERS = ['A','B','C','D','E','F','G','H','I','J']
+        const isNew = options && !Array.isArray(options) && options?.v === 2
+        const left  = isNew ? (options.left  || []) : []
+        const right = isNew ? (options.right || []) : []
+        const correctArr = (() => { try { return correct_answer ? JSON.parse(correct_answer) : [] } catch { return [] } })()
+
+        const setLeft  = (newL) => onChange('options', { v: 2, left: newL, right })
+        const setRight = (newR) => onChange('options', { v: 2, left, right: newR })
+        const setMatch = (li, ri) => {
+          const arr = [...(Array.isArray(correctArr) ? correctArr : [])]
+          while (arr.length <= li) arr.push(null)
+          arr[li] = ri === '' ? null : parseInt(ri)
+          onChange('correct_answer', JSON.stringify(arr))
+        }
+        const addItem = () => {
+          if (left.length >= 10) return
+          setLeft([...left, ''])
+          setRight([...right, ''])
+        }
+        const removeItem = () => {
+          if (left.length <= 1) return
+          setLeft(left.slice(0, -1))
+          setRight(right.slice(0, -1))
+        }
+
+        const handleMatchPhoto = async (side, file) => {
+          if (!file) return
+          setMOcrLoading(side)
+          try {
+            const rawText = await ocrImage(file)
+            const lines = rawText.split('\n').map(l => l.replace(/^\s*[\dA-Ja-j][.)]\s*/, '').trim()).filter(l => l.length > 1)
+            if (side === 'left')  setLeft( lines.slice(0, 10).concat(Array(Math.max(0, right.length - lines.slice(0,10).length)).fill('')))
+            else                  setRight(lines.slice(0, 10).concat(Array(Math.max(0, left.length  - lines.slice(0,10).length)).fill('')))
+          } catch {}
+          setMOcrLoading(null)
+        }
+
+        return (
+          <div className="form-field">
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Matching pairs</label>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', cursor: 'pointer', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.25rem 0.6rem' }}>
+                  <input ref={matchLeftPhotoRef} type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={e => { handleMatchPhoto('left', e.target.files[0]); e.target.value = '' }} />
+                  {mOcrLoading === 'left' ? '⏳' : '📸 Left from photo'}
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', cursor: 'pointer', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.25rem 0.6rem' }}>
+                  <input ref={matchRightPhotoRef} type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={e => { handleMatchPhoto('right', e.target.files[0]); e.target.value = '' }} />
+                  {mOcrLoading === 'right' ? '⏳' : '📸 Right from photo'}
+                </label>
               </div>
-            ))}
-            <button type="button" className="builder-add-pair-btn"
-              onClick={() => onChange('options', [...(options || []), { left: '', right: '' }])}>
-              + Add pair
-            </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              {/* Left column */}
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Numbered list</div>
+                {left.map((text, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--gold)', width: '18px', flexShrink: 0 }}>{i+1}.</span>
+                    <input type="text" style={{ flex: 1 }} placeholder={`Item ${i+1}…`} value={text}
+                      onChange={e => { const n=[...left]; n[i]=e.target.value; setLeft(n) }} />
+                    <select style={{ fontSize: '0.78rem', padding: '0.28rem 0.4rem', borderRadius: '5px', border: '1px solid var(--border)', background: 'var(--bg-card)', width: '54px', flexShrink: 0 }}
+                      value={correctArr[i] != null ? correctArr[i] : ''}
+                      onChange={e => setMatch(i, e.target.value)}
+                      title="Correct match">
+                      <option value="">—</option>
+                      {right.map((_, j) => j < LETTERS.length && (
+                        <option key={j} value={j}>{LETTERS[j]}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              {/* Right column */}
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Lettered list</div>
+                {right.map((text, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#2563eb', width: '18px', flexShrink: 0 }}>{LETTERS[i]}.</span>
+                    <input type="text" style={{ flex: 1 }} placeholder={`Item ${LETTERS[i]}…`} value={text}
+                      onChange={e => { const n=[...right]; n[i]=e.target.value; setRight(n) }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.35rem' }}>
+              {left.length < 10 && (
+                <button type="button" className="builder-add-pair-btn" onClick={addItem}>+ Add pair</button>
+              )}
+              {left.length > 1 && (
+                <button type="button" className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                  onClick={removeItem}>− Remove last</button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       <div className="form-field">
         <label>Hint <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
@@ -6109,6 +7826,7 @@ function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMove
   const def         = STAGE_TYPES.find(t => t.value === stage.type)
   const stageImgRef = useRef(null)
   const [imgLoading, setImgLoading] = useState(false)
+  const [exExpanded, setExExpanded] = useState(false)
 
   const handleImages = async (e) => {
     const files = Array.from(e.target.files || []).slice(0, 2 - stage.contentImages.length)
@@ -6156,17 +7874,63 @@ function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMove
           onChange={e => onChange('title', e.target.value)} />
       </div>
 
+      {/* Teacher-only notes for this stage */}
+      <div style={{ marginBottom: '0.6rem' }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+          🔒 Stage notes <span style={{ fontWeight: 400, fontStyle: 'italic' }}>(only you see this)</span>
+        </div>
+        <RichTextEditor
+          value={stage.teacherNotes || ''}
+          onChange={v => onChange('teacherNotes', v)}
+          placeholder="What you'll do in this stage, reminders, timing cues…"
+          minHeight="60px" />
+      </div>
+
       {/* Exercise picker (exercise stages) */}
       {def.hasExercise && (
         <div className="form-field" style={{ marginBottom: 0 }}>
-          {stage.exerciseId ? (
-            <div className="stage-selected-row">
-              <span className="stage-selected-name">
-                {exercises.find(ex => ex.id === stage.exerciseId)?.title || 'Selected exercise'}
-              </span>
-              <button type="button" className="stage-change-btn" onClick={onPickerOpen}>Change</button>
-            </div>
-          ) : (
+          {stage.exerciseId ? (() => {
+            const selEx = exercises.find(ex => ex.id === stage.exerciseId)
+            const stDef = STAGE_TYPES.find(t => t.value === selEx?.stage_type) || { icon: '✏️', label: 'Exercise' }
+            return (
+              <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem', background: '#f8f5ee' }}>
+                  <span style={{ flex: 1, fontWeight: 600, fontSize: '0.88rem' }}>
+                    {stDef.icon} {selEx?.title || 'Selected exercise'}
+                  </span>
+                  <button type="button" className="btn-ghost" style={{ fontSize: '0.73rem', padding: '0.2rem 0.5rem' }}
+                    onClick={() => setExExpanded(v => !v)}>
+                    {exExpanded ? '▲ Less' : '▼ Details'}
+                  </button>
+                  <button type="button" className="stage-change-btn" onClick={onPickerOpen}>Change</button>
+                </div>
+                {/* Expanded details */}
+                {exExpanded && selEx && (
+                  <div style={{ padding: '0.6rem 0.75rem', borderTop: '1px solid var(--border)', background: '#fff', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+                      <span className="stage-type-badge-sm">{stDef.icon} {stDef.label}</span>
+                      {selEx.books?.title && <span className="admin-level-chip">📚 {selEx.books.title}</span>}
+                      {selEx.estimated_minutes && <span className="admin-level-chip">⏱ {selEx.estimated_minutes} min</span>}
+                      {selEx.audio_url && <span className="admin-level-chip">🎧 Audio</span>}
+                      {selEx.context_text && <span className="admin-level-chip">📖 Text</span>}
+                      {(selEx.labels || []).map(lbl => (
+                        <span key={lbl.id} className="label-chip" style={{ '--lbl-color': lbl.color }}>{lbl.name}</span>
+                      ))}
+                    </div>
+                    {selEx.description && <p style={{ margin: '0 0 0.3rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>{selEx.description}</p>}
+                    {selEx.context_text && (
+                      <div style={{ background: '#f5f2eb', borderRadius: '5px', padding: '0.4rem 0.6rem', fontSize: '0.82rem', marginTop: '0.3rem' }}
+                        dangerouslySetInnerHTML={{ __html: selEx.context_text }} />
+                    )}
+                    {selEx.thumbnail && (
+                      <img src={selEx.thumbnail} alt="" style={{ maxWidth: '100%', borderRadius: '5px', marginTop: '0.4rem' }} />
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })() : (
             <button type="button" className="stage-select-btn" onClick={onPickerOpen}>
               Select stage →
             </button>
@@ -6180,10 +7944,11 @@ function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp, onMove
           <input type="url" placeholder="🎧 Audio / video link (optional)"
             value={stage.audioUrl}
             onChange={e => onChange('audioUrl', e.target.value)} />
-          <textarea className="writing-input" rows={3}
-            placeholder="📖 Notes, text or instructions (optional)"
+          <RichTextEditor
             value={stage.contentText}
-            onChange={e => onChange('contentText', e.target.value)} />
+            onChange={v => onChange('contentText', v)}
+            placeholder="📖 Notes, text or instructions (optional)"
+            minHeight="80px" />
           {stage.contentImages.length < 2 && (
             <button type="button" className="builder-upload-btn"
               onClick={() => stageImgRef.current?.click()}>
@@ -6216,13 +7981,6 @@ function LessonStageBuilder({
 }) {
   const isEdit = !!initialPlan
 
-  // Student
-  const initStudentType = initialPlan?.manual_student_id ? 'manual'
-    : initialPlan?.student_id ? 'profile' : null
-  const initStudentId = initialPlan?.manual_student_id ?? initialPlan?.student_id ?? null
-  const [studentType,  setStudentType]  = useState(initStudentType)
-  const [studentId,    setStudentId]    = useState(initStudentId)
-
   // Lesson metadata
   const [title,           setTitle]           = useState(initialPlan?.title            ?? '')
   const [lessonAim,       setLessonAim]       = useState(initialPlan?.lesson_aim       ?? '')
@@ -6230,12 +7988,6 @@ function LessonStageBuilder({
   const [langAnalysis,    setLangAnalysis]    = useState(initialPlan?.language_analysis ?? '')
   const [englishLevel,    setEnglishLevel]    = useState(initialPlan?.english_level    ?? '')
   const [lessonLevel,     setLessonLevel]     = useState(initialPlan?.lesson_level     ?? '')
-  const [scheduledAt,     setScheduledAt]     = useState(() => {
-    if (!initialPlan?.scheduled_at) return ''
-    const d = new Date(initialPlan.scheduled_at)
-    const pad = n => String(n).padStart(2,'0')
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  })
 
   // Numbered stage groups
   const [stageGroups,  setStageGroups]  = useState(() => initStageGroupsFromPlan(initialPlan))
@@ -6260,6 +8012,8 @@ function LessonStageBuilder({
   const [pickerCtx,    setPickerCtx]    = useState(null)
   // All exercises including ones created inline during this session
   const [exercises,    setExercises]    = useState(allExercises)
+  // Ref for the "Add stage" button — used to scroll into view after adding
+  const addStageBtnRef = useRef(null)
 
   // ── Auto-save draft to localStorage ──────────────────────────
   // Only active for new plans (not edits of saved plans).
@@ -6277,9 +8031,6 @@ function LessonStageBuilder({
       if (draft.lessonAim)     setLessonAim(draft.lessonAim)
       if (draft.teachingPoint) setTeachingPoint(draft.teachingPoint)
       if (draft.langAnalysis)  setLangAnalysis(draft.langAnalysis)
-      if (draft.scheduledAt)   setScheduledAt(draft.scheduledAt)
-      if (draft.studentType)   setStudentType(draft.studentType)
-      if (draft.studentId)     setStudentId(draft.studentId)
       if (draft.englishLevel)  setEnglishLevel(draft.englishLevel)
       if (draft.lessonLevel)   setLessonLevel(draft.lessonLevel)
       if (draft.stageGroups && draft.stageGroups.length > 0) setStageGroups(draft.stageGroups)
@@ -6294,45 +8045,19 @@ function LessonStageBuilder({
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
           title, lessonAim, teachingPoint, langAnalysis,
-          scheduledAt, studentType, studentId, stageGroups,
-          englishLevel, lessonLevel,
+          stageGroups, englishLevel, lessonLevel,
           savedAt: Date.now(),
         }))
       } catch { /* storage full — ignore */ }
     }, 300)
     return () => clearTimeout(t)
-  }, [title, lessonAim, teachingPoint, langAnalysis, scheduledAt, studentType, studentId, stageGroups, englishLevel, lessonLevel]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [title, lessonAim, teachingPoint, langAnalysis, stageGroups, englishLevel, lessonLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Browser back-button support: push a history entry when picker opens,
-  // and close it when the user presses ← browser back.
-  useEffect(() => {
-    if (pickerCtx) {
-      window.history.pushState({ lessonPickerOpen: true }, '')
-      window.scrollTo(0, 0)
-    }
-  }, [!!pickerCtx]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const handlePop = () => {
-      if (pickerCtx) { setPickerCtx(null); window.scrollTo(0, 0) }
-    }
-    window.addEventListener('popstate', handlePop)
-    return () => window.removeEventListener('popstate', handlePop)
-  }, [pickerCtx])
-
-  // Helper: close picker and restore scroll position
-  const closePickerCtx = () => { setPickerCtx(null); window.scrollTo(0, 0) }
+  // Helper: close picker and return to builder
+  const closePickerCtx = () => { setPickerCtx(null) }
 
   const [saving,  setSaving]  = useState(false)
   const [err,     setErr]     = useState(null)
-
-  // ── Student derived info ──────────────────────────────────────
-  const selectedStudent = useMemo(() => {
-    if (!studentId || !studentType) return null
-    return studentType === 'manual'
-      ? manualStudents.find(s => s.id === studentId)
-      : authStudents.find(s => s.id === studentId)
-  }, [studentId, studentType, authStudents, manualStudents])
 
   // ── Stage group helpers ────────────────────────────────────────
   const addStageGroup = () => {
@@ -6340,7 +8065,17 @@ function LessonStageBuilder({
       ? Math.max(...stageGroups.map(g => g.number)) + 1
       : 1
     if (nextNum > 10) return // max 10 stages
+    // Preserve scroll position so the page doesn't jump to top after re-render
+    const savedScrollY = window.scrollY
     setStageGroups(p => [...p, { number: nextNum, name: '', items: [] }])
+    requestAnimationFrame(() => {
+      // Scroll to the "Add stage" button so user can immediately add another
+      if (addStageBtnRef.current) {
+        addStageBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      } else {
+        window.scrollTo({ top: savedScrollY, behavior: 'instant' })
+      }
+    })
   }
   const removeStageGroup = (num) =>
     setStageGroups(p => p.filter(g => g.number !== num))
@@ -6376,11 +8111,17 @@ function LessonStageBuilder({
   // ── Exercise picker callbacks ──────────────────────────────────
   const handlePickerSelect = (exercise) => {
     if (!pickerCtx) return
-    const item = newStage('controlled_exercise')
-    item.exerciseId    = exercise.id
-    item.exerciseTitle = exercise.title
-    item.type          = exercise.stage_type || 'controlled_exercise'
-    addItemToGroup(pickerCtx.groupNumber, item)
+    if (pickerCtx.for === 'homework') {
+      // Homework picker: update the homework item's exerciseId
+      updateHomeworkItem(pickerCtx.homeworkId, 'exerciseId', exercise.id)
+    } else {
+      // Stage picker
+      const item = newStage('controlled_exercise')
+      item.exerciseId    = exercise.id
+      item.exerciseTitle = exercise.title
+      item.type          = exercise.stage_type || 'controlled_exercise'
+      addItemToGroup(pickerCtx.groupNumber, item)
+    }
     closePickerCtx()
   }
 
@@ -6389,11 +8130,16 @@ function LessonStageBuilder({
     setExercises(reloaded)
     const newEx = reloaded.find(e => e.id === newExId)
     if (newEx && pickerCtx) {
-      const item = newStage(newEx.stage_type || 'controlled_exercise')
-      item.exerciseId    = newEx.id
-      item.exerciseTitle = newEx.title
-      item.type          = newEx.stage_type || 'controlled_exercise'
-      addItemToGroup(pickerCtx.groupNumber, item)
+      if (pickerCtx.for === 'homework') {
+        // Homework create: link newly created exercise to the homework item
+        updateHomeworkItem(pickerCtx.homeworkId, 'exerciseId', newEx.id)
+      } else {
+        const item = newStage(newEx.stage_type || 'controlled_exercise')
+        item.exerciseId    = newEx.id
+        item.exerciseTitle = newEx.title
+        item.type          = newEx.stage_type || 'controlled_exercise'
+        addItemToGroup(pickerCtx.groupNumber, item)
+      }
     }
     closePickerCtx()
   }
@@ -6401,6 +8147,7 @@ function LessonStageBuilder({
   // ── Save ──────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim()) return
+    if (!englishLevel) { setErr('Please select a course for this lesson plan.'); return }
     setSaving(true); setErr(null)
     const flatItems = stageGroups.flatMap(g =>
       g.items.map(item => ({ ...item, stageNumber: g.number, stageName: g.name || null, section: 'lesson' }))
@@ -6424,12 +8171,9 @@ function LessonStageBuilder({
       }))
     const allStages = [...flatItems, ...hwItems]
     const meta = {
-      studentId:        studentType === 'profile' ? studentId : null,
-      manualStudentId:  studentType === 'manual'  ? studentId : null,
       lessonAim:        lessonAim,
       teachingPoint:    teachingPoint,
       languageAnalysis: langAnalysis,
-      scheduledAt:      scheduledAt ? new Date(scheduledAt).toISOString() : null,
       englishLevel:     englishLevel || null,
       lessonLevel:      lessonLevel  || null,
     }
@@ -6464,11 +8208,25 @@ function LessonStageBuilder({
       cancelLabel="← Back to lesson plan" />
   }
 
+  const totalPlanMins = stageGroups.flatMap(g => g.items).reduce((sum, item) => {
+    const exFull = exercises.find(e => e.id === item.exerciseId)
+    const m = item.durationMinutes === 'other'
+      ? (parseInt(item.customDuration) || 0)
+      : (typeof item.durationMinutes === 'number' ? item.durationMinutes
+         : (exFull?.estimated_minutes || 0))
+    return sum + m
+  }, 0)
+
   return (
     <div>
       <div className="admin-exercises-toolbar">
-        <h3 style={{ margin: 0 }}>{isEdit ? 'Edit Lesson Plan' : 'Create Lesson Plan'}</h3>
-        <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+        <button className="btn-ghost" style={{ fontSize: '0.88rem', padding: '0.4rem 0.75rem' }} onClick={onCancel}>← Back to plans</button>
+        <h3 style={{ margin: '0 auto' }}>{isEdit ? 'Edit Lesson Plan' : 'Create Lesson Plan'}</h3>
+        {totalPlanMins > 0 ? (
+          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--gold)', background: 'rgba(212,168,83,0.12)', border: '1px solid rgba(212,168,83,0.35)', borderRadius: '20px', padding: '0.25rem 0.75rem', whiteSpace: 'nowrap' }}>
+            ⏱ {totalPlanMins} min total
+          </div>
+        ) : <div style={{ width: '100px' }} />}
       </div>
 
       {/* Draft restored banner */}
@@ -6486,66 +8244,22 @@ function LessonStageBuilder({
         </div>
       )}
 
-      {/* ── Level ── */}
+      {/* ── Course (mandatory) ── */}
       <div className="builder-section">
-        <h4 className="builder-section-title">📊 Level</h4>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <div className="form-field" style={{ flex: 1, minWidth: '180px' }}>
-            <label>English level</label>
-            <select value={englishLevel} onChange={e => setEnglishLevel(e.target.value)}>
-              <option value="">— Any level —</option>
-              <option value="elementary">Elementary</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
+        <h4 className="builder-section-title">📚 Course <span className="required-star">*</span></h4>
+        {(() => {
+          const adminCourses = getAdminCourses()
+          return (
+            <select value={englishLevel} onChange={e => setEnglishLevel(e.target.value)}
+              style={{ fontSize: '0.88rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: `1px solid ${!englishLevel ? '#e05c5c' : 'var(--border)'}`, background: '#fff', minWidth: '220px' }}>
+              <option value="">— Select course (required) —</option>
+              {adminCourses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              {englishLevel && !adminCourses.find(c => c.name === englishLevel) && (
+                <option value={englishLevel} disabled style={{ color: '#e05c5c' }}>{englishLevel} (deleted — please re-select)</option>
+              )}
             </select>
-          </div>
-          <div className="form-field" style={{ flex: 1, minWidth: '180px' }}>
-            <label>Lesson level</label>
-            <select value={lessonLevel} onChange={e => setLessonLevel(e.target.value)}>
-              <option value="">— Any level —</option>
-              {Array.from({length: 12}, (_, i) => (
-                <option key={i+1} value={`Level ${i+1}`}>Level {i+1}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Student ── */}
-      <div className="builder-section">
-        <h4 className="builder-section-title">👤 Student <span style={{fontWeight:400, fontSize:'0.82rem', color:'var(--text-muted)'}}>— optional</span></h4>
-        <select value={studentId ? `${studentType}:${studentId}` : ''}
-          onChange={e => {
-            const val = e.target.value
-            if (!val) { setStudentType(null); setStudentId(null); return }
-            const [type, id] = val.split(':')
-            setStudentType(type); setStudentId(id)
-          }}>
-          <option value="">— Select student —</option>
-          {authStudents.filter(s => s.access_level !== 'pending').length > 0 && (
-            <optgroup label="Active students">
-              {authStudents.filter(s => s.access_level !== 'pending').map(s => (
-                <option key={s.id} value={`profile:${s.id}`}>
-                  {s.name || s.email}{s.english_level ? ` (${s.english_level})` : ''}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {manualStudents.length > 0 && (
-            <optgroup label="Manual students">
-              {manualStudents.map(s => (
-                <option key={s.id} value={`manual:${s.id}`}>
-                  {s.name}{s.english_level ? ` (${s.english_level})` : ''}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        {selectedStudent?.english_level && (
-          <p style={{ fontSize: '0.82rem', color: 'var(--gold)', marginTop: '0.4rem', margin: '0.4rem 0 0' }}>
-            Level: <strong style={{ textTransform: 'capitalize' }}>{selectedStudent.english_level}</strong>
-          </p>
-        )}
+          )
+        })()}
       </div>
 
       {/* ── Lesson Info ── */}
@@ -6557,27 +8271,22 @@ function LessonStageBuilder({
             value={title} onChange={e => setTitle(e.target.value)} />
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
-          <label>📅 Date &amp; time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-          <input type="datetime-local" value={scheduledAt}
-            onChange={e => setScheduledAt(e.target.value)} />
-        </div>
-        <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>🎯 Lesson aim</label>
-          <textarea className="writing-input" rows={2}
+          <RichTextEditor value={lessonAim} onChange={v => setLessonAim(v)}
             placeholder="e.g. Students will be able to talk about daily habits using the present simple."
-            value={lessonAim} onChange={e => setLessonAim(e.target.value)} />
+            minHeight="64px" />
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>✏️ Teaching point</label>
-          <textarea className="writing-input" rows={2}
+          <RichTextEditor value={teachingPoint} onChange={v => setTeachingPoint(v)}
             placeholder="e.g. He/She/It + verb + s/es. Negative: don't / doesn't."
-            value={teachingPoint} onChange={e => setTeachingPoint(e.target.value)} />
+            minHeight="64px" />
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>🔬 Language analysis</label>
-          <textarea className="writing-input" rows={8}
+          <RichTextEditor value={langAnalysis} onChange={v => setLangAnalysis(v)}
             placeholder="e.g. Form: S + V(s) + O. Meaning: habitual actions. Pronunciation: /s/ /z/ /ɪz/ endings."
-            value={langAnalysis} onChange={e => setLangAnalysis(e.target.value)} />
+            minHeight="160px" />
         </div>
       </div>
 
@@ -6589,14 +8298,21 @@ function LessonStageBuilder({
             <p style={{ margin: 0 }}>No stages yet — click "Add stage" to begin.</p>
           </div>
         )}
-        {stageGroups.map(group => (
-          <div key={group.number} className="plan-stage-group">
+        {stageGroups.map((group, groupIdx) => {
+          const gc = STAGE_GROUP_COLORS[groupIdx % STAGE_GROUP_COLORS.length]
+          return (
+          <div key={group.number} className="plan-stage-group"
+            style={{ background: gc.bg, border: `1.5px solid ${gc.border}` }}>
             <div className="plan-stage-group-header">
-              <span className="plan-stage-num">Stage {group.number}</span>
+              <span className="plan-stage-num"
+                style={{ background: gc.border, color: gc.pill, borderRadius: '6px', padding: '0.18rem 0.55rem' }}>
+                Stage {group.number}
+              </span>
               <input type="text" className="plan-stage-name-input"
                 placeholder="Stage name (optional, e.g. Warm-up)"
                 value={group.name}
-                onChange={e => updateGroupName(group.number, e.target.value)} />
+                onChange={e => updateGroupName(group.number, e.target.value)}
+                style={{ background: 'rgba(255,255,255,0.7)' }} />
               <button type="button" className="btn-ghost"
                 style={{ fontSize: '0.78rem', padding: '0.22rem 0.45rem', flexShrink: 0 }}
                 disabled={group.number === 1}
@@ -6635,11 +8351,31 @@ function LessonStageBuilder({
                     exFull?.section || null,
                     exFull?.exercise_no != null ? `Ex.${exFull.exercise_no}` : null,
                   ].filter(Boolean)
+                  const cardBg = STAGE_TYPE_CARD_BG[item.type] || '#F1EFE8'
                   return (
-                    <div key={item.id} className="plan-stage-item-card">
-                      {exFull?.thumbnail && (
+                    <div key={item.id} className="plan-stage-item-card"
+                      style={{ background: cardBg, border: '1px solid rgba(0,0,0,0.07)' }}>
+                      {exFull?.thumbnail ? (
                         <img src={exFull.thumbnail} alt="" className="plan-stage-item-thumb" />
-                      )}
+                      ) : item.exerciseId ? (
+                        /* Thumbnail placeholder — click to upload */
+                        <label className="plan-stage-item-thumb-placeholder" title="Add thumbnail">
+                          <input type="file" accept="image/*" style={{ display: 'none' }}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]; if (!file) return
+                              e.target.value = ''
+                              try {
+                                const compressed = await compressImage(file, 400)
+                                const ok = await updateExerciseThumbnail(item.exerciseId, compressed)
+                                if (ok) setExercises(prev => prev.map(ex =>
+                                  ex.id === item.exerciseId ? { ...ex, thumbnail: compressed } : ex
+                                ))
+                              } catch (err) { console.error('thumb upload', err) }
+                            }} />
+                          <span style={{ fontSize: '1.3rem', display: 'block', lineHeight: 1 }}>📷</span>
+                          <span style={{ fontSize: '0.7rem', display: 'block', marginTop: '0.2rem' }}>Add thumbnail</span>
+                        </label>
+                      ) : null}
                       <div className="plan-stage-item-body">
                         <div className="plan-stage-item-title-row">
                           <span className="plan-stage-item-icon">{def.icon}</span>
@@ -6668,22 +8404,24 @@ function LessonStageBuilder({
 
             {/* Add exercise buttons */}
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-              <button type="button" className="btn-ghost"
-                style={{ fontSize: '0.8rem', padding: '0.3rem 0.75rem' }}
+              <button type="button"
+                style={{ fontSize: '0.82rem', padding: '0.35rem 0.85rem', borderRadius: '7px', border: `1.5px solid ${gc.border}`, background: 'rgba(255,255,255,0.75)', color: gc.pill, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
                 onClick={() => setPickerCtx({ groupNumber: group.number, mode: 'pick' })}>
-                + Pick from library
+                📚 Pick from library
               </button>
-              <button type="button" className="btn-ghost"
-                style={{ fontSize: '0.8rem', padding: '0.3rem 0.75rem' }}
+              <button type="button"
+                style={{ fontSize: '0.82rem', padding: '0.35rem 0.85rem', borderRadius: '7px', border: `1.5px solid ${gc.border}`, background: 'rgba(255,255,255,0.75)', color: gc.pill, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
                 onClick={() => setPickerCtx({ groupNumber: group.number, mode: 'create' })}>
-                + Create new exercise
+                ✏️ Create new exercise
               </button>
             </div>
           </div>
-        ))}
+          )
+        })}
 
         {stageGroups.length < 10 && (
           <button type="button" className="stage-add-btn"
+            ref={addStageBtnRef}
             style={{ marginTop: '0.75rem' }}
             onClick={addStageGroup}>
             + Add Stage {stageGroups.length > 0 ? stageGroups.length + 1 : 1}
@@ -6700,18 +8438,27 @@ function LessonStageBuilder({
         {homeworkItems.map((hw) => {
           const ex = exercises.find(e => e.id === hw.exerciseId)
           return (
-            <div key={hw.id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.75rem', background:'#fff', borderRadius:'8px', border:'1px solid #e8e3d8', marginBottom:'0.5rem' }}>
-              <span style={{ flex:1, fontSize:'0.9rem' }}>{ex ? ex.title : 'Select exercise…'}</span>
-              <select value={hw.exerciseId} onChange={e => updateHomeworkItem(hw.id, 'exerciseId', e.target.value)}
-                style={{ fontSize:'0.85rem', padding:'0.3rem 0.5rem', borderRadius:'6px', border:'1px solid #d4d0c8', background:'#fff' }}>
-                <option value="">Choose exercise…</option>
-                {exercises.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
-              </select>
-              <input type="text" placeholder="Note (optional)" value={hw.note}
+            <div key={hw.id} style={{ background:'#fff', borderRadius:'8px', border:'1px solid #e8e3d8', marginBottom:'0.5rem', padding:'0.6rem 0.75rem' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom: ex || hw.exerciseId ? '0.45rem' : 0 }}>
+                {ex ? (
+                  <span style={{ flex:1, fontWeight:600, fontSize:'0.9rem' }}>{ex.title}</span>
+                ) : (
+                  <span style={{ flex:1, fontSize:'0.88rem', color:'var(--text-muted)', fontStyle:'italic' }}>No exercise selected</span>
+                )}
+                <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.55rem' }}
+                  onClick={() => setPickerCtx({ for:'homework', homeworkId:hw.id, mode:'pick' })}>
+                  📚 {ex ? 'Change' : 'Pick from library'}
+                </button>
+                <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.55rem' }}
+                  onClick={() => setPickerCtx({ for:'homework', homeworkId:hw.id, mode:'create' })}>
+                  ✏️ Create new
+                </button>
+                <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.45rem', color:'#e05c5c' }}
+                  onClick={() => removeHomeworkItem(hw.id)}>✕</button>
+              </div>
+              <input type="text" placeholder="Note to student (optional)" value={hw.note}
                 onChange={e => updateHomeworkItem(hw.id, 'note', e.target.value)}
-                style={{ fontSize:'0.82rem', padding:'0.3rem 0.5rem', borderRadius:'6px', border:'1px solid #d4d0c8', width:'160px' }} />
-              <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.5rem', color:'#e05c5c' }}
-                onClick={() => removeHomeworkItem(hw.id)}>✕</button>
+                style={{ width:'100%', fontSize:'0.82rem', padding:'0.3rem 0.55rem', borderRadius:'6px', border:'1px solid #d4d0c8', boxSizing:'border-box' }} />
             </div>
           )
         })}
@@ -6762,6 +8509,7 @@ function AdminExerciseReview({ details, onBack }) {
     : t === 'word_choice'   ? 'Word choice'
     : t === 'listening'     ? 'Listening'
     : t === 'viewing'       ? 'Viewing'
+    : t === 'speaking'      ? 'Speaking'
     : 'Written answer'
 
   return (
@@ -6825,7 +8573,7 @@ function AdminExerciseReview({ details, onBack }) {
           </div>
         )}
         {questions.map((q, idx) => {
-          if (q.type === 'listening' || q.type === 'viewing') return null
+          if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') return null
           const sa        = answerMap[q.id]
           const hasAnswer = sa?.answer?.trim()
           const correct   = autoCorrect(q)
@@ -6838,7 +8586,7 @@ function AdminExerciseReview({ details, onBack }) {
                 {hasAnswer && correct === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
                 {hasAnswer && correct === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
               </div>
-              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt">{q.prompt}</p>}
+              {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
               {/* Student's answer */}
               <div className="review-answer-row" style={{ display: 'block' }}>
@@ -6930,7 +8678,7 @@ function AdminExerciseReview({ details, onBack }) {
 }
 
 // ─── AdminLessonRow ───────────────────────────────────────────
-function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
+function AdminLessonRow({ lesson: initialLesson, onUpdate, onOpenLesson = null }) {
   const [editing, setEditing] = useState(false)
   const [lesson,  setLesson]  = useState(initialLesson)
   const [saving,  setSaving]  = useState(false)
@@ -7043,8 +8791,54 @@ function AdminLessonRow({ lesson: initialLesson, onUpdate }) {
           </span>
         )}
       </div>
-      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
-        onClick={() => setEditing(true)}>Edit</button>
+      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
+        {onOpenLesson && (
+          <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap' }}
+            onClick={onOpenLesson}>Open lesson</button>
+        )}
+        <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+          onClick={() => setEditing(true)}>Edit</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── AdminStudentPlans ────────────────────────────────────────
+function AdminStudentPlans({ student, isManual = false, onOpenPlan }) {
+  const [plans, setPlans] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fn = isManual ? fetchPlansForManualStudentAdmin : fetchPlansForStudentAdmin
+    fn(student.id).then(data => { setPlans(data); setLoading(false) })
+  }, [student.id, isManual])
+
+  if (loading) return <div className="admin-section"><h3>Lesson Plans</h3><div className="dashboard-loading" style={{padding:'0.5rem 0'}}>Loading…</div></div>
+  if (plans.length === 0) return <div className="admin-section"><h3>Lesson Plans (0)</h3><p style={{color:'var(--text-muted)',fontSize:'0.88rem'}}>No lesson plans assigned yet.</p></div>
+
+  return (
+    <div className="admin-section">
+      <h3>Lesson Plans ({plans.length})</h3>
+      <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginTop:'0.5rem'}}>
+        {plans.map(plan => {
+          const exerciseCount = (plan.lesson_stages ?? []).filter(s => s.exercises && (s.section ?? 'lesson') !== 'homework').length
+          const hwCount = (plan.lesson_stages ?? []).filter(s => (s.section ?? 'lesson') === 'homework').length
+          return (
+            <div key={plan.id} style={{display:'flex',alignItems:'center',gap:'0.75rem',padding:'0.65rem 0.85rem',background:'var(--bg)',border:'1px solid var(--border)',borderRadius:'8px'}}>
+              <div style={{flex:1}}>
+                <strong style={{fontSize:'0.92rem'}}>{plan.title}</strong>
+                <div style={{fontSize:'0.78rem',color:'var(--text-muted)',marginTop:'0.15rem'}}>
+                  {exerciseCount} exercise{exerciseCount!==1?'s':''}{hwCount>0?` · ${hwCount} homework`:''}{plan.scheduled_at ? ` · ${new Date(plan.scheduled_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}` : ''}
+                </div>
+              </div>
+              <button className="btn-gold" style={{fontSize:'0.82rem',padding:'0.35rem 0.8rem',whiteSpace:'nowrap'}}
+                onClick={() => onOpenPlan(plan)}>
+                ▶ Open lesson
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -7128,8 +8922,429 @@ function AdminStudentExercises({ student, onReview }) {
   )
 }
 
+// ─── AdminStudentPlanView ─────────────────────────────────────
+// Teacher view: all stages fully expanded inline — no navigate-away.
+// Student view: compact progress list mirroring what the student sees.
+function AdminStudentPlanView({ plan, studentId, studentName, onBack, adminUserId = null, adminEmail = null }) {
+  const [viewMode,          setViewMode]          = useState('teacher') // 'teacher' | 'student'
+  const [planAssignments,   setPlanAssignments]   = useState([])
+  const [viewingSubmission, setViewingSubmission] = useState(null) // { assignment, questions, answerMap }
+  const [loadingViewId,     setLoadingViewId]     = useState(null)
+  const [exerciseCache,     setExerciseCache]     = useState({})   // exerciseId → full exercise obj with questions
+  const [loadingExercises,  setLoadingExercises]  = useState(false)
+  const [demoAnswers,       setDemoAnswers]       = useState({})   // exerciseId → { qId → answer }
+
+  // Fetch full exercise data (with questions) for all stages
+  useEffect(() => {
+    const ids = [...new Set(
+      (plan.lesson_stages ?? []).map(s => s.exercises?.id || s.exercise_id).filter(Boolean)
+    )]
+    if (!ids.length) return
+    setLoadingExercises(true)
+    Promise.all(ids.map(id => fetchExerciseWithQuestions(id))).then(results => {
+      const cache = {}
+      results.forEach(ex => { if (ex) cache[ex.id] = ex })
+      setExerciseCache(cache)
+      setLoadingExercises(false)
+    })
+  }, [plan.id])
+
+  // Fetch student progress
+  useEffect(() => {
+    if (!studentId) return
+    const exerciseIds = (plan.lesson_stages ?? []).map(s => s.exercise_id).filter(Boolean)
+    fetchStudentPlanAssignments(studentId, plan.id, exerciseIds).then(setPlanAssignments)
+  }, [plan.id, studentId])
+
+  const setDemoAnswer = (exerciseId, qId, val) =>
+    setDemoAnswers(prev => ({ ...prev, [exerciseId]: { ...(prev[exerciseId] || {}), [qId]: val } }))
+
+  const openSubmission = async (exerciseId) => {
+    const asgn = planAssignments.find(a => (a.exercises?.id === exerciseId || a.exercise_id === exerciseId) && a.status === 'submitted')
+    if (!asgn) return
+    setLoadingViewId(exerciseId)
+    const [qs, ans] = await Promise.all([
+      fetchQuestionsForReview(exerciseId),
+      fetchMyAnswersForAssignment(asgn.id),
+    ])
+    setLoadingViewId(null)
+    const answerMap = Object.fromEntries(ans.map(sa => [sa.question_id, sa]))
+    setViewingSubmission({ assignment: { ...asgn, exercises: asgn.exercises || { id: exerciseId, title: '' } }, questions: qs, answerMap })
+  }
+
+  const typeLabel = (t) =>
+    t === 'multiple_choice' ? 'Multiple choice'
+    : t === 'fill_blank'    ? 'Fill in the blank'
+    : t === 'true_false'    ? 'True / False'
+    : t === 'matching'      ? 'Matching'
+    : t === 'word_choice'   ? 'Word choice'
+    : t === 'listening'     ? 'Listening'
+    : t === 'viewing'       ? 'Viewing'
+    : t === 'speaking'      ? 'Speaking'
+    : 'Written answer'
+
+  // Render all exercise content inline (teacher view)
+  const renderInlineExercise = (exerciseId) => {
+    if (loadingExercises) {
+      return <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontStyle: 'italic', margin: '0.5rem 0 0' }}>Loading exercise…</p>
+    }
+    const cached = exerciseCache[exerciseId]
+    if (!cached) return null
+    const questions = cached.questions ?? []
+    const answers   = demoAnswers[exerciseId] || {}
+    const setAns    = (qId, val) => setDemoAnswer(exerciseId, qId, val)
+    const hasInteractive = questions.some(q => !['listening','viewing','speaking'].includes(q.type))
+
+    return (
+      <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #e8e3d8', paddingTop: '0.75rem' }}>
+        {cached.description && (
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>{cached.description}</p>
+        )}
+        {cached.audio_url && (
+          <div style={{ marginBottom: '0.5rem' }}>
+            <EmbeddedMedia url={cached.audio_url} label="🎧 Listen" />
+          </div>
+        )}
+        {cached.context_text && (
+          <div className="exercise-context-text" style={{ marginBottom: '0.5rem' }}>
+            <p className="exercise-context-label">📖 Read this first</p>
+            <div className="exercise-context-passage">{cached.context_text}</div>
+          </div>
+        )}
+        {cached.context_images?.length > 0 && !(
+          questions.length > 0 && questions[0].type === 'fill_blank' && parseOverlayPrompt(questions[0].prompt)
+        ) && (
+          <div className="exercise-context-images" style={{ marginBottom: '0.5rem' }}>
+            {cached.context_images.map((src, i) => (
+              <img key={i} src={src} alt={`Ref ${i + 1}`} className="exercise-context-img" style={{ maxWidth: '100%' }} />
+            ))}
+          </div>
+        )}
+        {questions.length === 0 && (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontStyle: 'italic' }}>No questions.</p>
+        )}
+        <div className="exercise-questions" style={{ marginTop: '0.25rem' }}>
+          {questions.map((q, idx) => {
+            if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') {
+              return (
+                <div key={q.id} style={{ padding: '0.35rem 0', fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  {q.type === 'listening' ? '🎧 Listening' : q.type === 'viewing' ? '🎥 Viewing' : '🎙️ Speaking'} activity
+                </div>
+              )
+            }
+            if (q.type === 'fill_blank') {
+              const overlay = parseOverlayPrompt(q.prompt)
+              return (
+                <div key={q.id} className="exercise-fill-block">
+                  {q.hint && <p className="eq-hint" style={{ marginBottom: '0.4rem' }}>💡 {q.hint}</p>}
+                  {overlay && cached.context_images?.[0] ? (
+                    <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks}
+                      answers={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
+                  ) : (
+                    <InlineFillBlank prompt={q.prompt} answer={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
+                  )}
+                </div>
+              )
+            }
+            return (
+              <div key={q.id} className="exercise-question">
+                <div className="eq-label">
+                  <span className="eq-num">Q{idx + 1}</span>
+                  <span className="eq-type">{typeLabel(q.type)}</span>
+                </div>
+                {q.type !== 'word_choice' && q.type !== 'fill_blank' && (
+                  <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />
+                )}
+                {q.hint && <p className="eq-hint">Hint: {q.hint}</p>}
+                {q.type === 'multiple_choice' && (
+                  <div className="options-list">
+                    {(q.options || []).map(opt => (
+                      <button key={opt} className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
+                        onClick={() => setAns(q.id, opt)}>{opt}</button>
+                    ))}
+                  </div>
+                )}
+                {q.type === 'true_false' && (
+                  <div className="options-list" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+                    {['True', 'False'].map(opt => (
+                      <button key={opt} className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
+                        style={{ flex: 1, textAlign: 'center' }}
+                        onClick={() => setAns(q.id, opt)}>
+                        {opt === 'True' ? '✓ True' : '✗ False'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {q.type === 'matching' && (
+                  <MatchingQuestion pairs={q.options || []} answer={answers[q.id] || null}
+                    onChange={val => setAns(q.id, val)} />
+                )}
+                {q.type === 'free_text' && (
+                  <textarea className="writing-input" rows={3}
+                    placeholder={q.hint || 'Write answer here…'}
+                    value={answers[q.id] || ''} onChange={e => setAns(q.id, e.target.value)} />
+                )}
+                {q.type === 'word_choice' && (
+                  <WordChoiceQuestion template={q.prompt} answer={answers[q.id] || null}
+                    onChange={val => setAns(q.id, val)} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {hasInteractive && (
+          <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.2rem 0.55rem', marginTop: '0.25rem' }}
+            onClick={() => setDemoAnswers(prev => ({ ...prev, [exerciseId]: {} }))}>
+            ↺ Reset answers
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (viewingSubmission) {
+    return (
+      <StudentSubmissionReview
+        assignment={viewingSubmission.assignment}
+        questions={viewingSubmission.questions ?? []}
+        answerMap={viewingSubmission.answerMap}
+        onBack={() => setViewingSubmission(null)}
+        backLabel="← Back to lesson plan"
+      />
+    )
+  }
+
+  const allStages = (plan.lesson_stages ?? [])
+    .slice()
+    .sort((a, b) => (a.stage_number || 0) - (b.stage_number || 0) || a.order_index - b.order_index)
+  const lessonStages   = allStages.filter(s => (s.section ?? 'lesson') !== 'homework')
+  const homeworkStages = allStages.filter(s => s.section === 'homework')
+  const stageGroups    = lessonStages.reduce((acc, s) => {
+    const num = s.stage_number ?? 1
+    if (!acc[num]) acc[num] = { number: num, name: s.stage_name, items: [] }
+    acc[num].items.push(s)
+    return acc
+  }, {})
+
+  const exerciseStages = allStages.filter(s => s.exercises)
+  const doneCount = exerciseStages.filter(s => {
+    const ex = s.exercises
+    return planAssignments.some(a => (a.exercises?.id === ex.id || a.exercise_id === ex.id) && a.status === 'submitted')
+  }).length
+  const totalCount = exerciseStages.length
+
+  const PLAN_STAGE_COLORS = {
+    controlled_exercise: '#3b82f6', free_exercise: '#059669',
+    lead_in: '#d97706', feedback: '#7c3aed', instruction: '#64748b', clarification: '#dc2626',
+  }
+
+  const renderAdminStageItem = (stage, isHomework = false) => {
+    const ex     = stage.exercises
+    const exId   = ex?.id || stage.exercise_id
+    const asgn   = exId ? planAssignments.find(a => a.exercises?.id === exId || a.exercise_id === exId) : null
+    const isDone = asgn?.status === 'submitted'
+    const def    = STAGE_TYPES.find(t => t.value === stage.stage_type) || { icon: '▸', label: stage.stage_type || 'Activity' }
+    const color  = PLAN_STAGE_COLORS[stage.stage_type] || '#94a3b8'
+
+    if (viewMode === 'teacher') {
+      return (
+        <div key={stage.id} style={{
+          padding: '0.85rem 1rem',
+          background: isDone ? '#f0fdf4' : (isHomework ? '#fafaf8' : '#fff'),
+          borderRadius: '12px',
+          border: `1px solid ${isDone ? '#bbf7d0' : '#e8e3d8'}`,
+          borderLeft: `4px solid ${color}`,
+          marginBottom: '0.65rem',
+        }}>
+          {/* Stage header row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.2rem' }}>
+            <span style={{ fontSize: '1rem', lineHeight: 1 }}>{def.icon}</span>
+            <span style={{ fontWeight: 700, fontSize: '0.92rem', color: isDone ? '#15803d' : 'var(--text)', flex: 1 }}>
+              {ex?.title || stage.title || def.label}
+            </span>
+            {isDone && (
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#16a34a', flexShrink: 0 }}>✓ Done</span>
+            )}
+          </div>
+          {/* Chips row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.15rem' }}>
+            <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>
+              {def.label}
+            </span>
+            {stage.duration_minutes && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
+            )}
+            {isDone && asgn?.submitted_at && (
+              <span style={{ fontSize: '0.72rem', color: '#16a34a' }}>
+                Submitted {new Date(asgn.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              </span>
+            )}
+          </div>
+          {/* Teacher notes */}
+          {stage.teacher_notes && (
+            <div style={{ marginTop: '0.4rem', fontSize: '0.78rem', color: '#78350f', background: '#fffbeb', borderRadius: '6px', padding: '0.35rem 0.6rem', borderLeft: '3px solid #fbbf24' }}
+              dangerouslySetInnerHTML={{ __html: '🔒 ' + stage.teacher_notes }} />
+          )}
+          {/* Inline exercise content */}
+          {exId && renderInlineExercise(exId)}
+          {/* View student answers button (if completed) */}
+          {isDone && exId && (
+            <div style={{ marginTop: '0.6rem', borderTop: '1px solid #d1fae5', paddingTop: '0.5rem' }}>
+              <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }}
+                onClick={() => openSubmission(exId)}
+                disabled={loadingViewId === exId}>
+                {loadingViewId === exId ? '…' : '👁 View student answers'}
+              </button>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    // Student view — compact progress row
+    return (
+      <div key={stage.id} style={{
+        display: 'flex', alignItems: 'flex-start', gap: '0.7rem',
+        padding: '0.65rem 0.85rem',
+        background: isDone ? '#f0fdf4' : (isHomework ? '#fafaf8' : '#fff'),
+        borderRadius: '10px',
+        border: `1px solid ${isDone ? '#bbf7d0' : '#e8e3d8'}`,
+        borderLeft: `4px solid ${color}`,
+        marginBottom: '0.45rem',
+      }}>
+        <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1, marginTop: '0.1rem' }}>{def.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: '0.88rem', color: isDone ? '#15803d' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {ex?.title || stage.title || def.label}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.1rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>
+              {def.label}
+            </span>
+            {stage.duration_minutes && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
+            )}
+            {isDone && asgn?.submitted_at && (
+              <span style={{ fontSize: '0.72rem', color: '#16a34a' }}>
+                Submitted {new Date(asgn.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              </span>
+            )}
+          </div>
+        </div>
+        {isDone ? (
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#16a34a', flexShrink: 0 }}>✓ Done</span>
+        ) : exId ? (
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flexShrink: 0, fontStyle: 'italic' }}>Not started</span>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flow-card dashboard-card" style={{ padding: 0, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '1.2rem 1.25rem 0.9rem', borderBottom: '1px solid #f0ede6' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+          <button className="back-btn" onClick={onBack} style={{ margin: 0 }}>← Back to student</button>
+          <div style={{ display: 'flex', gap: '0.35rem', marginLeft: 'auto' }}>
+            <button className="btn-ghost"
+              style={{ fontSize: '0.82rem', padding: '0.3rem 0.65rem', ...(viewMode === 'teacher' ? { background: 'var(--gold)', color: '#fff', borderColor: 'var(--gold)' } : {}) }}
+              onClick={() => setViewMode('teacher')}>👨‍🏫 Teacher</button>
+            <button className="btn-ghost"
+              style={{ fontSize: '0.82rem', padding: '0.3rem 0.65rem', ...(viewMode === 'student' ? { background: 'var(--gold)', color: '#fff', borderColor: 'var(--gold)' } : {}) }}
+              onClick={() => setViewMode('student')}>👤 Student</button>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '0.2rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', lineHeight: 1.3 }}>{plan.title}</h2>
+          {studentName && (
+            <span className="admin-level-chip" style={{ fontSize: '0.78rem' }}>👤 {studentName}</span>
+          )}
+        </div>
+        {plan.description && (
+          <p style={{ margin: '0 0 0.5rem', color: 'var(--text-muted)', fontSize: '0.87rem', lineHeight: 1.5 }}>{plan.description}</p>
+        )}
+        {totalCount > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginTop: '0.6rem' }}>
+            <div style={{ flex: 1, height: '6px', background: '#e8e3d8', borderRadius: '9px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: '9px', transition: 'width 0.4s ease',
+                background: doneCount === totalCount ? '#22c55e' : 'var(--gold)',
+                width: `${(doneCount / totalCount) * 100}%` }} />
+            </div>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', flexShrink: 0, fontWeight: 600 }}>
+              {doneCount}/{totalCount} done
+            </span>
+          </div>
+        )}
+        {totalCount === 0 && !studentId && (
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: '0.4rem 0 0' }}>
+            Manual student — no progress tracking available
+          </p>
+        )}
+      </div>
+
+      {/* Teacher metadata — only in teacher view */}
+      {viewMode === 'teacher' && (plan.lesson_aim || plan.teaching_point || plan.language_analysis) && (
+        <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid #f0ede6', background: '#FFFBF0' }}>
+          {plan.lesson_aim && (
+            <div style={{ marginBottom: '0.5rem' }}>
+              <strong style={{ fontSize: '0.82rem' }}>🎯 Lesson aim</strong>
+              <div style={{ margin: '0.15rem 0 0', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: plan.lesson_aim }} />
+            </div>
+          )}
+          {plan.teaching_point && (
+            <div style={{ marginBottom: '0.5rem' }}>
+              <strong style={{ fontSize: '0.82rem' }}>✏️ Teaching point</strong>
+              <div style={{ margin: '0.15rem 0 0', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: plan.teaching_point }} />
+            </div>
+          )}
+          {plan.language_analysis && (
+            <div>
+              <strong style={{ fontSize: '0.82rem' }}>🔬 Language analysis</strong>
+              <div style={{ margin: '0.15rem 0 0', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: plan.language_analysis }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lesson stages */}
+      <div style={{ padding: '0.9rem 1.25rem' }}>
+        {Object.values(stageGroups).length > 0 ? (
+          Object.values(stageGroups).map(group => (
+            <div key={group.number} style={{ marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.6rem' }}>
+                <div style={{ background: 'var(--gold)', color: '#fff', borderRadius: '50%',
+                  width: '22px', height: '22px', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>
+                  {group.number}
+                </div>
+                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                  {group.name || `Stage ${group.number}`}
+                </span>
+              </div>
+              {group.items.map(s => renderAdminStageItem(s))}
+            </div>
+          ))
+        ) : (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No lesson stages yet.</p>
+        )}
+      </div>
+
+      {/* Homework */}
+      {homeworkStages.length > 0 && (
+        <div style={{ borderTop: '1px solid #f0ede6', padding: '0.75rem 1.25rem 0.9rem' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.6rem' }}>
+            📚 Homework
+          </div>
+          {homeworkStages.map(s => renderAdminStageItem(s, true))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminStudentLessons ──────────────────────────────────────
-function AdminStudentLessons({ student, adminUserId }) {
+function AdminStudentLessons({ student, adminUserId, isManual = false, onOpenPlan = null }) {
   const [lessons,     setLessons]     = useState([])
   const [loading,     setLoading]     = useState(true)
   const [adding,      setAdding]      = useState(false)
@@ -7144,10 +9359,17 @@ function AdminStudentLessons({ student, adminUserId }) {
   const [notesSaving,         setNotesSaving]         = useState(false)
   const [confirmDeleteId,     setConfirmDeleteId]     = useState(null)
   const [deletingLessonId,    setDeletingLessonId]    = useState(null)
+  const [uploadingId,         setUploadingId]         = useState(null)
+  const [allPlans,            setAllPlans]            = useState([])
+  const [openingPlanId,       setOpeningPlanId]       = useState(null)
 
   useEffect(() => {
-    fetchStudentLessonsAdmin(student.id).then(data => {
+    Promise.all([
+      fetchStudentLessonsAdmin(student.id),
+      fetchAllLessonPlans(),
+    ]).then(([data, plans]) => {
       setLessons(data)
+      setAllPlans(plans)
       setLoading(false)
     })
   }, [student.id])
@@ -7207,6 +9429,15 @@ function AdminStudentLessons({ student, adminUserId }) {
     }
   }
 
+  const handleUploadWhiteboard = async (lessonId, file) => {
+    setUploadingId(lessonId)
+    const url = await uploadLessonWhiteboard(lessonId, file)
+    setUploadingId(null)
+    if (url) {
+      setLessons(prev => prev.map(l => l.id === lessonId ? { ...l, whiteboard_pdf_url: url, whiteboard_pdf_name: file.name } : l))
+    }
+  }
+
   return (
     <div className="admin-section">
       <div className="admin-lessons-header">
@@ -7257,7 +9488,20 @@ function AdminStudentLessons({ student, adminUserId }) {
             <div key={l.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                 <div style={{ flex: 1 }}>
-                  <AdminLessonRow lesson={l} onUpdate={handleUpdate} />
+                  <AdminLessonRow lesson={l} onUpdate={handleUpdate}
+                    onOpenLesson={l.lesson_plan_id && onOpenPlan ? async () => {
+                      setOpeningPlanId(l.lesson_plan_id)
+                      const { data } = await supabase
+                        .from('lesson_plans')
+                        .select(`id, title, description, scheduled_at, english_level, lesson_level, lesson_aim, teaching_point, language_analysis, created_at,
+                          lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
+                            exercises ( id, title, description, audio_url, context_text, context_images, course ) )`)
+                        .eq('id', l.lesson_plan_id)
+                        .single()
+                      setOpeningPlanId(null)
+                      if (data && onOpenPlan) onOpenPlan(data)
+                    } : null}
+                  />
                 </div>
                 {confirmDeleteId === l.id ? (
                   <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', background: '#fef2f2', borderRadius: '6px', padding: '0.3rem 0.55rem', flexShrink: 0 }}>
@@ -7280,15 +9524,13 @@ function AdminStudentLessons({ student, adminUserId }) {
                 <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <div className="form-field">
                     <label style={{ fontSize: '0.8rem' }}>Private notes (admin only)</label>
-                    <textarea rows={2} placeholder="Your private notes about this lesson…"
-                      value={editTeacherNotes} onChange={e => setEditTeacherNotes(e.target.value)}
-                      style={{ resize: 'vertical', minHeight: '60px', fontSize: '0.87rem' }} />
+                    <RichTextEditor value={editTeacherNotes} onChange={v => setEditTeacherNotes(v)}
+                      placeholder="Your private notes about this lesson…" minHeight="60px" />
                   </div>
                   <div className="form-field">
                     <label style={{ fontSize: '0.8rem' }}>Note for student <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(visible on their dashboard)</span></label>
-                    <textarea rows={2} placeholder="e.g. Great work on conditionals today. Review pronunciation for next time."
-                      value={editPublicNotes} onChange={e => setEditPublicNotes(e.target.value)}
-                      style={{ resize: 'vertical', minHeight: '60px', fontSize: '0.87rem' }} />
+                    <RichTextEditor value={editPublicNotes} onChange={v => setEditPublicNotes(v)}
+                      placeholder="e.g. Great work on conditionals today. Review pronunciation for next time." minHeight="60px" />
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.4rem 0.8rem' }}
@@ -7309,6 +9551,69 @@ function AdminStudentLessons({ student, adminUserId }) {
                   📝 {l.teacher_notes || l.teacher_notes_public ? 'Edit notes' : 'Add notes'}
                 </button>
               )}
+              {/* Whiteboard PDF */}
+              <div style={{marginTop:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'wrap'}}>
+                <span style={{fontSize:'0.78rem',fontWeight:600,color:'var(--text-muted)'}}>📄 Whiteboard PDF:</span>
+                {l.whiteboard_pdf_url ? (
+                  <>
+                    <a href={l.whiteboard_pdf_url} target="_blank" rel="noreferrer"
+                      style={{fontSize:'0.82rem',color:'var(--gold)',textDecoration:'underline'}}>
+                      {l.whiteboard_pdf_name || 'View PDF'}
+                    </a>
+                    <span style={{color:'var(--text-muted)',fontSize:'0.78rem'}}>·</span>
+                  </>
+                ) : (
+                  <span style={{fontSize:'0.78rem',color:'var(--text-muted)'}}>None uploaded</span>
+                )}
+                <label style={{cursor:'pointer'}}>
+                  <input type="file" accept=".pdf,.png,.jpg,.jpeg" style={{display:'none'}}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadWhiteboard(l.id, f) }} />
+                  <span className="btn-ghost" style={{fontSize:'0.78rem',padding:'0.2rem 0.55rem',cursor:'pointer',display:'inline-block'}}>
+                    {uploadingId === l.id ? 'Uploading…' : l.whiteboard_pdf_url ? '↑ Replace' : '↑ Upload'}
+                  </span>
+                </label>
+              </div>
+              {/* Link lesson plan */}
+              <div style={{ marginTop: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>📋 Plan:</span>
+                {l.lesson_plan_id ? (
+                  <>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 500 }}>
+                      {allPlans.find(p => p.id === l.lesson_plan_id)?.title || (l.lesson_plans?.title) || 'Linked'}
+                    </span>
+                    <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}
+                      onClick={async () => {
+                        const ok = await updateLessonPlanLink(l.id, null)
+                        if (ok) setLessons(prev => prev.map(x => x.id === l.id ? { ...x, lesson_plan_id: null } : x))
+                      }}>
+                      Unlink
+                    </button>
+                  </>
+                ) : (
+                  <select style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem', borderRadius: '5px', border: '1px solid var(--border)' }}
+                    value="" onChange={async (e) => {
+                      const planId = e.target.value
+                      if (!planId) return
+                      const ok = await updateLessonPlanLink(l.id, planId)
+                      if (ok) {
+                        setLessons(prev => prev.map(x => x.id === l.id ? { ...x, lesson_plan_id: planId } : x))
+                        // Auto-create exercise assignments so student can track progress without separate assign step
+                        if (!isManual && student.id && adminUserId) {
+                          try {
+                            await assignLessonPlan({ planId, studentId: student.id, assignedBy: adminUserId, mode: 'in_class', note: null, scheduledAt: l.scheduled_at || null, skipLessonCreation: true })
+                          } catch (err) {
+                            console.warn('[AdminStudentLessons] auto-assign failed:', err)
+                          }
+                        }
+                      }
+                    }}>
+                    <option value="">— Link a plan —</option>
+                    {allPlans.map(p => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -7442,6 +9747,7 @@ const EX_TYPES = [
   { value: 'ordering',           label: 'Order Sentences / Words',        emoji: '🔢' },
   { value: 'true_false',         label: 'True or False',                  emoji: '✅' },
   { value: 'listening',          label: 'Listening',                      emoji: '🎧' },
+  { value: 'speaking',           label: 'Speaking',                       emoji: '🎙️' },
 ]
 
 const TYPE_COLORS = {
@@ -7452,6 +9758,7 @@ const TYPE_COLORS = {
   ordering:           { bg: '#fef3c7', color: '#92400e' },
   true_false:         { bg: '#dcfce7', color: '#166534' },
   listening:          { bg: '#e0f2fe', color: '#075985' },
+  speaking:           { bg: '#fef9c3', color: '#713f12' },
 }
 
 function TypeBadge({ type }) {
@@ -7486,8 +9793,8 @@ function ExFormMultipleChoice({ title, instructions, onChange }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
       <div className="form-field">
         <label>Prompt / question</label>
-        <textarea rows={3} value={prompt} onChange={e => setPrompt(e.target.value)}
-          placeholder="e.g. Which sentence uses the past perfect correctly?" className="writing-input" />
+        <RichTextEditor value={prompt} onChange={v => setPrompt(v)}
+          placeholder="e.g. Which sentence uses the past perfect correctly?" minHeight="72px" />
       </div>
       <div className="form-field">
         <label>Options (select the correct one)</label>
@@ -7954,19 +10261,35 @@ function AdminExerciseLibrary({ adminUserId }) {
           <p>No exercises yet. Create your first one above.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.85rem' }}>
           {exercises.map(ex => {
-            // Derive exercise type from first question's type (exercises table has no top-level type)
             const typeHint = ex.stage_type === 'listening' ? 'listening' : null
+            const stDef = STAGE_TYPES.find(t => t.value === ex.stage_type) || { icon: '✏️', label: 'Exercise' }
             return (
-              <div key={ex.id} className="admin-student-row"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <span style={{ flex: 1, fontWeight: 500, minWidth: '160px' }}>{ex.title}</span>
-                <TypeBadge type={typeHint || ex.stage_type || 'controlled_exercise'} />
-                {ex.books?.title && (
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📚 {ex.books.title}</span>
-                )}
-                <div style={{ display: 'flex', gap: '0.4rem', marginLeft: 'auto' }}>
+              <div key={ex.id} style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: '10px', padding: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', transition: 'border-color 0.15s', cursor: 'default' }}>
+                {ex.thumbnail && <img src={ex.thumbnail} alt="" style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '6px', marginBottom: '0.25rem' }} />}
+                <strong style={{ fontSize: '0.92rem' }}>{ex.title}</strong>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <TypeBadge type={typeHint || ex.stage_type || 'controlled_exercise'} />
+                  {ex.books?.title && <span className="admin-level-chip">📚 {ex.books.title}</span>}
+                  {(ex.unit != null || ex.page != null || ex.section || ex.exercise_no != null) && (
+                    <span className="admin-level-chip location-chip">
+                      {[
+                        ex.unit        != null ? `Unit ${ex.unit}`    : null,
+                        ex.page        != null ? `p.${ex.page}`       : null,
+                        ex.section     || null,
+                        ex.exercise_no != null ? `Ex.${ex.exercise_no}` : null,
+                      ].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                  {ex.estimated_minutes && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>⏱ {ex.estimated_minutes} min</span>}
+                  {ex.audio_url && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>🎧 Audio</span>}
+                  {ex.context_text && <span className="admin-level-chip" style={{ color: 'var(--text-muted)' }}>📖 Text</span>}
+                  {(ex.labels || []).map(lbl => (
+                    <span key={lbl.id} className="label-chip" style={{ '--lbl-color': lbl.color }}>{lbl.name}</span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', marginTop: 'auto', paddingTop: '0.4rem' }}>
                   {deletingId === ex.id ? (
                     <>
                       <button className="btn-ghost"
@@ -8108,12 +10431,1424 @@ function AdminCalendar() {
   )
 }
 
+// ─── AdminTests ────────────────────────────────────────────────
+const GENERAL_PLACEMENT_QUESTIONS = [
+  /* ── A2 ELEMENTARY (Q1–10) ─────────────────────────── */
+  /* 1 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"My sister _____ in a hospital. She's a doctor.",
+    options:["work","works","is work","working"],answer:1,
+    tenseTag:"present_simple",grammarTag:"subject_verb_agreement",vocab:false,writing:false},
+  /* 2 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"Look at those clouds! It _____ to rain.",
+    options:["is going","goes","will going","go"],answer:0,
+    tenseTag:"going_to_future",grammarTag:"going_to_future",vocab:false,writing:false},
+  /* 3 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"Sorry, I can't talk right now — I _____ dinner.",
+    options:["make","makes","am making","made"],answer:2,
+    tenseTag:"present_continuous",grammarTag:"present_continuous",vocab:false,writing:false},
+  /* 4 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"We _____ a great film at the cinema last Saturday.",
+    options:["see","are seeing","have seen","saw"],answer:3,
+    tenseTag:"past_simple",grammarTag:"past_simple_regular_irregular",vocab:false,writing:false},
+  /* 5 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"This jacket is _____ than the one I tried on first.",
+    options:["more cheap","cheapest","cheaper","most cheap"],answer:2,
+    tenseTag:null,grammarTag:"comparatives_superlatives",vocab:false,writing:false},
+  /* 6 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"She _____ speak three languages — it's really impressive.",
+    options:["can","cans","is able","does"],answer:0,
+    tenseTag:null,grammarTag:"modal_can_ability",vocab:false,writing:false},
+  /* 7 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"There's _____ milk left in the fridge — we need to buy some.",
+    options:["a few","many","a little","few"],answer:2,
+    tenseTag:null,grammarTag:"quantifiers_countable_uncountable",vocab:false,writing:false},
+  /* 8 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"My birthday is _____ June, _____ the 14th.",
+    options:["in / on","on / in","at / on","in / at"],answer:0,
+    tenseTag:null,grammarTag:"prepositions_time",vocab:false,writing:false},
+  /* 9 */ {section:"Elementary vocabulary",cefr:"A2",level:1,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the word that means <strong>to look at something for a long time</strong>:",
+    options:["stare","listen","touch","smell"],answer:0},
+  /* 10 */ {section:"Elementary vocabulary",cefr:"A2",level:1,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Which word completes the sentence? <em>Can you _____ me how to get to the station?</em>",
+    options:["say","speak","tell","talk"],answer:2},
+  /* ── B1 LOWER INTERMEDIATE (Q11–27) ────────────────── */
+  /* 11 */ {section:"Present perfect",cefr:"B1",level:2,type:"mc",
+    prompt:"I _____ sushi before — last night was the first time!",
+    options:["never ate","have never eaten","never eat","had never eaten"],answer:1,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_ever_never",vocab:false,writing:false},
+  /* 12 */ {section:"Present perfect",cefr:"B1",level:2,type:"mc",
+    prompt:"<strong>A:</strong> <em>Is the report ready?</em><br><strong>B:</strong> Not yet — I _____ it yet.",
+    options:["didn't finish","haven't finished","don't finish","hadn't finished"],answer:1,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_yet_already",vocab:false,writing:false},
+  /* 13 */ {section:"Past tenses",cefr:"B1",level:2,type:"mc",
+    prompt:"We _____ to the park when it suddenly started to snow.",
+    options:["walked","were walking","have walked","had walked"],answer:1,
+    tenseTag:"past_continuous",grammarTag:"past_continuous_interrupted",vocab:false,writing:false},
+  /* 14 */ {section:"Past tenses",cefr:"B1",level:2,type:"mc",
+    prompt:"When I arrived at the party, most guests _____ already.",
+    options:["left","were leaving","have left","had left"],answer:3,
+    tenseTag:"past_perfect",grammarTag:"past_perfect_narrative",vocab:false,writing:false},
+  /* 15 */ {section:"Past habits",cefr:"B1",level:2,type:"mc",
+    prompt:"My grandfather _____ walk five kilometres to school every day when he was young.",
+    options:["was used to","used to","would used to","use to"],answer:1,
+    tenseTag:null,grammarTag:"used_to_past_habits",vocab:false,writing:false},
+  /* 16 */ {section:"Future forms",cefr:"B1",level:2,type:"mc",
+    prompt:"I think it _____ a lot warmer by the end of the week.",
+    options:["is getting","gets","will get","is going to getting"],answer:2,
+    tenseTag:"will_future",grammarTag:"will_future_prediction",vocab:false,writing:false},
+  /* 17 */ {section:"First conditional",cefr:"B1",level:2,type:"mc",
+    prompt:"If you _____ enough sleep, you'll feel much better tomorrow.",
+    options:["get","will get","got","would get"],answer:0,
+    tenseTag:null,grammarTag:"first_conditional",vocab:false,writing:false},
+  /* 18 */ {section:"Second conditional",cefr:"B1",level:2,type:"mc",
+    prompt:"If I _____ more free time, I would take up painting.",
+    options:["have","will have","had","would have"],answer:2,
+    tenseTag:null,grammarTag:"second_conditional",vocab:false,writing:false},
+  /* 19 */ {section:"Modal verbs",cefr:"B1",level:2,type:"mc",
+    prompt:"You really _____ see a doctor — that cough has lasted two weeks.",
+    options:["must","should","can","shall"],answer:1,
+    tenseTag:null,grammarTag:"modal_should_advice",vocab:false,writing:false},
+  /* 20 */ {section:"Modal verbs",cefr:"B1",level:2,type:"mc",
+    prompt:"Take an umbrella — it _____ rain later, I'm not sure.",
+    options:["should","must","might","shall"],answer:2,
+    tenseTag:null,grammarTag:"modal_might_possibility",vocab:false,writing:false},
+  /* 21 */ {section:"Verb patterns",cefr:"B1",level:2,type:"mc",
+    prompt:"Would you mind _____ the window? It's getting cold.",
+    options:["to close","close","closing","closed"],answer:2,
+    tenseTag:null,grammarTag:"gerund_after_verbs",vocab:false,writing:false},
+  /* 22 */ {section:"Verb patterns",cefr:"B1",level:2,type:"mc",
+    prompt:"She decided _____ a new language after her trip to Japan.",
+    options:["learning","learn","to learn","learned"],answer:2,
+    tenseTag:null,grammarTag:"infinitive_after_verbs",vocab:false,writing:false},
+  /* 23 */ {section:"Passive voice",cefr:"B1",level:2,type:"mc",
+    prompt:"The new sports centre _____ by the mayor last Friday.",
+    options:["was opened","is opened","opened","has opened"],answer:0,
+    tenseTag:"past_simple",grammarTag:"passive_past_simple",vocab:false,writing:false},
+  /* 24 */ {section:"Passive voice",cefr:"B1",level:2,type:"mc",
+    prompt:"English _____ as the main language of instruction at this school.",
+    options:["uses","used","is used","is using"],answer:2,
+    tenseTag:"present_simple",grammarTag:"passive_present_simple",vocab:false,writing:false},
+  /* 25 */ {section:"Reported speech",cefr:"B1",level:2,type:"mc",
+    prompt:"\"I'm feeling tired,\" he said.<br>He said he _____ tired.",
+    options:["is feeling","feels","was feeling","had felt"],answer:2,
+    tenseTag:"past_continuous",grammarTag:"reported_speech_backshift",vocab:false,writing:false},
+  /* 26 */ {section:"Present perfect continuous",cefr:"B1",level:2,type:"mc",
+    prompt:"She _____ for this company for nearly three years now.",
+    options:["works","has worked","has been working","is working"],answer:2,
+    tenseTag:"present_perfect_continuous",grammarTag:"present_perfect_continuous",vocab:false,writing:false},
+  /* 27 */ {section:"B1 vocabulary",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the correct word: <em>The company has made a _____ to reduce its carbon emissions by 2030.</em>",
+    options:["promise","commitment","deal","contract"],answer:1},
+  /* ── B1 WORD FORMS (Q28–29) ─────────────────────────── */
+  /* 28 */ {section:"Word forms",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"<em>The team's _____ (perform) in the final was outstanding.</em>",
+    options:["perform","performance","performer","performed"],answer:1},
+  /* 29 */ {section:"Word forms",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"<em>Living in a big city can be very _____ (stress) if you aren't used to it.</em>",
+    options:["stress","stressed","stressful","stressing"],answer:2},
+  /* ── B2 UPPER INTERMEDIATE (Q30–38) ─────────────────── */
+  /* 30 */ {section:"Third conditional",cefr:"B2",level:3,type:"mc",
+    prompt:"If we _____ earlier, we wouldn't have missed the start of the concert.",
+    options:["left","had left","would leave","have left"],answer:1,
+    tenseTag:"past_perfect",grammarTag:"third_conditional",vocab:false,writing:false},
+  /* 31 */ {section:"Wish / If only",cefr:"B2",level:3,type:"mc",
+    prompt:"I wish I _____ harder for the exam last week. I really regret it.",
+    options:["studied","have studied","had studied","would study"],answer:2,
+    tenseTag:"past_perfect",grammarTag:"wish_if_only",vocab:false,writing:false},
+  /* 32 */ {section:"Relative clauses",cefr:"B2",level:3,type:"mc",
+    prompt:"The colleague _____ helped me with the project has just been promoted.",
+    options:["which","whose","who","whom"],answer:2,
+    tenseTag:null,grammarTag:"defining_relative_clauses",vocab:false,writing:false},
+  /* 33 */ {section:"Relative clauses",cefr:"B2",level:3,type:"mc",
+    prompt:"My sister, _____ lives in Berlin, is visiting us next month.",
+    options:["that","which","whose","who"],answer:3,
+    tenseTag:null,grammarTag:"non_defining_relative_clauses",vocab:false,writing:false},
+  /* 34 */ {section:"Causative",cefr:"B2",level:3,type:"mc",
+    prompt:"We _____ the whole house repainted before we moved in.",
+    options:["made","had","did","got done"],answer:1,
+    tenseTag:null,grammarTag:"causative_have_get",vocab:false,writing:false},
+  /* 35 */ {section:"Linkers & discourse",cefr:"B2",level:3,type:"mc",
+    prompt:"She studied very hard. _____, she didn't pass the exam.",
+    options:["Therefore","However","Besides","Furthermore"],answer:1,
+    tenseTag:null,grammarTag:"linkers_contrast",vocab:false,writing:false},
+  /* 36 */ {section:"B2 vocabulary",cefr:"B2",level:3,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the most precise word: <em>The politician refused to give a straight answer — her response was deliberately _____.</em>",
+    options:["unclear","vague","evasive","confusing"],answer:2},
+  /* 37 */ {section:"B2 vocabulary",cefr:"B2",level:3,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Which word collocates correctly? <em>The new policy was met with widespread _____ from the public.</em>",
+    options:["opposition","objection","protest","resistance"],answer:0},
+  /* ── WRITING TASKS (Q38–40) ──────────────────────────── */
+  /* 38 */ {section:"Writing — sentence",cefr:"B1",level:2,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:5,tag:"passive_transform",
+    prompt:"Rewrite the sentence below in the <strong>passive voice</strong>.<br><em>\"The manager gave all the employees a pay rise.\"</em><br><br>Type your answer here:"},
+  /* 39 */ {section:"Writing — sentence",cefr:"B2",level:3,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:8,tag:"third_cond_write",
+    prompt:"Write a <strong>third conditional</strong> sentence using this idea:<br><em>You didn't study → you didn't pass the exam.</em><br><br>Type your sentence here:"},
+  /* 40 */ {section:"Writing — paragraph",cefr:"B2",level:3,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:35,tag:"para_opinion",
+    prompt:"Write 3–5 sentences giving your opinion on the following statement. Use at least one linking word (e.g. <em>however, although, on the other hand</em>).<br><br><strong>\"People learn more from making mistakes than from their successes.\"</strong>"},
+]
+
+const HOSPITALITY_PLACEMENT_QUESTIONS = [
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"The front desk receptionist _____ guests every morning at check-in.",
+    options:["welcome","welcomes","welcoming","is welcome"],answer:1,
+    tenseTag:"present_simple",grammarTag:"subject_verb_agreement",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"We _____ a special gala dinner next month &mdash; the event team is already planning it.",
+    options:["are going to hold","go to hold","will going to hold","hold"],answer:0,
+    tenseTag:"going_to_future",grammarTag:"going_to_future",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"I'm sorry, I can't come to the phone right now &mdash; I _____ a guest at the front desk.",
+    options:["help","helps","am helping","helped"],answer:2,
+    tenseTag:"present_continuous",grammarTag:"present_continuous",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"The hotel _____ its one-hundredth anniversary with a large banquet last year.",
+    options:["celebrate","is celebrating","has celebrated","celebrated"],answer:3,
+    tenseTag:"past_simple",grammarTag:"past_simple_regular_irregular",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"The deluxe room is _____ than the standard room, but it has a much better view.",
+    options:["more expensive","expensiver","most expensive","expensivest"],answer:0,
+    tenseTag:null,grammarTag:"comparatives_superlatives",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"Our concierge _____ arrange restaurant reservations, transport, and theatre tickets for guests.",
+    options:["can","cans","is able","does"],answer:0,
+    tenseTag:null,grammarTag:"modal_can_ability",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"There are only _____ rooms available this weekend &mdash; the hotel is almost fully booked.",
+    options:["a little","much","a few","less"],answer:2,
+    tenseTag:null,grammarTag:"quantifiers_countable_uncountable",vocab:false,writing:false},
+  {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"The conference begins _____ Monday _____ 9 a.m. sharp. Please be ready.",
+    options:["on / at","in / at","at / on","on / in"],answer:0,
+    tenseTag:null,grammarTag:"prepositions_time",vocab:false,writing:false},
+  {section:"Functional language",cefr:"A2",level:1,type:"mc",
+    vocab:false,writing:false,tenseTag:null,grammarTag:"functional_greeting",
+    prompt:"A guest walks up to the front desk. Which is the most appropriate greeting?",
+    options:["What do you want?","Good morning! How may I help you today?","Yes?","Come here, please."],answer:1},
+  {section:"Functional language",cefr:"A2",level:1,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Which word completes the sentence correctly? <em>Could you _____ me your booking reference number, please?</em>",
+    options:["say","speak","tell","talk"],answer:2},
+  {section:"Present perfect",cefr:"B1",level:2,type:"mc",
+    prompt:"This guest _____ at our hotel before &mdash; her profile shows she is a first-time visitor.",
+    options:["never stayed","has never stayed","never stays","had never stayed"],answer:1,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_ever_never",vocab:false,writing:false},
+  {section:"Present perfect",cefr:"B1",level:2,type:"mc",
+    prompt:"<strong>Guest:</strong> <em>Is Room 412 ready?</em><br><strong>Receptionist:</strong> I'm sorry, housekeeping _____ it yet.",
+    options:["didn't clean","hasn't cleaned","doesn't clean","hadn't cleaned"],answer:1,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_yet_already",vocab:false,writing:false},
+  {section:"Past tenses",cefr:"B1",level:2,type:"mc",
+    prompt:"The receptionist _____ a phone reservation when the fire alarm went off.",
+    options:["processed","was processing","has processed","had processed"],answer:1,
+    tenseTag:"past_continuous",grammarTag:"past_continuous_interrupted",vocab:false,writing:false},
+  {section:"Past tenses",cefr:"B1",level:2,type:"mc",
+    prompt:"By the time the manager arrived, the unhappy guest _____ already.",
+    options:["checked out","was checking out","has checked out","had checked out"],answer:3,
+    tenseTag:"past_perfect",grammarTag:"past_perfect_narrative",vocab:false,writing:false},
+  {section:"Past habits",cefr:"B1",level:2,type:"mc",
+    prompt:"This hotel _____ give guests a printed newspaper every morning, but now it sends a digital version.",
+    options:["was used to","used to","would used to","use to"],answer:1,
+    tenseTag:null,grammarTag:"used_to_past_habits",vocab:false,writing:false},
+  {section:"Future forms",cefr:"B1",level:2,type:"mc",
+    prompt:"According to our bookings system, next weekend _____ the busiest of the whole season.",
+    options:["is getting","gets","will be","is going to being"],answer:2,
+    tenseTag:"will_future",grammarTag:"will_future_prediction",vocab:false,writing:false},
+  {section:"First conditional",cefr:"B1",level:2,type:"mc",
+    prompt:"If the guest _____ unhappy with the room, we will offer an immediate upgrade.",
+    options:["is","will be","was","would be"],answer:0,
+    tenseTag:null,grammarTag:"first_conditional",vocab:false,writing:false},
+  {section:"Second conditional",cefr:"B1",level:2,type:"mc",
+    prompt:"If we _____ more staff on duty tonight, we would be able to serve all the tables faster.",
+    options:["have","will have","had","would have"],answer:2,
+    tenseTag:null,grammarTag:"second_conditional",vocab:false,writing:false},
+  {section:"Modal verbs",cefr:"B1",level:2,type:"mc",
+    prompt:"When a guest makes a complaint, staff _____ always listen carefully and apologise before offering a solution.",
+    options:["must","should","can","shall"],answer:1,
+    tenseTag:null,grammarTag:"modal_should_advice",vocab:false,writing:false},
+  {section:"Modal verbs",cefr:"B1",level:2,type:"mc",
+    prompt:"The VIP guest _____ request a late check-out &mdash; we should keep the room available just in case.",
+    options:["should","must","might","shall"],answer:2,
+    tenseTag:null,grammarTag:"modal_might_possibility",vocab:false,writing:false},
+  {section:"Functional language — phone",cefr:"B1",level:2,type:"mc",
+    prompt:"A caller asks to speak to the manager. What is the most professional response?<br><em>\"Would you mind _____ for just a moment while I connect you?\"</em>",
+    options:["to hold","hold","holding","held"],answer:2,
+    tenseTag:null,grammarTag:"gerund_after_verbs",vocab:false,writing:false},
+  {section:"Functional language — service",cefr:"B1",level:2,type:"mc",
+    prompt:"The duty manager decided _____ the guest a complimentary room upgrade after the mix-up.",
+    options:["offering","offer","to offer","offered"],answer:2,
+    tenseTag:null,grammarTag:"infinitive_after_verbs",vocab:false,writing:false},
+  {section:"Passive voice",cefr:"B1",level:2,type:"mc",
+    prompt:"All guest rooms _____ before the new season began.",
+    options:["were refurbished","are refurbished","refurbished","have refurbished"],answer:0,
+    tenseTag:"past_simple",grammarTag:"passive_past_simple",vocab:false,writing:false},
+  {section:"Passive voice",cefr:"B1",level:2,type:"mc",
+    prompt:"A complimentary breakfast _____ to all guests who book the executive package.",
+    options:["offers","offered","is offered","is offering"],answer:2,
+    tenseTag:"present_simple",grammarTag:"passive_present_simple",vocab:false,writing:false},
+  {section:"Reported speech",cefr:"B1",level:2,type:"mc",
+    prompt:"The guest said, \"The air conditioning isn't working.\"<br>The guest said that the air conditioning _____ working.",
+    options:["isn't","wasn't","hasn't been","wouldn't be"],answer:1,
+    tenseTag:"past_continuous",grammarTag:"reported_speech_backshift",vocab:false,writing:false},
+  {section:"Present perfect continuous",cefr:"B1",level:2,type:"mc",
+    prompt:"The chef _____ in this kitchen for over six months and has already made some impressive changes.",
+    options:["works","has worked","has been working","is working"],answer:2,
+    tenseTag:"present_perfect_continuous",grammarTag:"present_perfect_continuous",vocab:false,writing:false},
+  {section:"Hospitality vocabulary",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the correct word: <em>The hotel has made a _____ to providing exceptional service to every guest.</em>",
+    options:["promise","commitment","deal","contract"],answer:1},
+  {section:"Word forms",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"<em>The _____ (accommodate) of large conference groups requires careful advance planning.</em>",
+    options:["accommodate","accommodating","accommodation","accommodated"],answer:2},
+  {section:"Word forms",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"<em>Working in a hotel requires staff to be highly _____ (profession) at all times.</em>",
+    options:["profession","professional","professionalism","professing"],answer:1},
+  {section:"Third conditional",cefr:"B2",level:3,type:"mc",
+    prompt:"If the front desk _____ the booking in time, the guest wouldn't have been given the wrong room.",
+    options:["checked","had checked","would check","has checked"],answer:1,
+    tenseTag:"past_perfect",grammarTag:"third_conditional",vocab:false,writing:false},
+  {section:"Wish / If only",cefr:"B2",level:3,type:"mc",
+    prompt:"The hotel manager said, 'I wish we _____ more staff available during the peak season last summer.'",
+    options:["had","have had","had had","would have"],answer:2,
+    tenseTag:"past_perfect",grammarTag:"wish_if_only",vocab:false,writing:false},
+  {section:"Relative clauses",cefr:"B2",level:3,type:"mc",
+    prompt:"The guest _____ complained about the noise last night has requested a room change.",
+    options:["which","whose","who","whom"],answer:2,
+    tenseTag:null,grammarTag:"defining_relative_clauses",vocab:false,writing:false},
+  {section:"Relative clauses",cefr:"B2",level:3,type:"mc",
+    prompt:"The Royal Suite, _____ has a private terrace and butler service, is our most requested room.",
+    options:["that","which","whose","who"],answer:1,
+    tenseTag:null,grammarTag:"non_defining_relative_clauses",vocab:false,writing:false},
+  {section:"Causative",cefr:"B2",level:3,type:"mc",
+    prompt:"The hotel manager _____ all the conference rooms deep-cleaned before the event.",
+    options:["made","had","did","got done"],answer:1,
+    tenseTag:null,grammarTag:"causative_have_get",vocab:false,writing:false},
+  {section:"Linkers & discourse",cefr:"B2",level:3,type:"mc",
+    prompt:"The hotel received excellent reviews for its location and design. _____, several guests commented that the service was slow.",
+    options:["Therefore","However","Besides","Furthermore"],answer:1,
+    tenseTag:null,grammarTag:"linkers_contrast",vocab:false,writing:false},
+  {section:"Functional language — email",cefr:"B2",level:3,type:"mc",
+    vocab:false,writing:false,tenseTag:null,grammarTag:"functional_email_register",
+    prompt:"Which sentence is most appropriate for a formal reply to a guest complaint by email?",
+    options:["Sorry about that, we'll try to do better.","We are writing to express our sincerest apologies for the inconvenience you experienced during your recent stay.","It wasn't really our fault but OK.","We got your email about the problem."],answer:1},
+  {section:"Hospitality vocabulary",cefr:"B2",level:3,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the correct collocation: <em>The hotel aims to _____ the highest standards of customer service at all times.</em>",
+    options:["keep","hold","maintain","support"],answer:2},
+  {section:"Writing — sentence",cefr:"B1",level:2,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:5,tag:"passive_transform",
+    prompt:"Rewrite the sentence below in the <strong>passive voice</strong>.<br><em>\"The housekeeper cleaned all the rooms before midday.\"</em><br><br>Type your answer here:"},
+  {section:"Writing — sentence",cefr:"B2",level:3,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:8,tag:"third_cond_write",
+    prompt:"Write a <strong>third conditional</strong> sentence using this idea:<br><em>The staff didn't inform the guest about the building works → the guest left a negative review.</em><br><br>Type your sentence here:"},
+  {section:"Writing — guest communication",cefr:"B2",level:3,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:40,tag:"complaint_response",
+    prompt:"A guest has sent this message: <em>\"I was very disappointed with my stay. The room was noisy, the breakfast was cold, and no one seemed to care when I complained.\"</em><br><br>Write a short professional response (4–6 sentences) on behalf of the hotel. Apologise, acknowledge the specific issues, and offer a solution. Use formal language."}
+]
+
+const TEST_DEFINITIONS = [
+  { id: 'general_placement_v1',     label: 'General English Diagnostic Test',            desc: '40 questions · A2–B2 · ~25 min' },
+  { id: 'hospitality_placement_v1', label: 'Business & Hospitality Diagnostic Test',     desc: '40 questions · A2–B2 · ~25 min · hotel/business contexts' },
+]
+
+function getEffectiveQuestions(testId) {
+  const defaults = testId === 'hospitality_placement_v1'
+    ? HOSPITALITY_PLACEMENT_QUESTIONS
+    : GENERAL_PLACEMENT_QUESTIONS
+  try {
+    const stored = localStorage.getItem('tq_' + testId)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return defaults
+}
+
+function saveQuestions(testId, questions) {
+  try { localStorage.setItem('tq_' + testId, JSON.stringify(questions)) } catch {}
+}
+
+function resetQuestions(testId) {
+  try { localStorage.removeItem('tq_' + testId) } catch {}
+}
+
+function TestQuestionEditor({ testDef, onBack }) {
+  const [questions, setQuestions] = useState(() => getEffectiveQuestions(testDef.id))
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [saved, setSaved] = useState(false)
+  const [hasCustom, setHasCustom] = useState(() => {
+    try { return !!localStorage.getItem('tq_' + testDef.id) } catch { return false }
+  })
+
+  const save = (newQs) => {
+    setQuestions(newQs)
+    saveQuestions(testDef.id, newQs)
+    setHasCustom(true)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleReset = () => {
+    if (!window.confirm('Reset all questions to the original defaults?')) return
+    resetQuestions(testDef.id)
+    const defaultQ = testDef.id === 'hospitality_placement_v1' ? HOSPITALITY_PLACEMENT_QUESTIONS : GENERAL_PLACEMENT_QUESTIONS
+    setQuestions([...defaultQ])
+    setHasCustom(false)
+    setEditingIdx(null)
+  }
+
+  const updateQuestion = (idx, updates) => {
+    const next = questions.map((q, i) => i === idx ? { ...q, ...updates } : q)
+    save(next)
+  }
+
+  const LETTERS = ['A', 'B', 'C', 'D']
+  const CEFR_COLORS = { A2: '#854F0B', B1: '#3B6D11', B2: '#2b72b5' }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+        <button className="back-btn" onClick={onBack}>← Back to Tests</button>
+        <div style={{ flex: 1 }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>{testDef.label}</h3>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{questions.length} questions</div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+          {saved && <span style={{ fontSize: '0.82rem', color: '#3B6D11', padding: '0.35rem 0' }}>✓ Saved</span>}
+          {hasCustom && (
+            <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', color: '#e05c5c' }}
+              onClick={handleReset}>↺ Reset to defaults</button>
+          )}
+        </div>
+      </div>
+
+      {hasCustom && (
+        <div style={{ background: '#E6F1FB', border: '1px solid #a8c8e8', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', fontSize: '0.85rem', color: '#2b72b5' }}>
+          ✏️ You have custom edits to these questions. Students will see your edited version.
+        </div>
+      )}
+
+      {/* Question list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {questions.map((q, idx) => {
+          const isEditing = editingIdx === idx
+          const cefrColor = CEFR_COLORS[q.cefr] || '#888'
+
+          // Build the skill label(s) for the right-hand column
+          const TENSE_LABELS = {
+            present_simple:'Present simple', present_continuous:'Present continuous',
+            going_to_future:'Going to — future', past_simple:'Past simple',
+            past_continuous:'Past continuous', past_perfect:'Past perfect',
+            present_perfect:'Present perfect', will_future:'Will — predictions',
+            present_perfect_continuous:'Present perfect continuous',
+          }
+          const GRAMMAR_LABELS = {
+            subject_verb_agreement:'Subject–verb agreement', going_to_future:'Going to — future plans',
+            present_continuous:'Present continuous', past_simple_regular_irregular:'Past simple (reg./irreg.)',
+            comparatives_superlatives:'Comparatives & superlatives', modal_can_ability:'Can / can\'t — ability',
+            quantifiers_countable_uncountable:'Quantifiers', prepositions_time:'Prepositions of time',
+            present_perfect_ever_never:'Present perfect — ever/never', present_perfect_yet_already:'Present perfect — yet/already',
+            past_continuous_interrupted:'Past continuous — interrupted', past_perfect_narrative:'Past perfect — sequence',
+            used_to_past_habits:'Used to — past habits', will_future_prediction:'Will — predictions',
+            first_conditional:'First conditional', second_conditional:'Second conditional',
+            modal_should_advice:'Should — advice', modal_might_possibility:'Might — possibility',
+            gerund_after_verbs:'Gerund after verbs', infinitive_after_verbs:'Infinitive after verbs',
+            passive_past_simple:'Passive — past simple', passive_present_simple:'Passive — present simple',
+            reported_speech_backshift:'Reported speech', present_perfect_continuous:'Present perfect continuous',
+            third_conditional:'Third conditional', wish_if_only:'Wish / If only',
+            defining_relative_clauses:'Defining relative clauses', non_defining_relative_clauses:'Non-defining relative clauses',
+            causative_have_get:'Causative — have/get', linkers_contrast:'Linkers — contrast',
+            functional_greeting:'Greeting & welcoming guests', functional_email_register:'Formal email register',
+          }
+          const skillLines = []
+          if (q.type === 'text') skillLines.push({ label: 'Writing task', color: '#993C1D', bg: '#FAECE7' })
+          if (q.vocab) skillLines.push({ label: 'Vocabulary', color: '#3C3489', bg: '#EEEDFE' })
+          if (q.grammarTag && GRAMMAR_LABELS[q.grammarTag]) skillLines.push({ label: GRAMMAR_LABELS[q.grammarTag], color: '#2b72b5', bg: '#E6F1FB' })
+          if (q.tenseTag && TENSE_LABELS[q.tenseTag]) skillLines.push({ label: TENSE_LABELS[q.tenseTag], color: '#3B6D11', bg: '#EAF3DE' })
+
+          return (
+            <div key={idx} style={{ background: 'var(--bg-card)', border: `1px solid ${isEditing ? '#d4a853' : 'var(--border)'}`, borderRadius: '10px', overflow: 'hidden' }}>
+              {/* Question header row */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', padding: '0.75rem 0.9rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-muted)', minWidth: '28px', flexShrink: 0, paddingTop: '0.1rem' }}>Q{idx + 1}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: cefrColor, background: `${cefrColor}18`, padding: '0.12rem 0.45rem', borderRadius: '20px' }}>{q.cefr}</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', background: 'var(--bg-darker)', padding: '0.12rem 0.45rem', borderRadius: '20px' }}>{q.section}</span>
+                    {q.type === 'text' && <span style={{ fontSize: '0.72rem', color: '#993C1D', background: '#FAECE7', padding: '0.12rem 0.45rem', borderRadius: '20px' }}>Writing</span>}
+                    {q.vocab && <span style={{ fontSize: '0.72rem', color: '#3C3489', background: '#EEEDFE', padding: '0.12rem 0.45rem', borderRadius: '20px' }}>Vocab</span>}
+                  </div>
+                  <div style={{ fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text)' }}
+                    dangerouslySetInnerHTML={{ __html: q.prompt }} />
+                  {q.type === 'mc' && !isEditing && (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.45rem' }}>
+                      {q.options.map((opt, oi) => (
+                        <span key={oi} style={{ fontSize: '0.78rem', padding: '0.18rem 0.55rem', borderRadius: '5px',
+                          background: oi === q.answer ? '#EAF3DE' : 'var(--bg-darker)',
+                          color: oi === q.answer ? '#3B6D11' : 'var(--text-muted)',
+                          border: `1px solid ${oi === q.answer ? '#c5dfa3' : 'var(--border)'}`,
+                          fontWeight: oi === q.answer ? 700 : 400 }}>
+                          {LETTERS[oi]}. {opt}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {q.type === 'text' && !isEditing && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                      Min. {q.minWords} words required
+                    </div>
+                  )}
+                </div>
+                {/* Skill labels in the white space */}
+                {!isEditing && skillLines.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-end', minWidth: '170px', maxWidth: '200px', flexShrink: 0, paddingTop: '0.1rem' }}>
+                    {skillLines.map((s, si) => (
+                      <span key={si} style={{ fontSize: '0.72rem', fontWeight: 600, color: s.color, background: s.bg, padding: '0.18rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        {s.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem', flexShrink: 0 }}
+                  onClick={() => setEditingIdx(isEditing ? null : idx)}>
+                  {isEditing ? '✕ Cancel' : '✏️ Edit'}
+                </button>
+              </div>
+
+              {/* Inline editor */}
+              {isEditing && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: '0.85rem 0.9rem', background: '#FFFBF0' }}>
+                  <QuestionEditor
+                    question={q}
+                    onChange={updates => { updateQuestion(idx, updates); setEditingIdx(null) }}
+                    onCancel={() => setEditingIdx(null)}
+                  />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function QuestionEditor({ question, onChange, onCancel }) {
+  const [prompt, setPrompt] = useState(question.prompt)
+  const [options, setOptions] = useState(question.options ? [...question.options] : [])
+  const [answer, setAnswer] = useState(question.answer ?? 0)
+  const [minWords, setMinWords] = useState(question.minWords ?? 5)
+  const LETTERS = ['A', 'B', 'C', 'D']
+
+  const handleSave = () => {
+    const updates = { prompt }
+    if (question.type === 'mc') { updates.options = options; updates.answer = answer }
+    if (question.type === 'text') { updates.minWords = minWords }
+    onChange(updates)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <div className="form-field">
+        <label style={{ fontSize: '0.82rem' }}>Question prompt (HTML allowed for <em>italics</em>, <strong>bold</strong>)</label>
+        <textarea rows={3} style={{ fontSize: '0.88rem', resize: 'vertical' }}
+          value={prompt} onChange={e => setPrompt(e.target.value)} />
+      </div>
+
+      {question.type === 'mc' && (
+        <div>
+          <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>Options (click the letter to set the correct answer)</label>
+          {options.map((opt, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+              <button type="button"
+                style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', fontFamily: 'inherit',
+                  border: `2px solid ${answer === i ? '#3B6D11' : 'var(--border)'}`,
+                  background: answer === i ? '#EAF3DE' : 'var(--bg-card)',
+                  color: answer === i ? '#3B6D11' : 'var(--text-muted)' }}
+                title="Set as correct answer"
+                onClick={() => setAnswer(i)}>
+                {LETTERS[i]}
+              </button>
+              <input type="text" style={{ flex: 1 }} value={opt}
+                onChange={e => { const n = [...options]; n[i] = e.target.value; setOptions(n) }} />
+              {answer === i && <span style={{ fontSize: '0.75rem', color: '#3B6D11', fontWeight: 600, flexShrink: 0 }}>✓ Correct</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {question.type === 'text' && (
+        <div className="form-field">
+          <label style={{ fontSize: '0.82rem' }}>Minimum words required</label>
+          <input type="number" min="1" max="200" style={{ width: '100px' }}
+            value={minWords} onChange={e => setMinWords(parseInt(e.target.value) || 1)} />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.4rem 1rem' }} onClick={handleSave}>
+          ✓ Save change
+        </button>
+        <button className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.4rem 0.85rem' }} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AdminTests({ adminUserId, students = [], manualStudents = [] }) {
+  const [assignments, setAssignments] = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [needsSetup,  setNeedsSetup]  = useState(false)
+  const [viewingResult, setViewingResult] = useState(null) // assignment obj
+  const [previewing,    setPreviewing]    = useState(false) // admin preview mode
+  const [editingQuestions, setEditingQuestions] = useState(null) // TEST_DEFINITIONS entry
+  // Assign form
+  const [assigning,     setAssigning]     = useState(false)
+  const [assignTestId,  setAssignTestId]  = useState('general_placement_v1')
+  const [assignStudentId,   setAssignStudentId]   = useState('')
+  const [assignManualId,    setAssignManualId]    = useState('')
+  const [assignStudentType, setAssignStudentType] = useState('auth') // 'auth'|'manual'
+  const [assignSaving, setAssignSaving] = useState(false)
+  const [assignError,  setAssignError]  = useState(null)
+  const [deletingId,   setDeletingId]   = useState(null)
+  const [previewHtml,  setPreviewHtml]  = useState(null)
+
+  useEffect(() => {
+    fetchAllTestAssignments().then(data => {
+      if (data === null) setNeedsSetup(true)
+      else { setAssignments(data); setNeedsSetup(false) }
+      setLoading(false)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (previewing && !previewHtml) {
+      const testId = editingQuestions?.id || 'general_placement_v1'
+      const htmlFile = testId === 'hospitality_placement_v1'
+        ? '/tests/hospitality_placement_v1.html'
+        : '/tests/general_placement_v1.html'
+      fetch(htmlFile)
+        .then(r => r.text())
+        .then(html => {
+          const currentQ = getEffectiveQuestions(testId)
+          const varName = testId === 'hospitality_placement_v1' ? '__eph_questions' : '__ept_questions'
+          const injected = `<script>window.${varName} = ${JSON.stringify(currentQ)};</script>\n` + html
+          setPreviewHtml(injected)
+        })
+    }
+  }, [previewing])
+
+  const reload = () => fetchAllTestAssignments().then(data => {
+    if (data) setAssignments(data)
+  })
+
+  const handleAssign = async () => {
+    if (!assignTestId || !assignManualId) { setAssignError('Please select a test and a manual student.'); return }
+    setAssignSaving(true); setAssignError(null)
+    const result = await createTestAssignment({ testId: assignTestId, manualStudentId: assignManualId, assignedBy: adminUserId })
+    setAssignSaving(false)
+    if (result) {
+      setAssigning(false)
+      setAssignManualId('')
+      reload()
+    } else {
+      setAssignError('Could not assign — check that the test_assignments table exists in Supabase.')
+    }
+  }
+
+  const handleDelete = async (id) => {
+    const ok = await deleteTestAssignment(id)
+    if (ok) setAssignments(prev => prev.filter(a => a.id !== id))
+    setDeletingId(null)
+  }
+
+  if (editingQuestions) {
+    return <TestQuestionEditor testDef={editingQuestions} onBack={() => setEditingQuestions(null)} />
+  }
+
+  if (viewingResult) {
+    return <TestResultView assignment={viewingResult} onBack={() => setViewingResult(null)} />
+  }
+
+  if (previewing) {
+    return (
+      <div style={{ marginTop: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
+          <button className="back-btn" onClick={() => setPreviewing(false)}>← Back to Tests</button>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            👨‍🏫 Admin preview — this is exactly what the student sees
+          </span>
+        </div>
+        {!previewHtml ? (
+          <div className="dashboard-loading">Loading test…</div>
+        ) : (
+          <iframe
+            srcDoc={previewHtml}
+            title="Test preview"
+            style={{ width: '100%', border: '2px dashed #d4a853', borderRadius: '8px', minHeight: '750px', display: 'block' }}
+            sandbox="allow-scripts"
+          />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Tests</h3>
+        <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.4rem 1rem', marginLeft: 'auto' }}
+          onClick={() => { setAssigning(p => !p); setAssignError(null) }}>
+          {assigning ? '✕ Cancel' : '+ Assign test to student'}
+        </button>
+      </div>
+
+      {/* Available tests */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h4 style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0 0 0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available tests</h4>
+        {TEST_DEFINITIONS.map(t => (
+          <div key={t.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{t.label}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.desc}</div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+              <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                onClick={() => setEditingQuestions(t)}>
+                📝 View / edit questions
+              </button>
+              <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+                onClick={() => { setEditingQuestions(t); setPreviewHtml(null); setPreviewing(true) }}>
+                👁 Preview
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Setup warning */}
+      {needsSetup && (
+        <div style={{ background: '#FDF6E0', border: '1px solid #e8d99a', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+          <strong>⚠️ Database table needed</strong>
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+            Run this SQL in your Supabase dashboard (SQL Editor) to enable the Tests feature:
+          </p>
+          <pre style={{ background: '#fff', border: '1px solid #e8d99a', borderRadius: '6px', padding: '0.75rem', margin: '0.75rem 0 0', fontSize: '0.78rem', overflowX: 'auto', userSelect: 'all' }}>{`create table if not exists test_assignments (
+  id uuid primary key default gen_random_uuid(),
+  test_id text not null default 'general_placement_v1',
+  student_id uuid references profiles(id) on delete cascade,
+  manual_student_id uuid references manual_students(id) on delete cascade,
+  assigned_by uuid not null,
+  assigned_at timestamptz default now(),
+  status text not null default 'assigned',
+  completed_at timestamptz,
+  results jsonb
+);
+alter table test_assignments enable row level security;
+create policy "Admin full access" on test_assignments
+  for all using (public.is_admin()) with check (public.is_admin());
+create policy "Students read own" on test_assignments
+  for select using (auth.uid() = student_id);
+create policy "Students complete own" on test_assignments
+  for update using (auth.uid() = student_id)
+  with check (auth.uid() = student_id);`}</pre>
+        </div>
+      )}
+
+      {/* Assign form */}
+      {assigning && (
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+          <h4 style={{ margin: '0 0 0.85rem', fontSize: '0.92rem' }}>Assign a test</h4>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.75rem' }}>
+            To assign a test to a prospect, use the <strong>Prospects tab</strong>. Use this form for manual students only.
+          </p>
+          <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: '180px' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>Test</label>
+              <select value={assignTestId} onChange={e => setAssignTestId(e.target.value)} style={{ width: '100%' }}>
+                {TEST_DEFINITIONS.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: '160px' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>Manual student</label>
+              <select value={assignManualId} onChange={e => setAssignManualId(e.target.value)} style={{ width: '100%' }}>
+                <option value="">— Select student —</option>
+                {manualStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.name || s.email || s.id}</option>
+                ))}
+              </select>
+            </div>
+            <button className="btn-gold" style={{ padding: '0.5rem 1.25rem', flexShrink: 0 }}
+              disabled={assignSaving} onClick={handleAssign}>
+              {assignSaving ? 'Assigning…' : 'Assign'}
+            </button>
+          </div>
+          {assignError && <div className="auth-error" style={{ marginTop: '0.5rem' }}>{assignError}</div>}
+        </div>
+      )}
+
+      {/* Assignments list */}
+      {loading ? (
+        <div className="dashboard-loading">Loading…</div>
+      ) : assignments.length === 0 && !needsSetup ? (
+        <div className="dashboard-empty"><p>No tests assigned yet.</p></div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          {assignments.map(a => {
+            const testDef = TEST_DEFINITIONS.find(t => t.id === a.test_id) || { label: a.test_id }
+            const studentName = a.profiles?.name || a.profiles?.email || a.manual_students?.name || a.manual_students?.email || '—'
+            const isCompleted = a.status === 'completed'
+            return (
+              <div key={a.id} style={{ background: 'var(--bg-card)', border: `1px solid ${isCompleted ? '#c5dfa3' : 'var(--border)'}`, borderRadius: '8px', padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '160px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testDef.label}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <span>👤 {studentName}</span>
+                    <span>📅 {new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    {isCompleted && a.completed_at && (
+                      <span style={{ color: '#4a8a1a' }}>✓ Completed {new Date(a.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                    )}
+                    {isCompleted && a.results && (
+                      <span style={{ fontWeight: 600, color: '#2b72b5' }}>
+                        {a.results.level} ({a.results.cefr}) — {a.results.mcCorrect}/{a.results.mcTotal} correct
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                  {isCompleted && (
+                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.7rem' }}
+                      onClick={() => setViewingResult(a)}>
+                      📊 View results
+                    </button>
+                  )}
+                  {!isCompleted && (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.3rem 0.5rem' }}>⏳ Pending</span>
+                  )}
+                  {deletingId === a.id ? (
+                    <>
+                      <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem', color: '#e05c5c', borderColor: '#e05c5c' }}
+                        onClick={() => handleDelete(a.id)}>Confirm delete</button>
+                      <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                        onClick={() => setDeletingId(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.6rem', color: '#e05c5c' }}
+                      onClick={() => setDeletingId(a.id)}>Delete</button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── TestResultView (admin diagnostic display) ─────────────────
+function TestResultView({ assignment, onBack }) {
+  const r = assignment.results
+  if (!r) return (
+    <div>
+      <button className="back-btn" onClick={onBack}>← Back to tests</button>
+      <p style={{ color: 'var(--text-muted)' }}>No results data found.</p>
+    </div>
+  )
+  const studentName = assignment.profiles?.name || assignment.profiles?.email || assignment.manual_students?.name || '—'
+  const LETTERS = ['A','B','C','D']
+  const TENSE_META = {
+    present_simple:{label:'Present simple'},present_continuous:{label:'Present continuous'},
+    going_to_future:{label:'Going to (future)'},past_simple:{label:'Past simple'},
+    past_continuous:{label:'Past continuous'},past_perfect:{label:'Past perfect'},
+    present_perfect:{label:'Present perfect'},will_future:{label:'Will (predictions)'},
+    present_perfect_continuous:{label:'Present perfect continuous'},
+  }
+  const GRAMMAR_META = {
+    subject_verb_agreement:{label:'Subject–verb agreement'},going_to_future:{label:'Going to — future plans'},
+    present_continuous:{label:'Present continuous'},past_simple_regular_irregular:{label:'Past simple (reg./irreg.)'},
+    comparatives_superlatives:{label:'Comparatives & superlatives'},modal_can_ability:{label:'Can / can\'t (ability)'},
+    quantifiers_countable_uncountable:{label:'Quantifiers'},prepositions_time:{label:'Prepositions of time'},
+    present_perfect_ever_never:{label:'Present perfect (ever/never)'},present_perfect_yet_already:{label:'Present perfect (yet/already)'},
+    past_continuous_interrupted:{label:'Past continuous (interrupted)'},past_perfect_narrative:{label:'Past perfect (sequence)'},
+    used_to_past_habits:{label:'Used to (past habits)'},will_future_prediction:{label:'Will — predictions'},
+    first_conditional:{label:'First conditional'},second_conditional:{label:'Second conditional'},
+    modal_should_advice:{label:'Should (advice)'},modal_might_possibility:{label:'Might (possibility)'},
+    gerund_after_verbs:{label:'Gerund after verbs'},infinitive_after_verbs:{label:'Infinitive after verbs'},
+    passive_past_simple:{label:'Passive — past simple'},passive_present_simple:{label:'Passive — present simple'},
+    reported_speech_backshift:{label:'Reported speech'},present_perfect_continuous:{label:'Present perfect continuous'},
+    third_conditional:{label:'Third conditional'},wish_if_only:{label:'Wish / If only'},
+    defining_relative_clauses:{label:'Defining relative clauses'},non_defining_relative_clauses:{label:'Non-defining relative clauses'},
+    causative_have_get:{label:'Causative have/get'},linkers_contrast:{label:'Linkers — contrast'},
+  }
+  const pct = (c,t) => t > 0 ? Math.round(c/t*100) : 0
+  const verdictColor = (c,t) => { if(t===0) return '#888'; const p=c/t; if(p>=0.67) return '#3B6D11'; if(p>=0.34) return '#854F0B'; return '#993C1D' }
+  const verdictLabel = (c,t) => { if(t===0) return 'n/a'; const p=c/t; if(p>=0.67) return 'Strong'; if(p>=0.34) return 'Developing'; return 'Needs work' }
+
+  const levelColor = r.cefr === 'A2' ? '#854F0B' : r.cefr === 'B1' ? '#3B6D11' : '#2b72b5'
+
+  const BarRow = ({label, correct, total, color}) => (
+    <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.55rem 0', borderBottom:'1px solid var(--border)' }}>
+      <div style={{ minWidth:'180px', fontSize:'0.85rem', fontWeight:500 }}>{label}</div>
+      <div style={{ flex:1, background:'var(--bg-darker)', borderRadius:'4px', height:'8px' }}>
+        <div style={{ width:`${pct(correct,total)}%`, height:'100%', background:color||'#185FA5', borderRadius:'4px', transition:'width 0.4s' }} />
+      </div>
+      <div style={{ fontSize:'0.82rem', minWidth:'40px', textAlign:'right', color:'var(--text-muted)' }}>{total>0?`${correct}/${total}`:'—'}</div>
+      <div style={{ fontSize:'0.78rem', fontWeight:600, color:verdictColor(correct,total), minWidth:'80px', textAlign:'right' }}>{verdictLabel(correct,total)}</div>
+    </div>
+  )
+
+  const wrongAnswers = (r.allAnswers || []).filter(a => a.type === 'mc' && a.isCorrect === false)
+  const writingAnswers = r.writingAnswers || []
+
+  return (
+    <div>
+      <button className="back-btn" onClick={onBack}>← Back to tests</button>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', gap:'1rem', marginTop:'1rem', marginBottom:'1.5rem', flexWrap:'wrap' }}>
+        <div>
+          <h2 style={{ margin:'0 0 0.35rem', fontSize:'1.25rem' }}>Test Results — {studentName}</h2>
+          <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+            <span className="admin-level-chip" style={{ background:`${levelColor}18`, color:levelColor, fontWeight:700, fontSize:'0.9rem' }}>
+              🏆 {r.level} — CEFR {r.cefr}
+            </span>
+            <span className="admin-level-chip">{r.mcCorrect} / {r.mcTotal} MC correct</span>
+            {r.completedAt && <span className="admin-level-chip">📅 {new Date(assignment.completed_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Teacher summary */}
+      <div style={{ background:'#FFFBF0', border:'1px solid #f0e8c8', borderRadius:'10px', padding:'1rem', marginBottom:'1.25rem' }}>
+        <strong style={{ fontSize:'0.85rem' }}>📋 Teacher summary</strong>
+        <p style={{ margin:'0.35rem 0 0', fontSize:'0.875rem', lineHeight:1.7, color:'var(--text)' }}>{r.desc}</p>
+        {writingAnswers.length > 0 && (
+          <p style={{ margin:'0.5rem 0 0', fontSize:'0.82rem', color:'var(--text-muted)' }}>
+            Writing tasks attempted: {r.writingAttempted} / {r.writingTotal} — <strong>review manually below.</strong>
+          </p>
+        )}
+      </div>
+
+      {/* CEFR band breakdown */}
+      <div className="builder-section" style={{ marginBottom:'1rem' }}>
+        <h4 className="builder-section-title">Performance by CEFR band</h4>
+        <BarRow label="Elementary (A2)" correct={r.a2.correct} total={r.a2.total} color="#185FA5" />
+        <BarRow label="Lower intermediate (B1)" correct={r.b1.correct} total={r.b1.total} color="#3B6D11" />
+        <BarRow label="Upper intermediate (B2)" correct={r.b2.correct} total={r.b2.total} color="#854F0B" />
+        <BarRow label="Vocabulary" correct={r.vocabCorrect} total={r.vocabTotal} color="#3C3489" />
+      </div>
+
+      {/* Tense diagnostic */}
+      <div className="builder-section" style={{ marginBottom:'1rem' }}>
+        <h4 className="builder-section-title">Tense diagnostic</h4>
+        {Object.entries(r.tenseMap || {}).map(([tag, sc]) => {
+          const meta = TENSE_META[tag]
+          return meta ? <BarRow key={tag} label={meta.label} correct={sc.c} total={sc.t} color="#185FA5" /> : null
+        })}
+        {Object.keys(r.tenseMap || {}).length === 0 && <p style={{ color:'var(--text-muted)', fontSize:'0.85rem' }}>No tense data.</p>}
+      </div>
+
+      {/* Grammar diagnostic */}
+      <div className="builder-section" style={{ marginBottom:'1rem' }}>
+        <h4 className="builder-section-title">Grammar diagnostic</h4>
+        {Object.entries(r.grammarMap || {}).map(([tag, sc]) => {
+          const meta = GRAMMAR_META[tag]
+          return meta ? <BarRow key={tag} label={meta.label} correct={sc.c} total={sc.t} color="#3B6D11" /> : null
+        })}
+        {Object.keys(r.grammarMap || {}).length === 0 && <p style={{ color:'var(--text-muted)', fontSize:'0.85rem' }}>No grammar data.</p>}
+      </div>
+
+      {/* Wrong answers */}
+      {wrongAnswers.length > 0 && (
+        <div className="builder-section" style={{ marginBottom:'1rem' }}>
+          <h4 className="builder-section-title">Incorrect MC answers ({wrongAnswers.length})</h4>
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+            {wrongAnswers.map((a,i) => (
+              <div key={i} style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px', padding:'0.65rem 0.85rem', fontSize:'0.85rem' }}>
+                <div style={{ display:'flex', gap:'0.5rem', alignItems:'flex-start', marginBottom:'0.4rem' }}>
+                  <span style={{ background:'#FAECE7', color:'#993C1D', fontWeight:700, fontSize:'0.75rem', padding:'0.15rem 0.55rem', borderRadius:'20px', whiteSpace:'nowrap', flexShrink:0 }}>Q{a.qNum}</span>
+                  <span style={{ color:'var(--text)', lineHeight:1.5 }}>{a.prompt}</span>
+                </div>
+                <div style={{ display:'flex', gap:'1rem', flexWrap:'wrap', fontSize:'0.82rem' }}>
+                  <span style={{ color:'#E24B4A' }}>✗ Answered: {a.givenLabel || '(no answer)'}</span>
+                  <span style={{ color:'#3B6D11', fontWeight:600 }}>✓ Correct: {a.correctLabel}</span>
+                </div>
+                {(a.tenseTag || a.grammarTag || a.vocab) && (
+                  <div style={{ color:'var(--text-muted)', fontSize:'0.75rem', marginTop:'0.25rem' }}>
+                    Tests: {[
+                      a.tenseTag   ? TENSE_META[a.tenseTag]?.label   : null,
+                      a.grammarTag ? GRAMMAR_META[a.grammarTag]?.label : null,
+                      a.vocab ? 'Vocabulary' : null,
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Writing answers */}
+      {writingAnswers.length > 0 && (
+        <div className="builder-section" style={{ marginBottom:'1rem' }}>
+          <h4 className="builder-section-title">Writing tasks — review manually</h4>
+          {writingAnswers.map((wa, i) => (
+            <div key={i} style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'8px', padding:'0.75rem', marginBottom:'0.5rem' }}>
+              <div style={{ fontSize:'0.82rem', color:'var(--text-muted)', marginBottom:'0.35rem' }}>
+                Writing task {i+1}{wa.tag ? ` (${wa.tag})` : ''} · {wa.words} words
+              </div>
+              <div style={{ fontSize:'0.9rem', lineHeight:1.6, color: wa.answer ? 'var(--text)' : 'var(--text-muted)', fontStyle: wa.answer ? 'normal' : 'italic' }}>
+                {wa.answer || '(no answer provided)'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── AdminPanel ───────────────────────────────────────────────
+// ─── AdminCourses ─────────────────────────────────────────────
+const COURSE_COLORS = [
+  { label: 'Blue',    value: '#3b82f6' },
+  { label: 'Gold',    value: '#d4a853' },
+  { label: 'Green',   value: '#10b981' },
+  { label: 'Purple',  value: '#8b5cf6' },
+  { label: 'Red',     value: '#ef4444' },
+  { label: 'Teal',    value: '#006699' },
+  { label: 'Orange',  value: '#f97316' },
+  { label: 'Pink',    value: '#ec4899' },
+  { label: 'Indigo',  value: '#4f46e5' },
+  { label: 'Cyan',    value: '#06b6d4' },
+  { label: 'Amber',   value: '#f59e0b' },
+  { label: 'Slate',   value: '#475569' },
+]
+
+function AdminCourses() {
+  const [courses, setCourses]       = useState(null) // null = loading
+  const [saving,  setSaving]        = useState(false)
+  const [saved,   setSaved]         = useState(false)
+  const [editingCourse, setEditingCourse] = useState(null) // index or 'new'
+  const [draft, setDraft]           = useState(null) // course being edited
+
+  useEffect(() => {
+    fetchSiteSetting('courses').then(data => {
+      setCourses(Array.isArray(data) && data.length > 0 ? data : COURSES_DATA)
+    })
+  }, [])
+
+  const saveAll = async (updated) => {
+    setSaving(true)
+    const ok = await saveSiteSetting('courses', updated)
+    setSaving(false)
+    if (ok) { setCourses(updated); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  }
+
+  const startNew = () => {
+    setDraft({ name: '', tag: '', color: '#3b82f6', desc: '', schedule: '6 weeks · 2 lessons/week · 90 min/lesson', modules: [{ title: '', lessons: [''] }] })
+    setEditingCourse('new')
+  }
+
+  const startEdit = (i) => {
+    setDraft(JSON.parse(JSON.stringify(courses[i])))
+    setEditingCourse(i)
+  }
+
+  const deleteCourse = async (i) => {
+    if (!window.confirm(`Delete "${courses[i].name}"?`)) return
+    const updated = courses.filter((_, j) => j !== i)
+    await saveAll(updated)
+  }
+
+  const moveCourse = async (i, dir) => {
+    const updated = [...courses]
+    const j = i + dir
+    if (j < 0 || j >= updated.length) return
+    ;[updated[i], updated[j]] = [updated[j], updated[i]]
+    await saveAll(updated)
+  }
+
+  const saveDraft = async () => {
+    if (!draft.name.trim()) return
+    const updated = editingCourse === 'new'
+      ? [...(courses || []), draft]
+      : (courses || []).map((c, i) => i === editingCourse ? draft : c)
+    await saveAll(updated)
+    setEditingCourse(null); setDraft(null)
+  }
+
+  const updateDraft = (field, val) => setDraft(d => ({ ...d, [field]: val }))
+
+  const updateModule = (mi, field, val) => setDraft(d => {
+    const mods = [...d.modules]
+    mods[mi] = { ...mods[mi], [field]: val }
+    return { ...d, modules: mods }
+  })
+
+  const addModule = () => setDraft(d => ({ ...d, modules: [...d.modules, { title: '', lessons: [''] }] }))
+
+  const removeModule = (mi) => setDraft(d => ({ ...d, modules: d.modules.filter((_, i) => i !== mi) }))
+
+  const updateLesson = (mi, li, val) => setDraft(d => {
+    const mods = [...d.modules]
+    const lessons = [...mods[mi].lessons]
+    lessons[li] = val
+    mods[mi] = { ...mods[mi], lessons }
+    return { ...d, modules: mods }
+  })
+
+  const addLesson = (mi) => setDraft(d => {
+    const mods = [...d.modules]
+    mods[mi] = { ...mods[mi], lessons: [...mods[mi].lessons, ''] }
+    return { ...d, modules: mods }
+  })
+
+  const removeLesson = (mi, li) => setDraft(d => {
+    const mods = [...d.modules]
+    mods[mi] = { ...mods[mi], lessons: mods[mi].lessons.filter((_, i) => i !== li) }
+    return { ...d, modules: mods }
+  })
+
+  if (courses === null) return <div className="dashboard-loading">Loading…</div>
+
+  // ── Edit / New form ─────────────────────────────────────────
+  if (editingCourse !== null && draft) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
+          <button className="back-btn" style={{ margin: 0 }} onClick={() => { setEditingCourse(null); setDraft(null) }}>← Back to courses</button>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+            {editingCourse === 'new' ? 'New course' : `Edit: ${courses[editingCourse]?.name}`}
+          </h3>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            {saving ? <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Saving…</span>
+              : saved ? <span style={{ fontSize: '0.85rem', color: '#3B6D11' }}>✓ Saved</span> : null}
+            <button className="btn-gold" style={{ padding: '0.45rem 1.25rem' }}
+              disabled={saving || !draft.name.trim()} onClick={saveDraft}>
+              Save course
+            </button>
+          </div>
+        </div>
+
+        {/* Course details */}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+          <h4 style={{ margin: '0 0 0.85rem', fontSize: '0.92rem' }}>Course details</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="form-field">
+              <label>Course name *</label>
+              <input type="text" placeholder="e.g. Elementary English" value={draft.name} onChange={e => updateDraft('name', e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label>Level tag</label>
+              <input type="text" placeholder="e.g. A1 → A2" value={draft.tag} onChange={e => updateDraft('tag', e.target.value)} />
+            </div>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <label>Description</label>
+              <textarea rows={3} placeholder="Short description shown on the card…" value={draft.desc} onChange={e => updateDraft('desc', e.target.value)} style={{ resize: 'vertical' }} />
+            </div>
+            <div className="form-field">
+              <label>Schedule</label>
+              <input type="text" placeholder="e.g. 6 weeks · 2 lessons/week · 90 min/lesson" value={draft.schedule} onChange={e => updateDraft('schedule', e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label>Card colour</label>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                {COURSE_COLORS.map(c => (
+                  <button key={c.value} type="button" title={c.label}
+                    style={{ width: '28px', height: '28px', borderRadius: '50%', border: `3px solid ${draft.color === c.value ? '#1a2030' : 'transparent'}`, background: c.value, cursor: 'pointer' }}
+                    onClick={() => updateDraft('color', c.value)} />
+                ))}
+                <input type="color" value={draft.color} onChange={e => updateDraft('color', e.target.value)}
+                  title="Custom colour" style={{ width: '28px', height: '28px', padding: 0, border: '1px solid var(--border)', borderRadius: '50%', cursor: 'pointer' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Modules */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <h4 style={{ margin: 0, fontSize: '0.92rem' }}>Modules</h4>
+            <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.28rem 0.65rem' }} onClick={addModule}>+ Add module</button>
+          </div>
+
+          {draft.modules.map((mod, mi) => (
+            <div key={mi} style={{ background: '#F8F5EE', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '0.6rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-muted)', flexShrink: 0 }}>Module {mi + 1}</span>
+                <input type="text" style={{ flex: 1 }} placeholder="Module title e.g. Module 1 — Getting Started (Lessons 1–2)"
+                  value={mod.title} onChange={e => updateModule(mi, 'title', e.target.value)} />
+                {draft.modules.length > 1 && (
+                  <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.5rem', color: '#e05c5c', flexShrink: 0 }}
+                    onClick={() => removeModule(mi)}>✕ Remove</button>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {mod.lessons.map((lesson, li) => (
+                  <div key={li} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', minWidth: '20px' }}>{li + 1}.</span>
+                    <input type="text" style={{ flex: 1, fontSize: '0.85rem' }}
+                      placeholder={`Lesson ${li + 1} description…`}
+                      value={lesson} onChange={e => updateLesson(mi, li, e.target.value)} />
+                    {mod.lessons.length > 1 && (
+                      <button type="button" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem', padding: '0.1rem 0.3rem' }}
+                        onClick={() => removeLesson(mi, li)}>✕</button>
+                    )}
+                  </div>
+                ))}
+                <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', marginTop: '0.2rem', alignSelf: 'flex-start' }}
+                  onClick={() => addLesson(mi)}>+ Add lesson</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Course list ─────────────────────────────────────────────
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Courses <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({courses.length})</span></h3>
+        {saved && <span style={{ fontSize: '0.85rem', color: '#3B6D11' }}>✓ Saved</span>}
+        <button className="btn-gold" style={{ marginLeft: 'auto', fontSize: '0.85rem', padding: '0.4rem 1rem' }} onClick={startNew}>
+          + Add New Course Info Card
+        </button>
+      </div>
+
+      <div style={{ background: '#FFF8E7', border: '1.5px dashed #e8c96a', borderRadius: '12px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <p style={{ fontSize: '0.78rem', color: '#a07a10', fontWeight: 600, margin: '0 0 0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          🌐 Live — changes here update the public website immediately
+        </p>
+        {courses.map((c, i) => (
+          <div key={i} style={{ background: '#fff', border: '1px solid #e8d99a', borderLeft: `4px solid ${c.color}`, borderRadius: '10px', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{c.name}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.15rem', display: 'flex', gap: '0.75rem' }}>
+                <span style={{ color: c.color, fontWeight: 600 }}>{c.tag}</span>
+                <span>{c.modules.length} module{c.modules.length !== 1 ? 's' : ''}</span>
+                <span>{c.schedule}</span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60ch' }}>{c.desc}</div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
+              <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.45rem' }} disabled={i === 0} onClick={() => moveCourse(i, -1)}>▲</button>
+              <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.45rem' }} disabled={i === courses.length - 1} onClick={() => moveCourse(i, 1)}>▼</button>
+              <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.7rem' }} onClick={() => startEdit(i)}>Edit</button>
+              <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.3rem 0.7rem', color: '#e05c5c' }} onClick={() => deleteCourse(i)}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ marginTop: '0.85rem', fontSize: '0.78rem', color: '#a07a10' }}>
+        Use ▲▼ to reorder. Changes save immediately to the live website.
+      </p>
+    </div>
+  )
+}
+
+// ─── AdminLevels ──────────────────────────────────────────────
+function AdminLevels() {
+  const STORAGE_KEY = 'admin_courses_v1'
+  const [courses, setCourses] = useState(() => {
+    try {
+      // Migrate from old levels if needed
+      const newData = localStorage.getItem('admin_courses_v1')
+      if (newData) return JSON.parse(newData)
+      const oldData = localStorage.getItem('admin_levels_v1')
+      if (oldData) {
+        const migrated = JSON.parse(oldData).map(l => ({ id: l.id, name: l.name }))
+        localStorage.setItem('admin_courses_v1', JSON.stringify(migrated))
+        return migrated
+      }
+      return []
+    } catch { return [] }
+  })
+  const [newName, setNewName] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editName, setEditName] = useState('')
+
+  const persist = (next) => {
+    setCourses(next)
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  const addCourse = () => {
+    if (!newName.trim()) return
+    persist([...courses, { id: crypto.randomUUID(), name: newName.trim() }])
+    setNewName('')
+  }
+
+  const deleteCourse = (id) => persist(courses.filter(c => c.id !== id))
+  const startEdit = (c) => { setEditingId(c.id); setEditName(c.name) }
+  const saveEdit = (id) => {
+    persist(courses.map(c => c.id === id ? { ...c, name: editName } : c))
+    setEditingId(null)
+  }
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.85rem' }}>Courses</h3>
+      <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+        Define the courses you teach. These appear as options when creating lesson plans and exercises.
+      </p>
+
+      {/* Add new course */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.92rem' }}>+ Add course</h4>
+        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }}>
+            <input type="text" placeholder="e.g. Elementary English"
+              value={newName} onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addCourse()}
+              style={{ width: '100%' }} />
+          </div>
+          <button className="btn-gold" style={{ padding: '0.5rem 1.25rem', flexShrink: 0 }}
+            disabled={!newName.trim()} onClick={addCourse}>
+            Add course
+          </button>
+        </div>
+      </div>
+
+      {/* Course list */}
+      {courses.length === 0 ? (
+        <div className="dashboard-empty"><p>No courses yet.</p></div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          {courses.map(c => (
+            editingId === c.id ? (
+              <div key={c.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--gold)', borderRadius: '8px', padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
+                  style={{ flex: 1 }} autoFocus />
+                <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => saveEdit(c.id)}>Save</button>
+                <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
+              </div>
+            ) : (
+              <div key={c.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</span>
+                <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.25rem 0.6rem' }} onClick={() => startEdit(c)}>Edit</button>
+                <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.25rem 0.6rem', color: '#e05c5c' }} onClick={() => deleteCourse(c.id)}>Delete</button>
+              </div>
+            )
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const ALL_ADMIN_TABS = [
+  { key: 'calendar',  label: '📅 Calendar' },
+  { key: 'prospects', label: '🔍 Prospects', badge: 'prospect' },
+  { key: 'students',  label: '👥 Students',  badge: 'pending' },
+  { key: 'stages',    label: '📝 Exercise Library' },
+  { key: 'plans',     label: '🗂 Lesson Plans' },
+  { key: 'books',     label: '📖 Books' },
+  { key: 'referrals', label: '🎁 Referrals' },
+  { key: 'levels',    label: '🎓 Courses' },
+  { key: 'tests',     label: '📋 Tests' },
+]
+
+const ADMIN_COLOR_SCHEMES = [
+  { name: 'Oxford Blue',  tabBarBg: '#2563eb', activeTabBg: '#eff6ff', activeTabColor: '#1e3a8a', inactiveTabColor: 'rgba(255,255,255,0.85)' },
+  { name: 'Reading Room', tabBarBg: '#2d6a4f', activeTabBg: '#eaf5ee', activeTabColor: '#1a3d2b', inactiveTabColor: 'rgba(255,255,255,0.75)' },
+  { name: 'Chancellor',   tabBarBg: '#5c3d8f', activeTabBg: '#ede8f8', activeTabColor: '#2d1a5c', inactiveTabColor: 'rgba(255,255,255,0.78)' },
+  { name: 'Chalkboard',   tabBarBg: '#4a5568', activeTabBg: '#f0f2f5', activeTabColor: '#1a202c', inactiveTabColor: 'rgba(255,255,255,0.72)' },
+  { name: 'Grammar',      tabBarBg: '#0d9488', activeTabBg: '#e0f7f4', activeTabColor: '#064e38', inactiveTabColor: 'rgba(255,255,255,0.80)' },
+  { name: 'Rhetoric',     tabBarBg: '#9d174d', activeTabBg: '#fce4ec', activeTabColor: '#6b0d2d', inactiveTabColor: 'rgba(255,255,255,0.82)' },
+  { name: 'Phonetics',    tabBarBg: '#db2777', activeTabBg: '#fce7f3', activeTabColor: '#831843', inactiveTabColor: 'rgba(255,255,255,0.88)' },
+  { name: 'Etymology',    tabBarBg: '#a21caf', activeTabBg: '#fdf4ff', activeTabColor: '#4a044e', inactiveTabColor: 'rgba(255,255,255,0.88)' },
+  { name: 'Cambridge Blue',    tabBarBg: '#0369a1', activeTabBg: '#e0f2fe', activeTabColor: '#0c4a6e', inactiveTabColor: 'rgba(255,255,255,0.85)' },
+  { name: 'Parchment',    tabBarBg: '#7d5a4a', activeTabBg: '#f5ede8', activeTabColor: '#3d1f12', inactiveTabColor: 'rgba(255,255,255,0.80)' },
+  { name: 'Study Hall',   tabBarBg: '#4f6480', activeTabBg: '#e8edf5', activeTabColor: '#1e2d3d', inactiveTabColor: 'rgba(255,255,255,0.78)' },
+  { name: 'Spring Blossom',  tabBarBg: '#9a4a60', activeTabBg: '#fce8ef', activeTabColor: '#5c1a2e', inactiveTabColor: 'rgba(255,255,255,0.82)' },
+  { name: 'Summer Solstice', tabBarBg: '#a84820', activeTabBg: '#fff0ea', activeTabColor: '#5c1a08', inactiveTabColor: 'rgba(255,255,255,0.82)' },
+  { name: 'Autumn Harvest',  tabBarBg: '#925a1a', activeTabBg: '#fef3e2', activeTabColor: '#4a2800', inactiveTabColor: 'rgba(255,255,255,0.82)' },
+  { name: 'Winter Frost',    tabBarBg: '#1e4a6e', activeTabBg: '#e8f4f8', activeTabColor: '#0c1f2e', inactiveTabColor: 'rgba(255,255,255,0.80)' },
+]
+
+const DEFAULT_ADMIN_THEME = ADMIN_COLOR_SCHEMES[0]
+
 function AdminPanel({ user, onSignOut }) {
   const [adminEmail,    setAdminEmail]    = useState('')
   const [adminPassword, setAdminPassword] = useState('')
   const [loginError,    setLoginError]    = useState(null)
   const [loginLoading,  setLoginLoading]  = useState(false)
+  const [showSettings,  setShowSettings]  = useState(false)
+  const [adminTheme,    setAdminTheme]    = useState(() => {
+    try {
+      const s = localStorage.getItem('admin_theme')
+      return s ? { ...DEFAULT_ADMIN_THEME, ...JSON.parse(s) } : DEFAULT_ADMIN_THEME
+    } catch { return DEFAULT_ADMIN_THEME }
+  })
+
+  const updateTheme = (key, val) => {
+    const next = { ...adminTheme, [key]: val }
+    setAdminTheme(next)
+    try { localStorage.setItem('admin_theme', JSON.stringify(next)) } catch {}
+  }
+  const resetTheme = () => {
+    setAdminTheme(DEFAULT_ADMIN_THEME)
+    try { localStorage.removeItem('admin_theme') } catch {}
+  }
+
+  const [tabOrder, setTabOrder] = useState(() => {
+    try {
+      const s = localStorage.getItem('admin_tab_order')
+      if (s) {
+        const stored = JSON.parse(s)
+        // merge: keep stored order, add any new tabs not yet saved
+        const allKeys = ALL_ADMIN_TABS.map(t => t.key)
+        const merged = [...stored.filter(k => allKeys.includes(k)), ...allKeys.filter(k => !stored.includes(k))]
+        return merged
+      }
+    } catch {}
+    return ALL_ADMIN_TABS.map(t => t.key)
+  })
+
+  const moveTab = (idx, dir) => {
+    const next = [...tabOrder]
+    const j = idx + dir
+    if (j < 0 || j >= next.length) return
+    ;[next[idx], next[j]] = [next[j], next[idx]]
+    setTabOrder(next)
+    try { localStorage.setItem('admin_tab_order', JSON.stringify(next)) } catch {}
+  }
+
+  const resetTabOrder = () => {
+    const def = ALL_ADMIN_TABS.map(t => t.key)
+    setTabOrder(def)
+    try { localStorage.removeItem('admin_tab_order') } catch {}
+  }
+
+  const orderedTabs = tabOrder.map(key => ALL_ADMIN_TABS.find(t => t.key === key)).filter(Boolean)
   const [students,      setStudents]      = useState([])
   const [dataLoading,   setDataLoading]   = useState(false)
   const [selected,               setSelected]               = useState(null)
@@ -8132,6 +11867,7 @@ function AdminPanel({ user, onSignOut }) {
   const [editManualLevel,     setEditManualLevel]     = useState('')
   const [editManualLevelSaving, setEditManualLevelSaving] = useState(false)
   const [editManualLevelSaved,  setEditManualLevelSaved]  = useState(false)
+  const [adminOpenPlan,       setAdminOpenPlan]       = useState(null) // plan opened from student profile
 
   // Add student form
   const [showAddStudentForm, setShowAddStudentForm] = useState(false)
@@ -8153,6 +11889,12 @@ function AdminPanel({ user, onSignOut }) {
   const [prospects,           setProspects]           = useState([])
   const [prospectsLoading,    setProspectsLoading]    = useState(false)
   const [prospectCount,       setProspectCount]       = useState(0)
+  const [assigningTestToProspect, setAssigningTestToProspect] = useState(null) // prospect obj
+  const [prospectTestId, setProspectTestId] = useState('general_placement_v1')
+  const [prospectTestSaving, setProspectTestSaving] = useState(false)
+  const [prospectTestLinks, setProspectTestLinks] = useState({}) // prospectId → assignmentId
+  const [prospectTestSent,  setProspectTestSent]  = useState({}) // prospectId → true when email sent
+  const [copiedProspectId, setCopiedProspectId] = useState(null)
 
   useEffect(() => {
     if (!isAdmin || !supabase) return
@@ -8223,17 +11965,83 @@ function AdminPanel({ user, onSignOut }) {
   }
 
   const handleConvertProspect = async (prospect) => {
-    const created = await createManualStudent({
-      name: prospect.name,
-      email: prospect.email,
-      createdBy: user.id,
-    })
-    if (created) {
-      setManualStudents(prev => [created, ...prev])
-      await updateProspectStatus(prospect.id, 'converted')
-      setProspects(prev => prev.filter(p => p.id !== prospect.id))
-      setProspectCount(prev => Math.max(0, prev - (prospect.status === 'new' ? 1 : 0)))
+    // 1. Send Supabase invitation email
+    let userId = null
+    try {
+      const res = await fetch('/api/invite-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: prospect.email, name: prospect.name }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Invite failed')
+      userId = data.userId
+    } catch (err) {
+      alert('Could not send invitation: ' + err.message)
+      return
     }
+
+    // 2. Transfer any existing test assignments from manual_student to real student
+    const existingMs = await findManualStudentByEmail(prospect.email)
+    if (existingMs && userId) {
+      await transferTestAssignments(existingMs.id, userId)
+    }
+
+    // 3. Mark prospect as converted and remove from list
+    await updateProspectStatus(prospect.id, 'converted')
+    setProspects(prev => prev.filter(p => p.id !== prospect.id))
+    setProspectCount(prev => Math.max(0, prev - (prospect.status === 'new' ? 1 : 0)))
+
+    alert(`Invitation sent to ${prospect.email}. They will receive an email to set their password.`)
+  }
+
+  const handleAssignTestToProspect = async (prospect) => {
+    setProspectTestSaving(true)
+    // Find or create a manual_student for this prospect
+    let ms = await findManualStudentByEmail(prospect.email)
+    if (!ms) {
+      ms = await createManualStudent({ name: prospect.name, email: prospect.email, createdBy: user.id })
+    }
+    if (!ms) { setProspectTestSaving(false); return }
+    const assignment = await createTestAssignment({
+      testId: prospectTestId,
+      manualStudentId: ms.id,
+      assignedBy: user.id,
+    })
+    if (assignment) {
+      setProspectTestLinks(prev => ({ ...prev, [prospect.id]: assignment.id }))
+      setAssigningTestToProspect(null)
+      // Auto-send email to prospect with test link
+      const testLink = `${window.location.origin}/?t=${assignment.id}`
+      const testDef = TEST_DEFINITIONS.find(t => t.id === prospectTestId)
+      try {
+        const emailRes = await fetch('/api/send-test-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: prospect.email,
+            name: prospect.name,
+            testName: testDef?.label || 'English Diagnostic Test',
+            testLink,
+          }),
+        })
+        if (emailRes.ok) {
+          setProspectTestSent(prev => ({ ...prev, [prospect.id]: true }))
+        }
+      } catch (err) {
+        console.error('[handleAssignTestToProspect] email send failed:', err)
+        // Non-fatal — assignment is already created
+      }
+    }
+    setProspectTestSaving(false)
+  }
+
+  const copyTestLink = (assignmentId, prospectId) => {
+    const url = `${window.location.origin}/?t=${assignmentId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedProspectId(prospectId)
+      setTimeout(() => setCopiedProspectId(null), 2000)
+    })
   }
 
   const handleProspectStatusChange = async (prospect, newStatus) => {
@@ -8378,49 +12186,60 @@ function AdminPanel({ user, onSignOut }) {
 
   // Manual student detail view
   if (selectedManual) {
+    const openManualPlan = (p) => { setAdminOpenPlan({ plan: p, studentId: null, studentName: selectedManual.name }); window.scrollTo({ top: 0, behavior: 'smooth' }) }
     return (
       <div className="flow-card admin-detail">
-        <button className="back-btn" onClick={() => setSelectedManual(null)}>← Back to students</button>
-        <div className="admin-detail-header">
-          <div>
-            <h2 style={{ marginBottom: '0.2rem' }}>{selectedManual.name}</h2>
-            {selectedManual.email && <p className="admin-email">{selectedManual.email}</p>}
-            <p className="admin-date">Added {new Date(selectedManual.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-          </div>
-          <span className="admin-level-chip" style={{ fontSize: '0.8rem', opacity: 0.8 }}>Manual student</span>
-        </div>
+        {adminOpenPlan ? (
+          <AdminStudentPlanView
+            plan={adminOpenPlan.plan}
+            studentId={adminOpenPlan.studentId}
+            studentName={adminOpenPlan.studentName}
+            adminUserId={user?.id}
+            adminEmail={ADMIN_EMAIL}
+            onBack={() => { setAdminOpenPlan(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          />
+        ) : (
+          <>
+            <button className="back-btn" onClick={() => setSelectedManual(null)}>← Back to students</button>
+            <div className="admin-detail-header">
+              <div>
+                <h2 style={{ marginBottom: '0.2rem' }}>{selectedManual.name}</h2>
+                {selectedManual.email && <p className="admin-email">{selectedManual.email}</p>}
+                <p className="admin-date">Added {new Date(selectedManual.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              </div>
+              <span className="admin-level-chip" style={{ fontSize: '0.8rem', opacity: 0.8 }}>Manual student</span>
+            </div>
 
-        <div className="admin-section">
-          <h3>English level</h3>
-          <div className="admin-access-row">
-            <select className="admin-access-select" value={editManualLevel}
-              onChange={e => setEditManualLevel(e.target.value)}>
-              <option value="">Not set</option>
-              <option value="elementary">Elementary</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-            </select>
-            <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
-              onClick={handleManualLevelSave}
-              disabled={editManualLevelSaving || editManualLevel === (selectedManual.english_level || '')}>
-              {editManualLevelSaving ? 'Saving…' : 'Save'}
-            </button>
-            {editManualLevelSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
-          </div>
-        </div>
+            <div className="admin-section">
+              <h3>English level</h3>
+              <div className="admin-access-row">
+                <select className="admin-access-select" value={editManualLevel}
+                  onChange={e => setEditManualLevel(e.target.value)}>
+                  <option value="">Not set</option>
+                  <option value="elementary">Elementary</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+                <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+                  onClick={handleManualLevelSave}
+                  disabled={editManualLevelSaving || editManualLevel === (selectedManual.english_level || '')}>
+                  {editManualLevelSaving ? 'Saving…' : 'Save'}
+                </button>
+                {editManualLevelSaved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved</span>}
+              </div>
+            </div>
 
-        {selectedManual.notes && (
-          <div className="admin-section">
-            <h3>Notes</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.65' }}>{selectedManual.notes}</p>
-          </div>
+            {selectedManual.notes && (
+              <div className="admin-section">
+                <h3>Notes</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.65' }}>{selectedManual.notes}</p>
+              </div>
+            )}
+
+            {/* Lesson plans for this manual student */}
+            <AdminStudentPlans student={selectedManual} isManual={true} onOpenPlan={openManualPlan} />
+          </>
         )}
-
-        <div className="admin-section">
-          <p className="flow-sub" style={{ fontSize: '0.88rem' }}>
-            This is a manually-added student — they don't have a login account yet.
-          </p>
-        </div>
       </div>
     )
   }
@@ -8441,6 +12260,21 @@ function AdminPanel({ user, onSignOut }) {
           </div>
           <AccessBadge level={selected.access_level} />
         </div>
+
+        {/* ── Prospect banner ── */}
+        {selected.access_level === 'prospect' && (
+          <div style={{ background: '#FDF6E0', border: '1px solid #e8d99a', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.2rem' }}>🎓 Prospect status</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>This student can only see their diagnostic test. Activate them to give full access.</div>
+            </div>
+            <button className="btn-gold" style={{ flexShrink: 0, padding: '0.5rem 1.25rem' }}
+              disabled={accessSaving}
+              onClick={() => handleAccessSave('approved')}>
+              {accessSaving ? 'Saving…' : '✓ Activate as student'}
+            </button>
+          </div>
+        )}
 
         {/* ── Access level management ── */}
         <div className="admin-section">
@@ -8536,11 +12370,23 @@ function AdminPanel({ user, onSignOut }) {
           </div>
         )}
 
-        {/* ── Exercises ── */}
-        <AdminStudentExercises student={selected} onReview={openStudentReview} />
-
-        {/* ── Lesson log ── */}
-        <AdminStudentLessons student={selected} adminUserId={user.id} />
+        {/* ── Lessons (single entry point — plan opens from within a lesson) ── */}
+        {adminOpenPlan ? (
+          <AdminStudentPlanView
+            plan={adminOpenPlan.plan}
+            studentId={adminOpenPlan.studentId}
+            studentName={adminOpenPlan.studentName}
+            adminUserId={user?.id}
+            adminEmail={ADMIN_EMAIL}
+            onBack={() => { setAdminOpenPlan(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          />
+        ) : (
+          <AdminStudentLessons
+            student={selected}
+            adminUserId={user.id}
+            onOpenPlan={(p) => { setAdminOpenPlan({ plan: p, studentId: selected.id, studentName: selected.name || selected.email }); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          />
+        )}
       </div>
     )
   }
@@ -8551,45 +12397,121 @@ function AdminPanel({ user, onSignOut }) {
 
   return (
     <div className="flow-card admin-panel">
+      {/* Dynamic theme injection */}
+      <style>{`
+        .admin-tabs { background: ${adminTheme.tabBarBg} !important; }
+        .admin-tab  { color: ${adminTheme.inactiveTabColor} !important; }
+        .admin-tab.active { background: ${adminTheme.activeTabBg} !important; color: ${adminTheme.activeTabColor} !important; }
+        .admin-tab--homepage { background: rgba(180,220,130,0.18) !important; }
+        .admin-tab--homepage.active { background: #eaf5d8 !important; color: #2a5010 !important; }
+        .admin-create-btn { background: ${adminTheme.tabBarBg} !important; border-color: ${adminTheme.tabBarBg} !important; color: #fff !important; }
+        .admin-create-btn:hover { filter: brightness(1.12) !important; }
+      `}</style>
+
       <div className="admin-header">
         <div>
           <h2>Admin panel</h2>
-          <p className="flow-sub">English with Dogukan</p>
         </div>
-        <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {/* Gear icon with attached dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button
+              title="Appearance settings"
+              onClick={() => setShowSettings(p => !p)}
+              style={{
+                background: showSettings ? '#FFFBF0' : 'none',
+                border: `1px solid ${showSettings ? '#e8d99a' : 'var(--border)'}`,
+                borderBottom: showSettings ? '1px solid #FFFBF0' : `1px solid var(--border)`,
+                borderRadius: showSettings ? '7px 7px 0 0' : '7px',
+                cursor: 'pointer', fontSize: '1.1rem', padding: '0.3rem 0.55rem',
+                lineHeight: 1, transition: 'background 0.15s',
+                position: 'relative', zIndex: 11,
+              }}>
+              ⚙️
+            </button>
+
+            {showSettings && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0,
+                background: '#FFFBF0', border: '1px solid #e8d99a',
+                borderRadius: '10px 0 10px 10px',
+                padding: '1rem 1.25rem', zIndex: 10,
+                width: '420px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                  <strong style={{ fontSize: '0.92rem' }}>Tab bar colour scheme</strong>
+                </div>
+                <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  {ADMIN_COLOR_SCHEMES.map((scheme, si) => {
+                    const isActive = adminTheme.tabBarBg === scheme.tabBarBg
+                    return (
+                      <button key={si} type="button"
+                        onClick={() => { setAdminTheme(scheme); try { localStorage.setItem('admin_theme', JSON.stringify(scheme)) } catch {} }}
+                        style={{
+                          border: `2px solid ${isActive ? '#1a2030' : 'transparent'}`,
+                          borderRadius: '10px', cursor: 'pointer', padding: '0', overflow: 'hidden',
+                          background: 'none', outline: 'none', flexShrink: 0,
+                          boxShadow: isActive ? '0 0 0 1px #1a2030' : '0 1px 4px rgba(0,0,0,0.15)',
+                        }}>
+                        {/* Mini tab bar preview */}
+                        <div style={{ background: scheme.tabBarBg, padding: '5px 8px 0', display: 'flex', gap: '3px', width: '110px' }}>
+                          <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: '4px 4px 0 0', padding: '3px 7px', fontSize: '9px', color: 'rgba(255,255,255,0.75)' }}>Tab</div>
+                          <div style={{ background: scheme.activeTabBg, borderRadius: '4px 4px 0 0', padding: '3px 7px', fontSize: '9px', color: scheme.activeTabColor, fontWeight: 700 }}>Active</div>
+                          <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: '4px 4px 0 0', padding: '3px 7px', fontSize: '9px', color: 'rgba(255,255,255,0.75)' }}>Tab</div>
+                        </div>
+                        <div style={{ background: '#fff', padding: '4px 8px', fontSize: '10px', fontWeight: isActive ? 700 : 400, color: '#1a2030', textAlign: 'center', fontFamily: 'inherit' }}>
+                          {scheme.name} {isActive && '✓'}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+                  Click a scheme to apply it instantly. Your choice is saved to the browser.
+                </p>
+
+                {/* Tab order */}
+                <div style={{ borderTop: '1px solid #e8d99a', marginTop: '0.85rem', paddingTop: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '0.6rem' }}>
+                    <strong style={{ fontSize: '0.85rem' }}>Tab order</strong>
+                    <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.18rem 0.5rem', marginLeft: 'auto' }}
+                      onClick={resetTabOrder}>↺ Reset order</button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {orderedTabs.map((tab, idx) => (
+                      <div key={tab.key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fff', border: '1px solid #e8d99a', borderRadius: '6px', padding: '0.28rem 0.6rem', fontSize: '0.82rem' }}>
+                        <span style={{ flex: 1 }}>{tab.label}</span>
+                        <button type="button" disabled={idx === 0}
+                          onClick={() => moveTab(idx, -1)}
+                          style={{ background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', opacity: idx === 0 ? 0.3 : 1, fontSize: '0.75rem', padding: '0.1rem 0.3rem' }}>▲</button>
+                        <button type="button" disabled={idx === orderedTabs.length - 1}
+                          onClick={() => moveTab(idx, 1)}
+                          style={{ background: 'none', border: 'none', cursor: idx === orderedTabs.length - 1 ? 'default' : 'pointer', opacity: idx === orderedTabs.length - 1 ? 0.3 : 1, fontSize: '0.75rem', padding: '0.1rem 0.3rem' }}>▼</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button className="btn-ghost" onClick={onSignOut}>Sign out</button>
+        </div>
       </div>
 
-      {/* Tab bar */}
+      {/* Tab bar — order controlled by settings */}
       <div className="admin-tabs">
-        <button className={`admin-tab ${adminTab === 'calendar' ? 'active' : ''}`}
-          onClick={() => setAdminTab('calendar')}>
-          📅 Calendar
-        </button>
-        <button className={`admin-tab ${adminTab === 'students' ? 'active' : ''}`}
-          onClick={() => setAdminTab('students')}>
-          👥 Students
-          {pendingCount > 0 && <span className="admin-tab-badge">{pendingCount}</span>}
-        </button>
-        <button className={`admin-tab ${adminTab === 'prospects' ? 'active' : ''}`}
-          onClick={() => setAdminTab('prospects')}>
-          🔍 Prospects
-          {prospectCount > 0 && <span className="admin-tab-badge">{prospectCount}</span>}
-        </button>
-        <button className={`admin-tab ${adminTab === 'stages' ? 'active' : ''}`}
-          onClick={() => setAdminTab('stages')}>
-          📝 Exercise Library
-        </button>
-        <button className={`admin-tab ${adminTab === 'plans' ? 'active' : ''}`}
-          onClick={() => setAdminTab('plans')}>
-          🗂 Lesson Plans
-        </button>
-        <button className={`admin-tab ${adminTab === 'books' ? 'active' : ''}`}
-          onClick={() => setAdminTab('books')}>
-          📖 Books
-        </button>
-        <button className={`admin-tab ${adminTab === 'referrals' ? 'active' : ''}`}
-          onClick={() => setAdminTab('referrals')}>
-          🎁 Referrals
+        {orderedTabs.map(tab => (
+          <button key={tab.key} className={`admin-tab ${adminTab === tab.key ? 'active' : ''}`}
+            onClick={() => setAdminTab(tab.key)}>
+            {tab.label}
+            {tab.badge === 'prospect' && prospectCount > 0 && <span className="admin-tab-badge">{prospectCount}</span>}
+            {tab.badge === 'pending'  && pendingCount  > 0 && <span className="admin-tab-badge">{pendingCount}</span>}
+          </button>
+        ))}
+        <button className={`admin-tab admin-tab--homepage ${adminTab === 'courses' ? 'active' : ''}`}
+          onClick={() => setAdminTab('courses')}>
+          🌐 Edit Home Page
         </button>
       </div>
 
@@ -8656,6 +12578,15 @@ function AdminPanel({ user, onSignOut }) {
         </div>
       )}
 
+      {/* Courses tab */}
+      {adminTab === 'courses' && <AdminCourses />}
+
+      {/* Levels tab */}
+      {adminTab === 'levels' && <AdminLevels />}
+
+      {/* Tests tab */}
+      {adminTab === 'tests' && <AdminTests adminUserId={user?.id} students={students} manualStudents={manualStudents} />}
+
       {/* Prospects tab */}
       {adminTab === 'prospects' && (
         <div style={{ marginTop: '1rem' }}>
@@ -8697,27 +12628,64 @@ function AdminPanel({ user, onSignOut }) {
                         </span>
                       </td>
                       <td style={{ padding: '0.55rem 0.75rem' }}>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          {p.status !== 'contacted' && (
-                            <button className="btn-ghost"
-                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
-                              onClick={() => handleProspectStatusChange(p, 'contacted')}>
-                              Mark contacted
+                        {assigningTestToProspect?.id === p.id ? (
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select value={prospectTestId} onChange={e => setProspectTestId(e.target.value)}
+                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.4rem', borderRadius: '5px', border: '1px solid var(--border)' }}>
+                              {TEST_DEFINITIONS.map(t => (
+                                <option key={t.id} value={t.id}>{t.label}</option>
+                              ))}
+                            </select>
+                            <button className="btn-gold" style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem' }}
+                              disabled={prospectTestSaving}
+                              onClick={() => handleAssignTestToProspect(p)}>
+                              {prospectTestSaving ? '…' : 'Assign'}
                             </button>
-                          )}
-                          {p.status !== 'declined' && (
-                            <button className="btn-ghost"
-                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#9ca3af' }}
-                              onClick={() => handleProspectStatusChange(p, 'declined')}>
-                              Decline
+                            <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                              onClick={() => setAssigningTestToProspect(null)}>Cancel</button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            {p.status !== 'contacted' && (
+                              <button className="btn-ghost"
+                                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                                onClick={() => handleProspectStatusChange(p, 'contacted')}>
+                                Mark contacted
+                              </button>
+                            )}
+                            {prospectTestLinks[p.id] ? (
+                              prospectTestSent[p.id] ? (
+                                <span style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#3B6D11', fontWeight: 600 }}>
+                                  ✉️ Test sent
+                                </span>
+                              ) : (
+                                <button className="btn-ghost"
+                                  style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: copiedProspectId === p.id ? '#3B6D11' : 'var(--gold)' }}
+                                  onClick={() => copyTestLink(prospectTestLinks[p.id], p.id)}>
+                                  {copiedProspectId === p.id ? '✓ Copied!' : '🔗 Copy test link'}
+                                </button>
+                              )
+                            ) : (
+                              <button className="btn-ghost"
+                                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                                onClick={() => { setAssigningTestToProspect(p); setProspectTestId('general_placement_v1') }}>
+                                📋 Assign test
+                              </button>
+                            )}
+                            {p.status !== 'declined' && (
+                              <button className="btn-ghost"
+                                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#9ca3af' }}
+                                onClick={() => handleProspectStatusChange(p, 'declined')}>
+                                Decline
+                              </button>
+                            )}
+                            <button className="btn-gold"
+                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem' }}
+                              onClick={() => handleConvertProspect(p)}>
+                              ✉️ Invite as student
                             </button>
-                          )}
-                          <button className="btn-gold"
-                            style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem' }}
-                            onClick={() => handleConvertProspect(p)}>
-                            Convert to student
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -8733,7 +12701,7 @@ function AdminPanel({ user, onSignOut }) {
         <div>
           {/* Add student button / form */}
           {!showAddStudentForm ? (
-            <div style={{ marginBottom: '1rem' }}>
+            <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
               <button className="btn-gold" style={{ fontSize: '0.88rem', padding: '0.55rem 1.1rem' }}
                 onClick={() => setShowAddStudentForm(true)}>
                 + Add student
@@ -8820,6 +12788,11 @@ function AdminPanel({ user, onSignOut }) {
                       <button key={s.id} className="admin-student-row" onClick={() => openStudent(s)}>
                         <div className="admin-student-info">
                           <strong>{s.name || 'Unknown'}</strong>
+                          {s.access_level === 'prospect' && (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#854F0B', background: '#FAEEDA', padding: '0.12rem 0.45rem', borderRadius: '20px', marginLeft: '0.4rem' }}>
+                              Prospect
+                            </span>
+                          )}
                           <span className="admin-student-email">{s.email}</span>
                         </div>
                         <div className="admin-student-meta">
