@@ -1030,7 +1030,9 @@ export async function assignLessonPlan({ planId, studentId, manualStudentId = nu
     // No exercises is OK — plan may have only non-exercise stages
   }
 
-  // 3. Create exercise_assignment rows (if exercises exist)
+  // 3. Create exercise_assignment rows (if exercises exist).
+  // Skipped gracefully if student_id isn't in auth.users (test/rehearsal accounts,
+  // or any profile not backed by a real auth user).
   if (exerciseList?.length) {
     const rows = exerciseList.map(pe => ({
       exercise_id:    pe.exercise_id,
@@ -1042,12 +1044,21 @@ export async function assignLessonPlan({ planId, studentId, manualStudentId = nu
       scheduled_at:   scheduledAt || null,
     }))
     const { error } = await supabase.from('exercise_assignments').insert(rows)
-    if (error) { console.error('[supabase] assignLessonPlan insert assignments:', error); return { error: error.message || error.code || 'Unknown error' } }
+    if (error) {
+      const isFkViolation = error.code === '23503' || (error.message || '').includes('student_id_fkey')
+      if (isFkViolation) {
+        // Student isn't a real auth user — skip exercise assignments silently.
+        console.warn('[supabase] assignLessonPlan: skipping exercise_assignments — student not in auth.users:', studentId)
+      } else {
+        console.error('[supabase] assignLessonPlan insert assignments:', error)
+        return { error: error.message || error.code || 'Unknown error' }
+      }
+    }
   }
 
-  // 4. Create a lesson row so the plan shows up in the student portal
+  // 4. Create a lesson row so the plan shows up in the student portal.
+  // Also skipped gracefully if the student isn't a real auth user.
   if (!skipLessonCreation) {
-    // Check if a lesson is already linked to this plan for this student
     const { data: existingLesson } = await supabase
       .from('lessons')
       .select('id')
@@ -1056,7 +1067,6 @@ export async function assignLessonPlan({ planId, studentId, manualStudentId = nu
       .limit(1)
 
     if (!existingLesson?.length) {
-      // Calculate next lesson number for this student
       const { data: lastLesson } = await supabase
         .from('lessons')
         .select('lesson_no')
@@ -1077,8 +1087,12 @@ export async function assignLessonPlan({ planId, studentId, manualStudentId = nu
           scheduled_at:   scheduledAt || null,
         })
       if (lessonErr) {
-        console.error('[supabase] assignLessonPlan create lesson:', lessonErr)
-        // Don't fail the whole operation if lesson creation fails
+        const isFkViolation = lessonErr.code === '23503' || (lessonErr.message || '').includes('student_id')
+        if (!isFkViolation) {
+          console.error('[supabase] assignLessonPlan create lesson:', lessonErr)
+        } else {
+          console.warn('[supabase] assignLessonPlan: skipping lesson row — student not in auth.users:', studentId)
+        }
       }
     }
   }
