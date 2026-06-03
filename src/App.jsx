@@ -722,6 +722,10 @@ function Navbar({ onBook, user, onAccount, onSignIn }) {
 
 // ─── Hero ─────────────────────────────────────────────────────
 function Hero({ onBook }) {
+  const [heroSrc, setHeroSrc] = useState('/hero.png')
+  useEffect(() => {
+    fetchSiteSetting('hero_photo').then(v => { if (v) setHeroSrc(v) })
+  }, [])
   return (
     <section className="hero-section">
       <div className="hero-inner">
@@ -747,7 +751,15 @@ function Hero({ onBook }) {
         <div className="hero-card">
           <div className="hero-teacher-card">
             <div className="hero-teacher-photo">
-              <img src="/hero.png" alt="Dogukan — English teacher" />
+              <img src={heroSrc} alt="Dogukan — English teacher"
+                onError={e => {
+                  e.target.style.display = 'none'
+                  e.target.parentNode.style.background = 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)'
+                  e.target.parentNode.style.display = 'flex'
+                  e.target.parentNode.style.alignItems = 'center'
+                  e.target.parentNode.style.justifyContent = 'center'
+                  e.target.parentNode.innerHTML = '<span style="font-size:5rem;opacity:0.4">👨‍🏫</span>'
+                }} />
             </div>
             <div className="hero-teacher-info">
               <p className="hero-teacher-name">Hi, I'm Dogukan 👋</p>
@@ -11796,12 +11808,29 @@ function AdminCourses() {
   const [saved,   setSaved]         = useState(false)
   const [editingCourse, setEditingCourse] = useState(null) // index or 'new'
   const [draft, setDraft]           = useState(null) // course being edited
+  const [heroPhoto,     setHeroPhoto]     = useState(null)
+  const [heroUploading, setHeroUploading] = useState(false)
+  const [heroSaved,     setHeroSaved]     = useState(false)
+  const heroInputRef = useRef(null)
 
   useEffect(() => {
     fetchSiteSetting('courses').then(data => {
       setCourses(Array.isArray(data) && data.length > 0 ? data : COURSES_DATA)
     })
+    fetchSiteSetting('hero_photo').then(v => { if (v) setHeroPhoto(v) })
   }, [])
+
+  const handleHeroUpload = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    e.target.value = ''
+    setHeroUploading(true)
+    try {
+      const compressed = await compressImage(file, 800)
+      const ok = await saveSiteSetting('hero_photo', compressed)
+      if (ok) { setHeroPhoto(compressed); setHeroSaved(true); setTimeout(() => setHeroSaved(false), 2500) }
+    } catch {}
+    setHeroUploading(false)
+  }
 
   const saveAll = async (updated) => {
     setSaving(true)
@@ -11975,6 +12004,28 @@ function AdminCourses() {
   // ── Course list ─────────────────────────────────────────────
   return (
     <div style={{ marginTop: '1rem' }}>
+
+      {/* ── Teacher photo ── */}
+      <div style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8f5ee', borderRadius: '10px', border: '1px solid var(--border)' }}>
+        <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.75rem' }}>📸 Teacher photo — shown on the homepage</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          {heroPhoto ? (
+            <img src={heroPhoto} alt="Teacher" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: '8px', border: '2px solid var(--border)' }} />
+          ) : (
+            <div style={{ width: 80, height: 80, borderRadius: '8px', background: 'linear-gradient(135deg,#dbeafe,#eff6ff)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', border: '2px dashed var(--border)' }}>👨‍🏫</div>
+          )}
+          <div>
+            <input ref={heroInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleHeroUpload} />
+            <button className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.45rem 1rem' }}
+              disabled={heroUploading} onClick={() => heroInputRef.current?.click()}>
+              {heroUploading ? 'Uploading…' : heroPhoto ? '🔄 Replace photo' : '⬆ Upload photo'}
+            </button>
+            {heroSaved && <span style={{ marginLeft: '0.75rem', fontSize: '0.85rem', color: '#3B6D11' }}>✓ Saved — live on homepage</span>}
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.35rem 0 0' }}>Recommended: portrait photo, at least 400×500px</p>
+          </div>
+        </div>
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Courses <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({courses.length})</span></h3>
         {saved && <span style={{ fontSize: '0.85rem', color: '#3B6D11' }}>✓ Saved</span>}
@@ -12879,6 +12930,11 @@ function AdminPanel({ user, onSignOut }) {
           <div className="admin-section">
             <p className="flow-sub" style={{ fontSize: '0.88rem' }}>No questionnaire completed yet.</p>
           </div>
+        )}
+
+        {/* ── Exercise assignments ── */}
+        {!adminOpenPlan && (
+          <AdminStudentExercises student={selected} onReview={openStudentReview} />
         )}
 
         {/* ── Lessons (single entry point — plan opens from within a lesson) ── */}
