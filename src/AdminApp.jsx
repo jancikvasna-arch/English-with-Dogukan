@@ -3826,6 +3826,18 @@ export function LessonStageBuilder({
     setStageGroups(p => p.map(g => g.number === num ? { ...g, items: [...g.items, item] } : g))
   const removeItemFromGroup = (num, itemId) =>
     setStageGroups(p => p.map(g => g.number === num ? { ...g, items: g.items.filter(i => i.id !== itemId) } : g))
+  // Reorder an exercise within its stage group (dir: -1 = up, +1 = down)
+  const moveItemInGroup = (num, itemId, dir) =>
+    setStageGroups(p => p.map(g => {
+      if (g.number !== num) return g
+      const idx = g.items.findIndex(i => i.id === itemId)
+      if (idx < 0) return g
+      const j = idx + dir
+      if (j < 0 || j >= g.items.length) return g
+      const items = [...g.items]
+      ;[items[idx], items[j]] = [items[j], items[idx]]
+      return { ...g, items }
+    }))
   const moveStageUp = (num) => {
     setStageGroups(prev => {
       const idx = prev.findIndex(g => g.number === num)
@@ -4082,7 +4094,7 @@ export function LessonStageBuilder({
               </p>
             ) : (
               <div className="plan-stage-items">
-                {group.items.map(item => {
+                {group.items.map((item, itemIdx) => {
                   const def = STAGE_TYPES.find(t => t.value === item.type) || { icon: '✏️', label: 'Exercise' }
                   const exFull = exercises.find(e => e.id === item.exerciseId)
                   const book   = exFull?.book_id ? books.find(b => b.id === exFull.book_id) : null
@@ -4123,6 +4135,16 @@ export function LessonStageBuilder({
                           <span className="plan-stage-item-title">
                             {item.exerciseTitle || item.title || <em style={{ color: 'var(--text-muted)' }}>No title</em>}
                           </span>
+                          {group.items.length > 1 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginRight: '0.3rem', flexShrink: 0 }}>
+                              <button type="button" title="Move up" disabled={itemIdx === 0}
+                                onClick={() => moveItemInGroup(group.number, item.id, -1)}
+                                style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(0,0,0,0.14)', borderRadius: '4px', cursor: itemIdx === 0 ? 'default' : 'pointer', fontSize: '0.55rem', lineHeight: 1, padding: '2px 6px', color: 'var(--text-muted)', opacity: itemIdx === 0 ? 0.35 : 1 }}>▲</button>
+                              <button type="button" title="Move down" disabled={itemIdx === group.items.length - 1}
+                                onClick={() => moveItemInGroup(group.number, item.id, 1)}
+                                style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(0,0,0,0.14)', borderRadius: '4px', cursor: itemIdx === group.items.length - 1 ? 'default' : 'pointer', fontSize: '0.55rem', lineHeight: 1, padding: '2px 6px', color: 'var(--text-muted)', opacity: itemIdx === group.items.length - 1 ? 0.35 : 1 }}>▼</button>
+                            </div>
+                          )}
                           <button type="button" className="plan-stage-item-remove"
                             onClick={() => removeItemFromGroup(group.number, item.id)}>✕</button>
                         </div>
