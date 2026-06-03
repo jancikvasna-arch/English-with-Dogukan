@@ -11713,9 +11713,27 @@ function AdminLevels() {
     setEditingId(null)
   }
 
+  const downloadBackup = () => {
+    const data = JSON.stringify(courses, null, 2)
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `courses-backup-${new Date().toISOString().slice(0,10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div style={{ marginTop: '1rem' }}>
-      <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.85rem' }}>Courses</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Courses</h3>
+        {courses.length > 0 && (
+          <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }} onClick={downloadBackup}>
+            ⬇ Download backup
+          </button>
+        )}
+      </div>
       <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
         Define the courses you teach. These appear as options when creating lesson plans and exercises.
       </p>
