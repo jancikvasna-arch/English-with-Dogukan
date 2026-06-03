@@ -722,6 +722,26 @@ export async function fetchMyLessons(userId) {
   return data ?? []
 }
 
+/** Student: fetch a single lesson plan (with stages) they have access to.
+ *  Fallback for when the lessons embed doesn't include the plan. */
+export async function fetchLessonPlanForStudent(planId) {
+  if (!supabase || !planId) return null
+  const { data, error } = await supabase
+    .from('lesson_plans')
+    .select(`
+      id, title, description,
+      lesson_stages (
+        id, order_index, stage_number, stage_name, stage_type, title,
+        duration_minutes, exercise_id, content_text, audio_url, content_images, section,
+        exercises ( id, title, description, audio_url, context_text, context_images, course )
+      )
+    `)
+    .eq('id', planId)
+    .single()
+  if (error) { console.error('[supabase] fetchLessonPlanForStudent:', error); return null }
+  return data
+}
+
 /** Student: submit feedback on a lesson. */
 export async function submitLessonFeedback(lessonId, feedback) {
   if (!supabase) return false

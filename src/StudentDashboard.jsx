@@ -1,6 +1,6 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import { useState, useEffect } from 'react'
-import { addVocabularyWord, checkAndAwardBadges, deleteVocabularyWord, fetchBadgeDefinitions, fetchExerciseWithQuestions, fetchMyAnswersForAssignment, fetchMyExercises, fetchMyLessons, fetchMyProfile, fetchMyReferralCode, fetchMyReferrals, fetchMyTestAssignments, fetchMyVocabulary, fetchNextLesson, fetchQuestionsForReview, fetchQuestionsForStudent, fetchStudentBadges, startLessonPlanExercise, supabase, updateMyName } from './lib/supabase'
+import { addVocabularyWord, checkAndAwardBadges, deleteVocabularyWord, fetchBadgeDefinitions, fetchExerciseWithQuestions, fetchLessonPlanForStudent, fetchMyAnswersForAssignment, fetchMyExercises, fetchMyLessons, fetchMyProfile, fetchMyReferralCode, fetchMyReferrals, fetchMyTestAssignments, fetchMyVocabulary, fetchNextLesson, fetchQuestionsForReview, fetchQuestionsForStudent, fetchStudentBadges, startLessonPlanExercise, supabase, updateMyName } from './lib/supabase'
 import { STAGE_TYPES } from './lib/shared'
 import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, ExercisePlayer, InlineExerciseContent, NotesSection, StudentSubmissionReview, TestPlayer } from './ExerciseComponents.jsx'
 import { PlacementTestFrame } from './PublicPages.jsx'
@@ -83,6 +83,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
   // Inline exercise player state
   const [inlineOpenIds,    setInlineOpenIds]    = useState(new Set())   // stageIds with inline player open
   const [inlinePlayerData, setInlinePlayerData] = useState({})          // stageId → { exercise, assignment }
+  const [openingLessonId,  setOpeningLessonId]  = useState(null)        // lesson id being opened
   const [myTestAssignments, setMyTestAssignments] = useState([])
   const [activeTest,        setActiveTest]        = useState(null) // assignment obj
 
@@ -217,6 +218,18 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
 
   const closeInlineExercise = (stageId) =>
     setInlineOpenIds(prev => { const n = new Set(prev); n.delete(stageId); return n })
+
+  // Open a lesson's linked plan. Uses the embedded plan when present,
+  // otherwise fetches it by lesson_plan_id (covers cases where the embed is empty).
+  const openLesson = async (lesson) => {
+    if (lesson.lesson_plans) { setActivePlan(lesson.lesson_plans); return }
+    if (!lesson.lesson_plan_id) return
+    setOpeningLessonId(lesson.id)
+    const plan = await fetchLessonPlanForStudent(lesson.lesson_plan_id)
+    setOpeningLessonId(null)
+    if (plan) setActivePlan(plan)
+    else alert("This lesson's content isn't available yet. Please check with Dogukan.")
+  }
 
   // Legacy full-screen exercise open (kept for non-plan assignments)
   const openPlanExercise = async (planId, exerciseId) => {
@@ -837,10 +850,10 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                               )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end' }}>
-                              {plan ? (
+                              {(plan || l.lesson_plan_id) ? (
                                 <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.35rem 0.8rem', whiteSpace: 'nowrap' }}
-                                  onClick={() => setActivePlan(plan)}>
-                                  📋 Open lesson →
+                                  onClick={() => openLesson(l)} disabled={openingLessonId === l.id}>
+                                  {openingLessonId === l.id ? 'Opening…' : '▶ Start Lesson →'}
                                 </button>
                               ) : !hasDate ? (
                                 <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.8rem', whiteSpace: 'nowrap' }}
