@@ -4795,7 +4795,7 @@ function AdminLessonStages({ adminUserId }) {
           ? pageFiltered.filter(ex => (ex.section || '').toLowerCase().includes(filterSection.trim().toLowerCase()))
           : pageFiltered
         const courseFiltered = filterCourse
-          ? sectionFiltered.filter(ex => ex.level === filterCourse)
+          ? sectionFiltered.filter(ex => ex.course === filterCourse)
           : sectionFiltered
         const filteredExercises = filterLabelIds.length === 0
           ? courseFiltered
@@ -11679,21 +11679,24 @@ function AdminLevels() {
   const STORAGE_KEY = 'admin_courses_v1'
   const [courses, setCourses] = useState(() => {
     try {
-      // Migrate from old levels if needed
       const newData = localStorage.getItem('admin_courses_v1')
       if (newData) return JSON.parse(newData)
       const oldData = localStorage.getItem('admin_levels_v1')
       if (oldData) {
-        const migrated = JSON.parse(oldData).map(l => ({ id: l.id, name: l.name }))
+        const migrated = JSON.parse(oldData).map(l => ({ id: l.id, name: l.name, books: [] }))
         localStorage.setItem('admin_courses_v1', JSON.stringify(migrated))
         return migrated
       }
       return []
     } catch { return [] }
   })
-  const [newName, setNewName] = useState('')
-  const [editingId, setEditingId] = useState(null)
-  const [editName, setEditName] = useState('')
+  const [newName, setNewName]           = useState('')
+  const [editingId, setEditingId]       = useState(null)
+  const [editName, setEditName]         = useState('')
+  const [expandedId, setExpandedId]     = useState(null)
+  // book form state per course
+  const [bookForm, setBookForm]         = useState({}) // { [courseId]: {name, edition, thumbnail} }
+  const [bookThumbLoading, setBookThumbLoading] = useState({})
 
   const persist = (next) => {
     setCourses(next)
@@ -11702,7 +11705,7 @@ function AdminLevels() {
 
   const addCourse = () => {
     if (!newName.trim()) return
-    persist([...courses, { id: crypto.randomUUID(), name: newName.trim() }])
+    persist([...courses, { id: crypto.randomUUID(), name: newName.trim(), books: [] }])
     setNewName('')
   }
 
@@ -11711,6 +11714,34 @@ function AdminLevels() {
   const saveEdit = (id) => {
     persist(courses.map(c => c.id === id ? { ...c, name: editName } : c))
     setEditingId(null)
+  }
+
+  // ── Book helpers ──
+  const getBookForm = (cid) => bookForm[cid] || { name: '', edition: '', thumbnail: null }
+  const setBookField = (cid, field, val) =>
+    setBookForm(prev => ({ ...prev, [cid]: { ...getBookForm(cid), [field]: val } }))
+
+  const handleBookThumb = async (cid, e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    e.target.value = ''
+    setBookThumbLoading(prev => ({ ...prev, [cid]: true }))
+    try {
+      const compressed = await compressImage(file, 300)
+      setBookField(cid, 'thumbnail', compressed)
+    } catch {}
+    finally { setBookThumbLoading(prev => ({ ...prev, [cid]: false })) }
+  }
+
+  const addBook = (cid) => {
+    const f = getBookForm(cid)
+    if (!f.name.trim()) return
+    const newBook = { id: crypto.randomUUID(), name: f.name.trim(), edition: f.edition.trim(), thumbnail: f.thumbnail || null }
+    persist(courses.map(c => c.id === cid ? { ...c, books: [...(c.books || []), newBook] } : c))
+    setBookForm(prev => ({ ...prev, [cid]: { name: '', edition: '', thumbnail: null } }))
+  }
+
+  const deleteBook = (cid, bid) => {
+    persist(courses.map(c => c.id === cid ? { ...c, books: (c.books || []).filter(b => b.id !== bid) } : c))
   }
 
   const downloadBackup = () => {
@@ -11735,7 +11766,7 @@ function AdminLevels() {
         )}
       </div>
       <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-        Define the courses you teach. These appear as options when creating lesson plans and exercises.
+        Define the courses you teach. These appear as options when creating lesson plans and exercises. You can optionally add books to each course.
       </p>
 
       {/* Add new course */}
@@ -11759,23 +11790,96 @@ function AdminLevels() {
       {courses.length === 0 ? (
         <div className="dashboard-empty"><p>No courses yet.</p></div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          {courses.map(c => (
-            editingId === c.id ? (
-              <div key={c.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--gold)', borderRadius: '8px', padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                  style={{ flex: 1 }} autoFocus />
-                <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => saveEdit(c.id)}>Save</button>
-                <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
-              </div>
-            ) : (
-              <div key={c.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</span>
-                <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.25rem 0.6rem' }} onClick={() => startEdit(c)}>Edit</button>
-                <button className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.25rem 0.6rem', color: '#e05c5c' }} onClick={() => deleteCourse(c.id)}>Delete</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+          {courses.map(c => {
+            const books = c.books || []
+            const isExpanded = expandedId === c.id
+            const bf = getBookForm(c.id)
+            return (
+              <div key={c.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
+                {/* Course header row */}
+                {editingId === c.id ? (
+                  <div style={{ padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center', borderBottom: isExpanded ? '1px solid var(--border)' : 'none' }}>
+                    <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
+                      style={{ flex: 1 }} autoFocus />
+                    <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => saveEdit(c.id)}>Save</button>
+                    <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <div style={{ padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</span>
+                    <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }}
+                      onClick={() => setExpandedId(isExpanded ? null : c.id)}>
+                      📚 Books {books.length > 0 ? `(${books.length})` : ''} {isExpanded ? '▲' : '▼'}
+                    </button>
+                    <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }} onClick={() => startEdit(c)}>Edit</button>
+                    <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem', color: '#e05c5c' }} onClick={() => deleteCourse(c.id)}>Delete</button>
+                  </div>
+                )}
+
+                {/* Books section (expandable) */}
+                {isExpanded && (
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '0.85rem', background: 'rgba(0,0,0,0.02)' }}>
+
+                    {/* Existing books */}
+                    {books.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+                        {books.map(b => (
+                          <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+                            {b.thumbnail && (
+                              <img src={b.thumbnail} alt="" style={{ width: '40px', height: '52px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0 }} />
+                            )}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{b.name}</div>
+                              {b.edition && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{b.edition}</div>}
+                            </div>
+                            <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: '#e05c5c', flexShrink: 0 }}
+                              onClick={() => deleteBook(c.id, b.id)}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add book form */}
+                    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.75rem' }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.6rem', color: 'var(--text-muted)' }}>+ ADD BOOK</div>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <input type="text" placeholder="Book name *" value={bf.name}
+                          onChange={e => setBookField(c.id, 'name', e.target.value)}
+                          style={{ flex: 2, fontSize: '0.85rem' }} />
+                        <input type="text" placeholder="Edition (optional)" value={bf.edition}
+                          onChange={e => setBookField(c.id, 'edition', e.target.value)}
+                          style={{ flex: 1, fontSize: '0.85rem' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {/* Thumbnail upload */}
+                        <label style={{ cursor: 'pointer', flexShrink: 0 }}>
+                          <input type="file" accept="image/*" style={{ display: 'none' }}
+                            onChange={e => handleBookThumb(c.id, e)} />
+                          {bf.thumbnail ? (
+                            <img src={bf.thumbnail} alt="" style={{ width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border)' }} />
+                          ) : (
+                            <span className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', display: 'inline-block' }}>
+                              {bookThumbLoading[c.id] ? '⏳' : '📷 Cover'}
+                            </span>
+                          )}
+                        </label>
+                        {bf.thumbnail && (
+                          <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.45rem', color: '#e05c5c' }}
+                            onClick={() => setBookField(c.id, 'thumbnail', null)}>✕</button>
+                        )}
+                        <div style={{ flex: 1 }} />
+                        <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.85rem' }}
+                          disabled={!bf.name.trim()} onClick={() => addBook(c.id)}>
+                          Add book
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )
-          ))}
+          })}
         </div>
       )}
     </div>

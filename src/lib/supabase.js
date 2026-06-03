@@ -866,8 +866,11 @@ export async function duplicateLessonPlan(planId, createdBy) {
 /** Permanently delete a lesson plan (cascades to lesson_stages via FK). */
 export async function deleteLessonPlan(planId) {
   if (!supabase) return false
-  // Delete stages first to avoid FK constraint issues
+  // Clear all FK references before deleting the plan
+  await supabase.from('lesson_plan_exercises').delete().eq('lesson_plan_id', planId)
   await supabase.from('lesson_stages').delete().eq('lesson_plan_id', planId)
+  // Null out lesson_plan_id on historical lessons (don't delete the lesson history)
+  await supabase.from('lessons').update({ lesson_plan_id: null }).eq('lesson_plan_id', planId)
   const { error } = await supabase.from('lesson_plans').delete().eq('id', planId)
   if (error) { console.error('[supabase] deleteLessonPlan:', error); return false }
   return true
