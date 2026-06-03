@@ -382,27 +382,28 @@ export async function reviewWriting(resultId, notes) {
 // ─── Exercise Builder ─────────────────────────────────────────
 
 /** Create a new exercise with all its questions in one shot. */
-export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level }, questions) {
+export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level, contextImageSettings }, questions) {
   if (!supabase) return null
   const exerciseId = crypto.randomUUID()
   const { error: exErr } = await supabase.from('exercises').insert({
-    id:                exerciseId,
+    id:                       exerciseId,
     title,
-    description:       description    || null,
-    course:            course         || null,
-    lesson_no:         lessonNo       || null,
-    context_images:    contextImages?.length ? contextImages : null,
-    context_text:      contextText    || null,
-    audio_url:         audioUrl       || null,
-    estimated_minutes: estimatedMinutes || null,
-    stage_type:        stageType ?? 'controlled_exercise',
-    book_id:           bookId         || null,
-    unit:              unit           || null,
-    page:              page           || null,
-    section:           section        || null,
-    exercise_no:       exerciseNo     || null,
-    thumbnail:         thumbnail      || null,
-    level:             level          || null,
+    description:              description          || null,
+    course:                   course               || null,
+    lesson_no:                lessonNo             || null,
+    context_images:           contextImages?.length ? contextImages : null,
+    context_image_settings:   contextImageSettings?.length ? contextImageSettings : null,
+    context_text:             contextText          || null,
+    audio_url:                audioUrl             || null,
+    estimated_minutes:        estimatedMinutes     || null,
+    stage_type:               stageType ?? 'controlled_exercise',
+    book_id:                  bookId               || null,
+    unit:                     unit                 || null,
+    page:                     page                 || null,
+    section:                  section              || null,
+    exercise_no:              exerciseNo           || null,
+    thumbnail:                thumbnail            || null,
+    level:                    level                || null,
   })
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
@@ -445,23 +446,24 @@ export async function fetchExerciseWithQuestions(exerciseId) {
 }
 
 /** Update an existing exercise and replace all its questions. */
-export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level }, questions) {
+export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level, contextImageSettings }, questions) {
   if (!supabase) return null
   const { error: exErr } = await supabase.from('exercises').update({
     title,
-    description:       description    || null,
-    context_images:    contextImages?.length ? contextImages : null,
-    context_text:      contextText    || null,
-    audio_url:         audioUrl       || null,
-    estimated_minutes: estimatedMinutes || null,
-    stage_type:        stageType ?? 'controlled_exercise',
-    book_id:           bookId         || null,
-    unit:              unit           || null,
-    page:              page           || null,
-    section:           section        || null,
-    exercise_no:       exerciseNo     || null,
-    thumbnail:         thumbnail      || null,
-    level:             level          || null,
+    description:              description          || null,
+    context_images:           contextImages?.length ? contextImages : null,
+    context_image_settings:   contextImageSettings?.length ? contextImageSettings : null,
+    context_text:             contextText          || null,
+    audio_url:                audioUrl             || null,
+    estimated_minutes:        estimatedMinutes     || null,
+    stage_type:               stageType ?? 'controlled_exercise',
+    book_id:                  bookId               || null,
+    unit:                     unit                 || null,
+    page:                     page                 || null,
+    section:                  section              || null,
+    exercise_no:              exerciseNo           || null,
+    thumbnail:                thumbnail            || null,
+    level:                    level                || null,
   }).eq('id', exerciseId)
   if (exErr) { console.error('[supabase] updateExercise:', exErr); return null }
 

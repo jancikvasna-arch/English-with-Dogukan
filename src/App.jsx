@@ -1896,85 +1896,233 @@ function getWeeklyProgress(assignments) {
 }
 
 // ─── AnnotatedImage ──────────────────────────────────────────
-// Wraps an image with an SVG overlay for drawing circles/ovals.
+// Wraps an image with an SVG overlay for drawing circles/ovals and arrow lines.
 // Annotations are session-only (not persisted).
-function AnnotatedImage({ src, alt = '' }) {
-  const wrapRef = useRef(null)
-  const [annotations, setAnnotations] = useState([]) // [{cx,cy,rx,ry} in %]
-  const [drawing, setDrawing] = useState(null)       // {sx,sy} start of current drag
-  const [mode, setMode] = useState(false)            // true = drawing mode active
+
+const CIRCLE_COLORS = [
+  { name: 'Red',   hex: '#dc2626' },
+  { name: 'Green', hex: '#16a34a' },
+  { name: 'Blue',  hex: '#2563eb' },
+  { name: 'Black', hex: '#1a1a1a' },
+]
+const LINE_COLORS = [
+  '#ef4444','#3b82f6','#22c55e','#f97316',
+  '#a855f7','#eab308','#ec4899','#14b8a6',
+  '#6366f1','#92400e',
+]
+const LINE_THICKNESSES = [
+  { label: 'Thin',  px: 1.5 },
+  { label: 'Med',   px: 3   },
+  { label: 'Thick', px: 5   },
+]
+
+function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnabled = true }) {
+  const wrapRef    = useRef(null)
+  const instanceId = useRef(`ai${Math.random().toString(36).slice(2,7)}`).current
+
+  // ── Circle state ──────────────────────────────────────────
+  const [circles,       setCircles]       = useState([])   // [{cx,cy,rx,ry,color}] in %
+  const [circleDrawing, setCircleDrawing] = useState(null)  // {sx,sy,cx,cy}
+  const [circleMode,    setCircleMode]    = useState(false)
+  const [circleColor,   setCircleColor]   = useState('#dc2626')
+
+  // ── Line state ────────────────────────────────────────────
+  const [lines,     setLines]     = useState([])  // [{x1,y1,x2,y2,color,thickness}] in %
+  const [lineMode,  setLineMode]  = useState(false)
+  const [lineStart, setLineStart] = useState(null) // {x,y} first click
+  const [lineMouse, setLineMouse] = useState(null) // current hover pos for preview
+  const [lineThick, setLineThick] = useState(3)
+  const justDrewRef = useRef(false)
+
+  const activeMode     = circleMode ? 'circle' : lineMode ? 'line' : null
+  const nextLineColor  = LINE_COLORS[lines.length % LINE_COLORS.length]
 
   const pct = (e) => {
     const r = wrapRef.current.getBoundingClientRect()
     return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 }
   }
 
-  const onDown = (e) => {
-    if (!mode || e.button !== 0) return
+  const toggleCircle = () => { setCircleMode(m => !m); setLineMode(false); setLineStart(null) }
+  const toggleLine   = () => { setLineMode(m => !m);   setCircleMode(false); setCircleDrawing(null) }
+
+  const onMouseDown = (e) => {
+    if (!circleMode || e.button !== 0) return
     e.preventDefault()
     const p = pct(e)
-    setDrawing({ sx: p.x, sy: p.y, cx: p.x, cy: p.y })
+    setCircleDrawing({ sx: p.x, sy: p.y, cx: p.x, cy: p.y })
   }
-  const onMove = (e) => {
-    if (!drawing) return
+  const onMouseMove = (e) => {
     const p = pct(e)
-    setDrawing(d => ({ ...d, cx: p.x, cy: p.y }))
+    if (circleMode && circleDrawing) setCircleDrawing(d => ({ ...d, cx: p.x, cy: p.y }))
+    if (lineMode) setLineMouse(p)
   }
-  const onUp = (e) => {
-    if (!drawing) return
-    const rx = Math.abs(drawing.cx - drawing.sx) / 2
-    const ry = Math.abs(drawing.cy - drawing.sy) / 2
+  const onMouseUp = (e) => {
+    if (!circleMode || !circleDrawing) return
+    const rx = Math.abs(circleDrawing.cx - circleDrawing.sx) / 2
+    const ry = Math.abs(circleDrawing.cy - circleDrawing.sy) / 2
     if (rx > 0.5 && ry > 0.5) {
-      const cx = (drawing.sx + drawing.cx) / 2
-      const cy = (drawing.sy + drawing.cy) / 2
-      setAnnotations(prev => [...prev, { cx, cy, rx, ry }])
+      setCircles(prev => [...prev, {
+        cx: (circleDrawing.sx + circleDrawing.cx) / 2,
+        cy: (circleDrawing.sy + circleDrawing.cy) / 2,
+        rx, ry, color: circleColor,
+      }])
+      justDrewRef.current = true
     }
-    setDrawing(null)
+    setCircleDrawing(null)
+  }
+  const onClick = (e) => {
+    if (justDrewRef.current) { justDrewRef.current = false; return }
+    if (!lineMode) return
+    const p = pct(e)
+    if (!lineStart) {
+      setLineStart(p)
+    } else {
+      const color = LINE_COLORS[lines.length % LINE_COLORS.length]
+      setLines(prev => [...prev, { x1: lineStart.x, y1: lineStart.y, x2: p.x, y2: p.y, color, thickness: lineThick }])
+      setLineStart(null)
+    }
   }
 
-  const previewEllipse = drawing ? {
-    cx: (drawing.sx + drawing.cx) / 2,
-    cy: (drawing.sy + drawing.cy) / 2,
-    rx: Math.abs(drawing.cx - drawing.sx) / 2,
-    ry: Math.abs(drawing.cy - drawing.sy) / 2,
+  const previewEll = circleDrawing ? {
+    cx: (circleDrawing.sx + circleDrawing.cx) / 2,
+    cy: (circleDrawing.sy + circleDrawing.cy) / 2,
+    rx: Math.abs(circleDrawing.cx - circleDrawing.sx) / 2,
+    ry: Math.abs(circleDrawing.cy - circleDrawing.sy) / 2,
   } : null
+
+  const hasAnnotations = circles.length > 0 || lines.length > 0
+  const annTbBtn = (active, ac = '#dc2626', abg = '#fee2e2') => ({
+    fontSize: '0.75rem', padding: '0.22rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
+    border: `1.5px solid ${active ? ac : 'var(--border)'}`,
+    background: active ? abg : 'var(--bg-card)',
+    color: active ? ac : 'var(--text-muted)', fontFamily: 'inherit',
+  })
 
   return (
     <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.3rem', alignItems: 'center' }}>
-        <button type="button" onClick={() => setMode(m => !m)}
-          style={{ fontSize: '0.75rem', padding: '0.22rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
-            border: `1.5px solid ${mode ? '#dc2626' : 'var(--border)'}`,
-            background: mode ? '#fee2e2' : 'var(--bg-card)', color: mode ? '#dc2626' : 'var(--text-muted)',
-            fontFamily: 'inherit' }}>
-          {mode ? '⭕ Drawing — click to stop' : '⭕ Draw circle'}
-        </button>
-        {annotations.length > 0 && (
-          <button type="button" onClick={() => setAnnotations([])}
-            style={{ fontSize: '0.75rem', padding: '0.22rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
-              border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>
+      {/* ── Toolbar ── */}
+      <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
+
+        {/* Circle tools */}
+        {circlesEnabled && (<>
+          <button type="button" onClick={toggleCircle} style={annTbBtn(circleMode, '#dc2626', '#fee2e2')}>
+            {circleMode ? '⭕ Drawing — click to stop' : '⭕ Draw circle'}
+          </button>
+          {/* Circle color swatches */}
+          <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+            {CIRCLE_COLORS.map(c => (
+              <button key={c.hex} type="button" title={c.name} onClick={() => setCircleColor(c.hex)}
+                style={{ width: 15, height: 15, borderRadius: '50%', padding: 0, cursor: 'pointer',
+                  background: c.hex, outline: 'none', flexShrink: 0,
+                  border: circleColor === c.hex ? '2.5px solid #fff' : '2px solid transparent',
+                  boxShadow: circleColor === c.hex ? `0 0 0 2px ${c.hex}` : 'none' }} />
+            ))}
+          </div>
+        </>)}
+
+        {/* Divider */}
+        {circlesEnabled && linesEnabled && (
+          <span style={{ color: 'var(--border)', fontSize: '0.9rem', userSelect: 'none' }}>│</span>
+        )}
+
+        {/* Line tools */}
+        {linesEnabled && (<>
+          <button type="button" onClick={toggleLine} style={annTbBtn(lineMode, '#2563eb', '#eff6ff')}>
+            {lineMode ? (lineStart ? '🏹 Click endpoint…' : '🏹 Click start…') : '🏹 Draw line'}
+          </button>
+          {/* Thickness picker */}
+          {LINE_THICKNESSES.map(t => (
+            <button key={t.px} type="button" title={`${t.label} line`}
+              onClick={() => setLineThick(t.px)}
+              style={annTbBtn(lineThick === t.px, '#2563eb', '#eff6ff')}>
+              {t.label}
+            </button>
+          ))}
+          {/* Next-line color preview dot */}
+          {lineMode && (
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: nextLineColor,
+              display: 'inline-block', flexShrink: 0 }} title="Next line colour" />
+          )}
+        </>)}
+
+        {/* Clear all */}
+        {hasAnnotations && (
+          <button type="button" style={{ ...annTbBtn(false), marginLeft: 'auto' }}
+            onClick={() => { setCircles([]); setLines([]); setLineStart(null) }}>
             ✕ Clear all
           </button>
         )}
       </div>
-      {/* Image + SVG overlay */}
-      <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block', maxWidth: '100%',
-        cursor: mode ? 'crosshair' : 'default' }}
-        onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={() => setDrawing(null)}>
+
+      {/* Status hint */}
+      {lineMode && lineStart && (
+        <p style={{ fontSize: '0.71rem', color: '#2563eb', margin: '0 0 0.25rem', fontStyle: 'italic' }}>
+          ● Start point set — now click the endpoint on the image
+        </p>
+      )}
+
+      {/* ── Image + SVG overlay ── */}
+      <div ref={wrapRef}
+        style={{ position: 'relative', display: 'inline-block', maxWidth: '100%',
+          cursor: circleMode ? 'crosshair' : lineMode ? 'cell' : 'default' }}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
+        onClick={onClick}
+        onMouseLeave={() => { setCircleDrawing(null); setLineMouse(null) }}>
         <img src={src} alt={alt} style={{ display: 'block', maxWidth: '100%', userSelect: 'none' }} draggable={false} />
-        <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: mode ? 'none' : 'all' }}>
-          {annotations.map((a, i) => (
-            <ellipse key={i} cx={`${a.cx}%`} cy={`${a.cy}%`} rx={`${a.rx}%`} ry={`${a.ry}%`}
-              fill="none" stroke="#dc2626" strokeWidth="2.5"
-              style={{ cursor: 'pointer' }}
-              onClick={() => !mode && setAnnotations(prev => prev.filter((_, j) => j !== i))} />
+        <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          overflow: 'visible', pointerEvents: activeMode ? 'none' : 'all' }}>
+          <defs>
+            {LINE_COLORS.map(c => {
+              const mid = `${instanceId}-${c.replace('#','')}`
+              return (
+                <marker key={mid} id={mid} markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill={c} />
+                </marker>
+              )
+            })}
+          </defs>
+
+          {/* Circles */}
+          {circles.map((a, i) => (
+            <ellipse key={`c${i}`}
+              cx={`${a.cx}%`} cy={`${a.cy}%`} rx={`${a.rx}%`} ry={`${a.ry}%`}
+              fill="none" stroke={a.color} strokeWidth="2.5"
+              style={{ cursor: activeMode ? 'default' : 'pointer' }}
+              onClick={() => !activeMode && setCircles(p => p.filter((_, j) => j !== i))} />
           ))}
-          {previewEllipse && (
-            <ellipse cx={`${previewEllipse.cx}%`} cy={`${previewEllipse.cy}%`}
-              rx={`${previewEllipse.rx}%`} ry={`${previewEllipse.ry}%`}
-              fill="none" stroke="#dc2626" strokeWidth="2.5" strokeDasharray="6 3" />
+          {previewEll && (
+            <ellipse cx={`${previewEll.cx}%`} cy={`${previewEll.cy}%`}
+              rx={`${previewEll.rx}%`} ry={`${previewEll.ry}%`}
+              fill="none" stroke={circleColor} strokeWidth="2.5" strokeDasharray="6 3" />
           )}
+
+          {/* Lines */}
+          {lines.map((l, i) => {
+            const mid = `${instanceId}-${l.color.replace('#','')}`
+            return (
+              <g key={`l${i}`} style={{ cursor: activeMode ? 'default' : 'pointer' }}
+                onClick={() => !activeMode && setLines(p => p.filter((_, j) => j !== i))}>
+                <circle cx={`${l.x1}%`} cy={`${l.y1}%`} r="4" fill={l.color} />
+                <line x1={`${l.x1}%`} y1={`${l.y1}%`} x2={`${l.x2}%`} y2={`${l.y2}%`}
+                  stroke={l.color} strokeWidth={l.thickness}
+                  markerEnd={`url(#${mid})`} />
+              </g>
+            )
+          })}
+
+          {/* Line preview while hovering */}
+          {lineMode && lineStart && lineMouse && (() => {
+            const mid = `${instanceId}-${nextLineColor.replace('#','')}`
+            return (
+              <g>
+                <circle cx={`${lineStart.x}%`} cy={`${lineStart.y}%`} r="4" fill={nextLineColor} />
+                <line x1={`${lineStart.x}%`} y1={`${lineStart.y}%`}
+                  x2={`${lineMouse.x}%`} y2={`${lineMouse.y}%`}
+                  stroke={nextLineColor} strokeWidth={lineThick}
+                  strokeDasharray="6 3" markerEnd={`url(#${mid})`} />
+              </g>
+            )
+          })()}
         </svg>
       </div>
     </div>
@@ -2191,7 +2339,10 @@ function InlineExerciseContent({ exerciseId, exerciseCache, loadingExercises, de
       ) && (
         <div className="exercise-context-images" style={{ marginBottom: '0.5rem' }}>
           {cached.context_images.map((src, i) => (
-            <AnnotatedImage key={i} src={src} alt={`Ref ${i + 1}`} />
+            <AnnotatedImage key={i} src={src} alt={`Ref ${i + 1}`}
+              circlesEnabled={cached.context_image_settings?.[i]?.circles !== false}
+              linesEnabled={cached.context_image_settings?.[i]?.lines !== false}
+            />
           ))}
         </div>
       )}
@@ -6505,7 +6656,18 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
   const [ocrDraft,       setOcrDraft]       = useState(null)
   // fill_blank picture upload state
   const [fbPicLoading,   setFbPicLoading]   = useState(false)
-  const [fbPicError,     setFbPicError]     = useState(null)
+  const [fbPicError,        setFbPicError]        = useState(null)
+  // Annotation modes per context image [{circles, lines}]
+  const [contextImageModes, setContextImageModes] = useState(
+    Array.isArray(initialExercise?.context_image_settings)
+      ? initialExercise.context_image_settings : []
+  )
+  // Annotation picker state — shown after upload
+  const [annPickerOpen,    setAnnPickerOpen]    = useState(false)
+  const [annPickerStart,   setAnnPickerStart]   = useState(0)
+  const [annPickerLen,     setAnnPickerLen]     = useState(0)
+  const [annPickerCircles, setAnnPickerCircles] = useState(true)
+  const [annPickerLines,   setAnnPickerLines]   = useState(true)
   const contextFileRef  = useRef(null)
   const exerciseFileRef = useRef(null)
   const fbPicFileRef    = useRef(null)
@@ -6516,8 +6678,26 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
     const files = Array.from(e.target.files || []).slice(0, 10 - contextImages.length)
     if (!files.length) return
     const compressed = await Promise.all(files.map(f => compressImage(f)))
-    setContextImages(prev => [...prev, ...compressed].slice(0, 10))
+    setContextImages(prev => {
+      const batchStart = prev.length
+      setAnnPickerStart(batchStart)
+      setAnnPickerLen(compressed.length)
+      setAnnPickerCircles(true)
+      setAnnPickerLines(true)
+      setAnnPickerOpen(true)
+      return [...prev, ...compressed].slice(0, 10)
+    })
     e.target.value = ''
+  }
+
+  const confirmAnnPicker = () => {
+    const mode = { circles: annPickerCircles, lines: annPickerLines }
+    setContextImageModes(prev => {
+      const updated = [...prev]
+      for (let i = annPickerStart; i < annPickerStart + annPickerLen; i++) updated[i] = mode
+      return updated
+    })
+    setAnnPickerOpen(false)
   }
 
   // ── Thumbnail: small compressed image for library card ───────
@@ -6665,6 +6845,7 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
       exerciseNo: exNo    || null,
       thumbnail: thumbnail || null,
       level:     exLevel  || null,
+      contextImageSettings: contextImageModes.length ? contextImageModes : null,
     }
     // For listening/viewing: auto-create one dummy question as the activity type marker
     const questionsToSave = isVerbal
@@ -6996,9 +7177,36 @@ function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels 
               <div key={i} className="builder-thumb">
                 <img src={src} alt={`Context ${i + 1}`} />
                 <button className="builder-thumb-remove"
-                  onClick={() => setContextImages(p => p.filter((_, j) => j !== i))}>✕</button>
+                  onClick={() => {
+                    setContextImages(p => p.filter((_, j) => j !== i))
+                    setContextImageModes(p => p.filter((_, j) => j !== i))
+                  }}>✕</button>
               </div>
             ))}
+          </div>
+        )}
+        {/* ── Annotation picker (shown after upload) ── */}
+        {annPickerOpen && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', borderRadius: '8px',
+            border: '1.5px solid #2563eb', background: '#eff6ff', display: 'flex',
+            flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1e40af', flexShrink: 0 }}>
+              🎨 Annotation tools for {annPickerLen === 1 ? 'this image' : `these ${annPickerLen} images`}:
+            </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', cursor: 'pointer', color: '#1e3a8a' }}>
+              <input type="checkbox" checked={annPickerCircles} onChange={e => setAnnPickerCircles(e.target.checked)} />
+              ⭕ Draw circles
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', cursor: 'pointer', color: '#1e3a8a' }}>
+              <input type="checkbox" checked={annPickerLines} onChange={e => setAnnPickerLines(e.target.checked)} />
+              🏹 Draw arrow lines
+            </label>
+            <button type="button" onClick={confirmAnnPicker}
+              style={{ marginLeft: 'auto', fontSize: '0.8rem', padding: '0.28rem 0.75rem',
+                borderRadius: '6px', border: '1.5px solid #2563eb', background: '#2563eb',
+                color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Confirm
+            </button>
           </div>
         )}
         <div className="form-field" style={{ marginTop: '1rem' }}>
@@ -7501,7 +7709,7 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--gold)', width: '18px', flexShrink: 0 }}>{i+1}.</span>
                     <input type="text" style={{ flex: 1 }} placeholder={`Item ${i+1}…`} value={text}
-                      onChange={e => { const n=[...left]; n[i]=e.target.value; setLeft(n) }} />
+                      onChange={e => { const n=[...left]; n[i]=e.target.value; onChange('options', { v: 2, left: n, right }) }} />
                     <select style={{ fontSize: '0.78rem', padding: '0.28rem 0.4rem', borderRadius: '5px', border: '1px solid var(--border)', background: 'var(--bg-card)', width: '54px', flexShrink: 0 }}
                       value={correctArr[i] != null ? correctArr[i] : ''}
                       onChange={e => setMatch(i, e.target.value)}
@@ -7521,7 +7729,7 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#2563eb', width: '18px', flexShrink: 0 }}>{LETTERS[i]}.</span>
                     <input type="text" style={{ flex: 1 }} placeholder={`Item ${LETTERS[i]}…`} value={text}
-                      onChange={e => { const n=[...right]; n[i]=e.target.value; setRight(n) }} />
+                      onChange={e => { const n=[...right]; n[i]=e.target.value; onChange('options', { v: 2, left, right: n }) }} />
                   </div>
                 ))}
               </div>
