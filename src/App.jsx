@@ -20,7 +20,7 @@ import { supabase, saveQuestionnaire, savePlacementResult, linkGuestData,
   fetchMyVocabulary, addVocabularyWord, deleteVocabularyWord,
   fetchMyReferralCode, fetchMyReferrals, lookupReferralCode, logReferral,
   markDiscountApplied, fetchAllReferrals,
-  createProspect, fetchAllProspects, updateProspectStatus,
+  createProspect, fetchAllProspects, fetchArchivedProspects, updateProspectStatus,
   fetchNotesForExercise, saveNote, deleteNote,
   deleteAssignment, deleteLesson, fetchAllUpcomingLessons, fetchLessonsInRange,
   startLessonPlanExercise, fetchPlansForStudentAdmin, fetchPlansForManualStudentAdmin, uploadLessonWhiteboard,
@@ -4795,7 +4795,7 @@ function AdminLessonStages({ adminUserId }) {
           ? pageFiltered.filter(ex => (ex.section || '').toLowerCase().includes(filterSection.trim().toLowerCase()))
           : pageFiltered
         const courseFiltered = filterCourse
-          ? sectionFiltered.filter(ex => ex.course === filterCourse)
+          ? sectionFiltered.filter(ex => ex.level === filterCourse)
           : sectionFiltered
         const filteredExercises = filterLabelIds.length === 0
           ? courseFiltered
@@ -11683,20 +11683,23 @@ function AdminLevels() {
       if (newData) return JSON.parse(newData)
       const oldData = localStorage.getItem('admin_levels_v1')
       if (oldData) {
-        const migrated = JSON.parse(oldData).map(l => ({ id: l.id, name: l.name, books: [] }))
+        const migrated = JSON.parse(oldData).map(l => ({ id: l.id, name: l.name, linked_book_ids: [] }))
         localStorage.setItem('admin_courses_v1', JSON.stringify(migrated))
         return migrated
       }
       return []
     } catch { return [] }
   })
-  const [newName, setNewName]           = useState('')
-  const [editingId, setEditingId]       = useState(null)
-  const [editName, setEditName]         = useState('')
-  const [expandedId, setExpandedId]     = useState(null)
-  // book form state per course
-  const [bookForm, setBookForm]         = useState({}) // { [courseId]: {name, edition, thumbnail} }
-  const [bookThumbLoading, setBookThumbLoading] = useState({})
+  const [newName, setNewName]     = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editName, setEditName]   = useState('')
+  const [expandedId, setExpandedId] = useState(null)
+  const [allBooks, setAllBooks]   = useState([])
+  const [selectedBookId, setSelectedBookId] = useState({}) // {courseId: bookId}
+
+  useEffect(() => {
+    fetchAllBooks().then(bks => setAllBooks(bks))
+  }, [])
 
   const persist = (next) => {
     setCourses(next)
@@ -11705,7 +11708,7 @@ function AdminLevels() {
 
   const addCourse = () => {
     if (!newName.trim()) return
-    persist([...courses, { id: crypto.randomUUID(), name: newName.trim(), books: [] }])
+    persist([...courses, { id: crypto.randomUUID(), name: newName.trim(), linked_book_ids: [] }])
     setNewName('')
   }
 
@@ -11716,32 +11719,18 @@ function AdminLevels() {
     setEditingId(null)
   }
 
-  // ── Book helpers ──
-  const getBookForm = (cid) => bookForm[cid] || { name: '', edition: '', thumbnail: null }
-  const setBookField = (cid, field, val) =>
-    setBookForm(prev => ({ ...prev, [cid]: { ...getBookForm(cid), [field]: val } }))
-
-  const handleBookThumb = async (cid, e) => {
-    const file = e.target.files?.[0]; if (!file) return
-    e.target.value = ''
-    setBookThumbLoading(prev => ({ ...prev, [cid]: true }))
-    try {
-      const compressed = await compressImage(file, 300)
-      setBookField(cid, 'thumbnail', compressed)
-    } catch {}
-    finally { setBookThumbLoading(prev => ({ ...prev, [cid]: false })) }
+  const linkBook = (cid) => {
+    const bid = selectedBookId[cid]
+    if (!bid) return
+    const course = courses.find(c => c.id === cid)
+    const linked = course?.linked_book_ids || []
+    if (linked.includes(bid)) return
+    persist(courses.map(c => c.id === cid ? { ...c, linked_book_ids: [...linked, bid] } : c))
+    setSelectedBookId(prev => ({ ...prev, [cid]: '' }))
   }
 
-  const addBook = (cid) => {
-    const f = getBookForm(cid)
-    if (!f.name.trim()) return
-    const newBook = { id: crypto.randomUUID(), name: f.name.trim(), edition: f.edition.trim(), thumbnail: f.thumbnail || null }
-    persist(courses.map(c => c.id === cid ? { ...c, books: [...(c.books || []), newBook] } : c))
-    setBookForm(prev => ({ ...prev, [cid]: { name: '', edition: '', thumbnail: null } }))
-  }
-
-  const deleteBook = (cid, bid) => {
-    persist(courses.map(c => c.id === cid ? { ...c, books: (c.books || []).filter(b => b.id !== bid) } : c))
+  const unlinkBook = (cid, bid) => {
+    persist(courses.map(c => c.id === cid ? { ...c, linked_book_ids: (c.linked_book_ids || []).filter(id => id !== bid) } : c))
   }
 
   const downloadBackup = () => {
@@ -11766,7 +11755,7 @@ function AdminLevels() {
         )}
       </div>
       <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-        Define the courses you teach. These appear as options when creating lesson plans and exercises. You can optionally add books to each course.
+        Define the courses you teach. Optionally link books from your Books tab to each course.
       </p>
 
       {/* Add new course */}
@@ -11792,14 +11781,15 @@ function AdminLevels() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           {courses.map(c => {
-            const books = c.books || []
+            const linkedIds = c.linked_book_ids || []
+            const linkedBooks = linkedIds.map(id => allBooks.find(b => b.id === id)).filter(Boolean)
+            const unlinkableBooks = allBooks.filter(b => !linkedIds.includes(b.id))
             const isExpanded = expandedId === c.id
-            const bf = getBookForm(c.id)
             return (
               <div key={c.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
                 {/* Course header row */}
                 {editingId === c.id ? (
-                  <div style={{ padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center', borderBottom: isExpanded ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
                       style={{ flex: 1 }} autoFocus />
                     <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.75rem' }} onClick={() => saveEdit(c.id)}>Save</button>
@@ -11810,7 +11800,7 @@ function AdminLevels() {
                     <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</span>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }}
                       onClick={() => setExpandedId(isExpanded ? null : c.id)}>
-                      📚 Books {books.length > 0 ? `(${books.length})` : ''} {isExpanded ? '▲' : '▼'}
+                      📚 Books {linkedBooks.length > 0 ? `(${linkedBooks.length})` : ''} {isExpanded ? '▲' : '▼'}
                     </button>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }} onClick={() => startEdit(c)}>Edit</button>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem', color: '#e05c5c' }} onClick={() => deleteCourse(c.id)}>Delete</button>
@@ -11821,60 +11811,40 @@ function AdminLevels() {
                 {isExpanded && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '0.85rem', background: 'rgba(0,0,0,0.02)' }}>
 
-                    {/* Existing books */}
-                    {books.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-                        {books.map(b => (
-                          <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
-                            {b.thumbnail && (
-                              <img src={b.thumbnail} alt="" style={{ width: '40px', height: '52px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0 }} />
-                            )}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{b.name}</div>
-                              {b.edition && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{b.edition}</div>}
-                            </div>
-                            <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: '#e05c5c', flexShrink: 0 }}
-                              onClick={() => deleteBook(c.id, b.id)}>Remove</button>
+                    {/* Linked books */}
+                    {linkedBooks.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.85rem' }}>
+                        {linkedBooks.map(b => (
+                          <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.75rem' }}>
+                            <span style={{ flex: 1, fontWeight: 600, fontSize: '0.88rem' }}>📚 {b.title}</span>
+                            <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: '#e05c5c' }}
+                              onClick={() => unlinkBook(c.id, b.id)}>Remove</button>
                           </div>
                         ))}
                       </div>
                     )}
 
-                    {/* Add book form */}
-                    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.75rem' }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.6rem', color: 'var(--text-muted)' }}>+ ADD BOOK</div>
-                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                        <input type="text" placeholder="Book name *" value={bf.name}
-                          onChange={e => setBookField(c.id, 'name', e.target.value)}
-                          style={{ flex: 2, fontSize: '0.85rem' }} />
-                        <input type="text" placeholder="Edition (optional)" value={bf.edition}
-                          onChange={e => setBookField(c.id, 'edition', e.target.value)}
-                          style={{ flex: 1, fontSize: '0.85rem' }} />
-                      </div>
+                    {/* Link book from Books tab */}
+                    {allBooks.length === 0 ? (
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                        No books yet. Add books in the <strong>📖 Books</strong> tab first.
+                      </p>
+                    ) : unlinkableBooks.length === 0 ? (
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>All books are linked to this course.</p>
+                    ) : (
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        {/* Thumbnail upload */}
-                        <label style={{ cursor: 'pointer', flexShrink: 0 }}>
-                          <input type="file" accept="image/*" style={{ display: 'none' }}
-                            onChange={e => handleBookThumb(c.id, e)} />
-                          {bf.thumbnail ? (
-                            <img src={bf.thumbnail} alt="" style={{ width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px', border: '1px solid var(--border)' }} />
-                          ) : (
-                            <span className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', display: 'inline-block' }}>
-                              {bookThumbLoading[c.id] ? '⏳' : '📷 Cover'}
-                            </span>
-                          )}
-                        </label>
-                        {bf.thumbnail && (
-                          <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.45rem', color: '#e05c5c' }}
-                            onClick={() => setBookField(c.id, 'thumbnail', null)}>✕</button>
-                        )}
-                        <div style={{ flex: 1 }} />
-                        <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.85rem' }}
-                          disabled={!bf.name.trim()} onClick={() => addBook(c.id)}>
-                          Add book
+                        <select value={selectedBookId[c.id] || ''}
+                          onChange={e => setSelectedBookId(prev => ({ ...prev, [c.id]: e.target.value }))}
+                          style={{ flex: 1, fontSize: '0.85rem', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+                          <option value="">Select a book to link…</option>
+                          {unlinkableBooks.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+                        </select>
+                        <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.85rem', flexShrink: 0 }}
+                          disabled={!selectedBookId[c.id]} onClick={() => linkBook(c.id)}>
+                          Link book
                         </button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -12011,12 +11981,18 @@ function AdminPanel({ user, onSignOut }) {
   const [prospects,           setProspects]           = useState([])
   const [prospectsLoading,    setProspectsLoading]    = useState(false)
   const [prospectCount,       setProspectCount]       = useState(0)
-  const [assigningTestToProspect, setAssigningTestToProspect] = useState(null) // prospect obj
-  const [prospectTestId, setProspectTestId] = useState('general_placement_v1')
-  const [prospectTestSaving, setProspectTestSaving] = useState(false)
-  const [prospectTestLinks, setProspectTestLinks] = useState({}) // prospectId → assignmentId
-  const [prospectTestSent,  setProspectTestSent]  = useState({}) // prospectId → true when email sent
-  const [copiedProspectId, setCopiedProspectId] = useState(null)
+  const [archivedProspects,   setArchivedProspects]   = useState([])
+  const [showArchived,        setShowArchived]        = useState(false)
+  const [archivedLoading,     setArchivedLoading]     = useState(false)
+  const [confirmConvertId,    setConfirmConvertId]    = useState(null) // prospect id awaiting convert confirm
+  const [convertingSaving,    setConvertingSaving]    = useState(false)
+  // Students tab: assign test
+  const [assigningTestToStudent, setAssigningTestToStudent] = useState(null) // student obj
+  const [studentTestId,       setStudentTestId]       = useState('general_placement_v1')
+  const [studentTestSaving,   setStudentTestSaving]   = useState(false)
+  const [studentTestLinks,    setStudentTestLinks]    = useState({}) // studentId → assignmentId
+  const [studentTestSent,     setStudentTestSent]     = useState({}) // studentId → true
+  const [copiedStudentId,     setCopiedStudentId]     = useState(null)
 
   useEffect(() => {
     if (!isAdmin || !supabase) return
@@ -12175,6 +12151,68 @@ function AdminPanel({ user, onSignOut }) {
         return updated
       })
     }
+  }
+
+  const handleArchiveProspect = async (prospect) => {
+    const ok = await updateProspectStatus(prospect.id, 'archived')
+    if (ok) {
+      setProspects(prev => {
+        const updated = prev.filter(p => p.id !== prospect.id)
+        setProspectCount(updated.filter(p => p.status === 'new').length)
+        return updated
+      })
+    }
+  }
+
+  const handleConvertToStudent = async (prospect) => {
+    setConvertingSaving(true)
+    const ms = await createManualStudent({ name: prospect.name, email: prospect.email, createdBy: user.id })
+    if (ms) {
+      await updateProspectStatus(prospect.id, 'enrolled')
+      setProspects(prev => prev.map(p => p.id === prospect.id ? { ...p, status: 'enrolled' } : p))
+      setManualStudents(prev => [...prev, ms])
+    }
+    setConvertingSaving(false)
+    setConfirmConvertId(null)
+  }
+
+  const handleAssignTestToStudent = async (student, isManual = false) => {
+    setStudentTestSaving(true)
+    const assignment = await createTestAssignment({
+      testId: studentTestId,
+      ...(isManual ? { manualStudentId: student.id } : { studentId: student.id }),
+      assignedBy: user.id,
+    })
+    if (assignment) {
+      setStudentTestLinks(prev => ({ ...prev, [student.id]: assignment.id }))
+      setAssigningTestToStudent(null)
+      const testLink = `${window.location.origin}/?t=${assignment.id}`
+      const testDef = TEST_DEFINITIONS.find(t => t.id === studentTestId)
+      if (student.email) {
+        try {
+          const emailRes = await fetch('/api/send-test-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: student.email,
+              name: student.name || 'Student',
+              testName: testDef?.label || 'English Diagnostic Test',
+              testLink,
+            }),
+          })
+          if (emailRes.ok) setStudentTestSent(prev => ({ ...prev, [student.id]: true }))
+        } catch {}
+      }
+    }
+    setStudentTestSaving(false)
+  }
+
+  const copyStudentTestLink = (studentId) => {
+    const url = `${window.location.origin}/?t=${studentTestLinks[studentId]}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedStudentId(studentId)
+      setTimeout(() => setCopiedStudentId(null), 2000)
+    })
   }
 
   const openStudent = (s) => {
@@ -12715,106 +12753,144 @@ function AdminPanel({ user, onSignOut }) {
           <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.85rem' }}>Prospects</h3>
           {prospectsLoading ? (
             <div className="dashboard-loading">Loading prospects…</div>
-          ) : prospects.length === 0 ? (
+          ) : prospects.length === 0 && !showArchived ? (
             <p className="dashboard-empty-small">No prospects yet. They'll appear here when someone fills in the consultation booking form.</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #e8e3d8', textAlign: 'left' }}>
-                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Name</th>
-                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Email</th>
-                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Phone</th>
-                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
-                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {prospects.map(p => (
-                    <tr key={p.id} style={{ borderBottom: '1px solid #f0ece4' }}>
-                      <td style={{ padding: '0.55rem 0.75rem' }}><strong>{p.name}</strong></td>
-                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{p.email}</td>
-                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{p.phone || '—'}</td>
-                      <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </td>
-                      <td style={{ padding: '0.55rem 0.75rem' }}>
-                        <span style={{
-                          display: 'inline-block', borderRadius: '0.9rem', padding: '0.18rem 0.6rem',
-                          fontSize: '0.78rem', fontWeight: 600,
-                          background: p.status === 'new' ? '#dbeafe' : p.status === 'contacted' ? '#fef9c3' : p.status === 'converted' ? '#dcfce7' : '#e5e7eb',
-                          color: p.status === 'new' ? '#1d4ed8' : p.status === 'contacted' ? '#92400e' : p.status === 'converted' ? '#166534' : '#6b7280',
-                        }}>
-                          {p.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.55rem 0.75rem' }}>
-                        {assigningTestToProspect?.id === p.id ? (
-                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <select value={prospectTestId} onChange={e => setProspectTestId(e.target.value)}
-                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.4rem', borderRadius: '5px', border: '1px solid var(--border)' }}>
-                              {TEST_DEFINITIONS.map(t => (
-                                <option key={t.id} value={t.id}>{t.label}</option>
-                              ))}
-                            </select>
-                            <button className="btn-gold" style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem' }}
-                              disabled={prospectTestSaving}
-                              onClick={() => handleAssignTestToProspect(p)}>
-                              {prospectTestSaving ? '…' : 'Assign'}
-                            </button>
-                            <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
-                              onClick={() => setAssigningTestToProspect(null)}>Cancel</button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            {p.status !== 'contacted' && (
-                              <button className="btn-ghost"
-                                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
-                                onClick={() => handleProspectStatusChange(p, 'contacted')}>
-                                Mark contacted
-                              </button>
-                            )}
-                            {prospectTestLinks[p.id] ? (
-                              prospectTestSent[p.id] ? (
-                                <span style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#3B6D11', fontWeight: 600 }}>
-                                  ✉️ Test sent
-                                </span>
-                              ) : (
-                                <button className="btn-ghost"
-                                  style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: copiedProspectId === p.id ? '#3B6D11' : 'var(--gold)' }}
-                                  onClick={() => copyTestLink(prospectTestLinks[p.id], p.id)}>
-                                  {copiedProspectId === p.id ? '✓ Copied!' : '🔗 Copy test link'}
-                                </button>
-                              )
-                            ) : (
-                              <button className="btn-ghost"
-                                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
-                                onClick={() => { setAssigningTestToProspect(p); setProspectTestId('general_placement_v1') }}>
-                                📋 Assign test
-                              </button>
-                            )}
-                            {p.status !== 'declined' && (
-                              <button className="btn-ghost"
-                                style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#9ca3af' }}
-                                onClick={() => handleProspectStatusChange(p, 'declined')}>
-                                Decline
-                              </button>
-                            )}
-                            <button className="btn-gold"
-                              style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem' }}
-                              onClick={() => handleConvertProspect(p)}>
-                              ✉️ Invite as student
-                            </button>
-                          </div>
-                        )}
-                      </td>
+              {prospects.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e8e3d8', textAlign: 'left' }}>
+                      <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Name</th>
+                      <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Email</th>
+                      <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Phone</th>
+                      <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Date</th>
+                      <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
+                      <th style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {prospects.map(p => {
+                      const statusColors = {
+                        new:       { bg: '#dbeafe', color: '#1d4ed8' },
+                        contacted: { bg: '#fef9c3', color: '#92400e' },
+                        enrolled:  { bg: '#dcfce7', color: '#166534' },
+                        declined:  { bg: '#e5e7eb', color: '#6b7280' },
+                      }
+                      const sc = statusColors[p.status] || { bg: '#e5e7eb', color: '#6b7280' }
+                      return (
+                        <tr key={p.id} style={{ borderBottom: '1px solid #f0ece4' }}>
+                          <td style={{ padding: '0.55rem 0.75rem' }}><strong>{p.name}</strong></td>
+                          <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{p.email}</td>
+                          <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)' }}>{p.phone || '—'}</td>
+                          <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            {new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td style={{ padding: '0.55rem 0.75rem' }}>
+                            <span style={{ display: 'inline-block', borderRadius: '0.9rem', padding: '0.18rem 0.6rem', fontSize: '0.78rem', fontWeight: 600, background: sc.bg, color: sc.color }}>
+                              {p.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.55rem 0.75rem' }}>
+                            {confirmConvertId === p.id ? (
+                              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Convert to student?</span>
+                                <button className="btn-gold" style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem', background: '#16a34a', borderColor: '#16a34a' }}
+                                  disabled={convertingSaving} onClick={() => handleConvertToStudent(p)}>
+                                  {convertingSaving ? '…' : 'Confirm'}
+                                </button>
+                                <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                                  onClick={() => setConfirmConvertId(null)}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                {p.status !== 'contacted' && p.status !== 'enrolled' && (
+                                  <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                                    onClick={() => handleProspectStatusChange(p, 'contacted')}>
+                                    Mark contacted
+                                  </button>
+                                )}
+                                {p.status !== 'declined' && p.status !== 'enrolled' && (
+                                  <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#9ca3af' }}
+                                    onClick={() => handleProspectStatusChange(p, 'declined')}>
+                                    Decline
+                                  </button>
+                                )}
+                                {p.status !== 'enrolled' && (
+                                  <button style={{ fontSize: '0.78rem', padding: '0.22rem 0.65rem', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                                    onClick={() => setConfirmConvertId(p.id)}>
+                                    Convert to Student
+                                  </button>
+                                )}
+                                <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem' }}
+                                  onClick={() => handleConvertProspect(p)}>
+                                  ✉️ Invite as student
+                                </button>
+                                <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.55rem', color: '#9ca3af' }}
+                                  onClick={() => handleArchiveProspect(p)}>
+                                  Archive
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+
+              {/* Archived prospects section */}
+              {showArchived && (
+                <div style={{ marginTop: '1.5rem' }}>
+                  <h4 style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>Archived prospects</h4>
+                  {archivedLoading ? (
+                    <div className="dashboard-loading">Loading…</div>
+                  ) : archivedProspects.length === 0 ? (
+                    <p className="dashboard-empty-small">No archived prospects.</p>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', opacity: 0.75 }}>
+                      <tbody>
+                        {archivedProspects.map(p => (
+                          <tr key={p.id} style={{ borderBottom: '1px solid #f0ece4' }}>
+                            <td style={{ padding: '0.45rem 0.75rem' }}><strong>{p.name}</strong></td>
+                            <td style={{ padding: '0.45rem 0.75rem', color: 'var(--text-muted)' }}>{p.email}</td>
+                            <td style={{ padding: '0.45rem 0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                              {new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td style={{ padding: '0.45rem 0.75rem' }}>
+                              <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                onClick={() => handleProspectStatusChange({ id: p.id }, 'new').then(() => {
+                                  setArchivedProspects(prev => prev.filter(x => x.id !== p.id))
+                                  setProspects(prev => [{ ...p, status: 'new' }, ...prev])
+                                })}>
+                                Restore
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
             </div>
           )}
+
+          {/* Archived button — bottom right */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+              onClick={() => {
+                const next = !showArchived
+                setShowArchived(next)
+                if (next && archivedProspects.length === 0) {
+                  setArchivedLoading(true)
+                  fetchArchivedProspects().then(data => { setArchivedProspects(data); setArchivedLoading(false) })
+                }
+              }}>
+              🗃 {showArchived ? 'Hide Archived' : 'Archived'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -12876,90 +12952,147 @@ function AdminPanel({ user, onSignOut }) {
             <div className="dashboard-loading">Loading students…</div>
           ) : (
             <div className="admin-list">
-              {/* Pending section */}
-              {pendingStudents.length > 0 && (
-                <>
-                  <p className="admin-section-label">⏳ Awaiting approval ({pendingStudents.length})</p>
-                  {pendingStudents.map(s => (
-                    <button key={s.id} className="admin-student-row admin-student-row--pending"
-                      onClick={() => openStudent(s)}>
-                      <div className="admin-student-info">
-                        <strong>{s.name || 'Unknown'}</strong>
-                        <span className="admin-student-email">{s.email}</span>
-                      </div>
-                      <div className="admin-student-meta">
-                        <AccessBadge level="pending" />
-                        {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                        <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
-                      </div>
-                      <span className="admin-arrow">›</span>
-                    </button>
-                  ))}
-                </>
-              )}
-
-              {/* Active auth students */}
-              {activeStudents.length > 0 && (
-                <>
-                  <p className="admin-section-label" style={{ marginTop: pendingStudents.length > 0 ? '1.25rem' : 0 }}>
-                    Registered students ({activeStudents.length})
-                  </p>
-                  {activeStudents.map(s => {
-                    const result = s.questionnaire_submissions?.[0]?.placement_results?.[0]
-                    return (
-                      <button key={s.id} className="admin-student-row" onClick={() => openStudent(s)}>
-                        <div className="admin-student-info">
-                          <strong>{s.name || 'Unknown'}</strong>
-                          {s.access_level === 'prospect' && (
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#854F0B', background: '#FAEEDA', padding: '0.12rem 0.45rem', borderRadius: '20px', marginLeft: '0.4rem' }}>
-                              Prospect
-                            </span>
-                          )}
-                          <span className="admin-student-email">{s.email}</span>
-                        </div>
-                        <div className="admin-student-meta">
-                          <AccessBadge level={s.access_level} />
-                          {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                          {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
-                          {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
-                          <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
-                        </div>
-                        <span className="admin-arrow">›</span>
+              {/* Inline assign-test picker */}
+              {(() => {
+                const renderAssignTestInline = (s, isManual) => {
+                  if (assigningTestToStudent?.id !== s.id) return null
+                  return (
+                    <div key={s.id + '_test'} style={{ background: '#EEF4F8', border: '1px solid #c5d8e8', borderRadius: '8px', padding: '0.65rem 0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Assign test to {s.name}:</span>
+                      <select value={studentTestId} onChange={e => setStudentTestId(e.target.value)}
+                        style={{ fontSize: '0.82rem', padding: '0.25rem 0.5rem', borderRadius: '5px', border: '1px solid var(--border)' }}>
+                        {TEST_DEFINITIONS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                      <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.28rem 0.7rem' }}
+                        disabled={studentTestSaving} onClick={() => handleAssignTestToStudent(s, isManual)}>
+                        {studentTestSaving ? '…' : 'Assign'}
                       </button>
-                    )
-                  })}
-                </>
-              )}
+                      <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.28rem 0.6rem' }}
+                        onClick={() => setAssigningTestToStudent(null)}>Cancel</button>
+                    </div>
+                  )
+                }
 
-              {/* Manual students */}
-              {manualStudents.length > 0 && (
-                <>
-                  <p className="admin-section-label" style={{ marginTop: '1.25rem' }}>
-                    Manual students ({manualStudents.length})
-                  </p>
-                  {manualStudents.map(s => (
-                    <button key={s.id} className="admin-student-row" onClick={() => openManualStudent(s)}>
-                      <div className="admin-student-info">
-                        <strong>{s.name}</strong>
-                        <span className="admin-student-email">{s.email || 'No email'}</span>
-                      </div>
-                      <div className="admin-student-meta">
-                        {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                        <span className="admin-level-chip" style={{ opacity: 0.65 }}>Manual</span>
-                        <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
-                      </div>
-                      <span className="admin-arrow">›</span>
+                const renderTestStatus = (s) => {
+                  if (studentTestLinks[s.id]) {
+                    return studentTestSent[s.id]
+                      ? <span style={{ fontSize: '0.75rem', color: '#3B6D11', fontWeight: 600 }}>✉️ Test sent</span>
+                      : <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: copiedStudentId === s.id ? '#3B6D11' : 'var(--gold)' }}
+                          onClick={e => { e.stopPropagation(); copyStudentTestLink(s.id) }}>
+                          {copiedStudentId === s.id ? '✓ Copied!' : '🔗 Test link'}
+                        </button>
+                  }
+                  return (
+                    <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', flexShrink: 0 }}
+                      onClick={e => { e.stopPropagation(); setAssigningTestToStudent(s); setStudentTestId('general_placement_v1') }}>
+                      📋 Assign Test
                     </button>
-                  ))}
-                </>
-              )}
+                  )
+                }
 
-              {students.length === 0 && manualStudents.length === 0 && (
-                <div className="dashboard-empty">
-                  <p>No students yet.</p>
-                  <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who sign up will appear here, or add one manually above.</p>
-                </div>
-              )}
+                return (
+                  <>
+                    {/* Pending section */}
+                    {pendingStudents.length > 0 && (
+                      <>
+                        <p className="admin-section-label">⏳ Awaiting approval ({pendingStudents.length})</p>
+                        {pendingStudents.map(s => (
+                          <React.Fragment key={s.id}>
+                            {renderAssignTestInline(s, false)}
+                            <div className="admin-student-row admin-student-row--pending" role="button"
+                              style={{ cursor: 'pointer' }} onClick={() => openStudent(s)}>
+                              <div className="admin-student-info">
+                                <strong>{s.name || 'Unknown'}</strong>
+                                <span className="admin-student-email">{s.email}</span>
+                              </div>
+                              <div className="admin-student-meta">
+                                <AccessBadge level="pending" />
+                                {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
+                                {renderTestStatus(s)}
+                                <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                              </div>
+                              <span className="admin-arrow">›</span>
+                            </div>
+                          </React.Fragment>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Active auth students */}
+                    {activeStudents.length > 0 && (
+                      <>
+                        <p className="admin-section-label" style={{ marginTop: pendingStudents.length > 0 ? '1.25rem' : 0 }}>
+                          Registered students ({activeStudents.length})
+                        </p>
+                        {activeStudents.map(s => {
+                          const result = s.questionnaire_submissions?.[0]?.placement_results?.[0]
+                          return (
+                            <React.Fragment key={s.id}>
+                              {renderAssignTestInline(s, false)}
+                              <div className="admin-student-row" role="button"
+                                style={{ cursor: 'pointer' }} onClick={() => openStudent(s)}>
+                                <div className="admin-student-info">
+                                  <strong>{s.name || 'Unknown'}</strong>
+                                  {s.access_level === 'prospect' && (
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#854F0B', background: '#FAEEDA', padding: '0.12rem 0.45rem', borderRadius: '20px', marginLeft: '0.4rem' }}>
+                                      Prospect
+                                    </span>
+                                  )}
+                                  <span className="admin-student-email">{s.email}</span>
+                                </div>
+                                <div className="admin-student-meta">
+                                  <AccessBadge level={s.access_level} />
+                                  {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
+                                  {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
+                                  {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
+                                  {renderTestStatus(s)}
+                                  <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                                </div>
+                                <span className="admin-arrow">›</span>
+                              </div>
+                            </React.Fragment>
+                          )
+                        })}
+                      </>
+                    )}
+
+                    {/* Manual students */}
+                    {manualStudents.length > 0 && (
+                      <>
+                        <p className="admin-section-label" style={{ marginTop: '1.25rem' }}>
+                          Manual students ({manualStudents.length})
+                        </p>
+                        {manualStudents.map(s => (
+                          <React.Fragment key={s.id}>
+                            {renderAssignTestInline(s, true)}
+                            <div className="admin-student-row" role="button"
+                              style={{ cursor: 'pointer' }} onClick={() => openManualStudent(s)}>
+                              <div className="admin-student-info">
+                                <strong>{s.name}</strong>
+                                <span className="admin-student-email">{s.email || 'No email'}</span>
+                              </div>
+                              <div className="admin-student-meta">
+                                {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
+                                <span className="admin-level-chip" style={{ opacity: 0.65 }}>Manual</span>
+                                {renderTestStatus(s)}
+                                <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
+                              </div>
+                              <span className="admin-arrow">›</span>
+                            </div>
+                          </React.Fragment>
+                        ))}
+                      </>
+                    )}
+
+                    {students.length === 0 && manualStudents.length === 0 && (
+                      <div className="dashboard-empty">
+                        <p>No students yet.</p>
+                        <p className="flow-sub" style={{ fontSize: '0.88rem' }}>Students who sign up will appear here, or add one manually above.</p>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           )}
         </div>

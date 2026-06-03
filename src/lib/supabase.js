@@ -203,7 +203,7 @@ export async function fetchAllExercises() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, title, course, lesson_no, context_text, audio_url, estimated_minutes, stage_type, book_id, unit, page, section, exercise_no, thumbnail, books ( id, title ), exercise_labels ( label_id, labels ( id, name, color ) )')
+    .select('id, title, course, level, lesson_no, context_text, audio_url, estimated_minutes, stage_type, book_id, unit, page, section, exercise_no, thumbnail, books ( id, title ), exercise_labels ( label_id, labels ( id, name, color ) )')
     .order('book_id', { nullsFirst: true })
     .order('unit',    { nullsFirst: true })
     .order('page',    { nullsFirst: true })
@@ -1330,6 +1330,17 @@ export async function fetchAllProspects() {
     .from('prospects')
     .select('*')
     .neq('status', 'converted')
+    .neq('status', 'archived')
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
+
+export async function fetchArchivedProspects() {
+  if (!supabase) return []
+  const { data } = await supabase
+    .from('prospects')
+    .select('*')
+    .eq('status', 'archived')
     .order('created_at', { ascending: false })
   return data ?? []
 }
