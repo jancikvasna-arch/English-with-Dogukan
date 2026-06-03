@@ -2401,14 +2401,36 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
           const courseExists = adminCourses.find(c => c.name === exLevel)
           return (
             <>
-              <select value={exLevel || ''} onChange={e => setExLevel(e.target.value || null)}
-                style={{ fontSize: '0.88rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: `1px solid ${!exLevel ? '#e05c5c' : 'var(--border)'}`, background: '#fff', minWidth: '220px' }}>
-                <option value="">— Select course (required) —</option>
-                {adminCourses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                {exLevel && !courseExists && (
-                  <option value={exLevel} disabled style={{ color: '#e05c5c' }}>{exLevel} (deleted — please re-select)</option>
-                )}
-              </select>
+              {adminCourses.length === 0 ? (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  No courses yet — create one in the 🎓 Courses tab first.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                  {adminCourses.map(c => {
+                    const active = exLevel === c.name
+                    return (
+                      <button key={c.id} type="button"
+                        onClick={() => setExLevel(active ? null : c.name)}
+                        style={{
+                          fontSize: '0.85rem', padding: '0.45rem 0.95rem', borderRadius: '8px',
+                          cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                          border: `1.5px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
+                          background: active ? 'var(--gold)' : '#fff',
+                          color: active ? '#fff' : 'var(--text)',
+                          transition: 'all 0.12s',
+                        }}>
+                        {c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {!exLevel && adminCourses.length > 0 && (
+                <p style={{ fontSize: '0.78rem', color: '#e05c5c', marginTop: '0.4rem' }}>
+                  Please choose a course (required).
+                </p>
+              )}
               {exLevel && !courseExists && (
                 <p style={{ fontSize: '0.8rem', color: '#e05c5c', marginTop: '0.35rem' }}>
                   The course "{exLevel}" was deleted. Please select a new course before saving.
