@@ -7427,23 +7427,20 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
         const right = isNew ? (options.right || []) : []
         const correctArr = (() => { try { return correct_answer ? JSON.parse(correct_answer) : [] } catch { return [] } })()
 
-        const setLeft  = (newL) => onChange('options', { v: 2, left: newL, right })
-        const setRight = (newR) => onChange('options', { v: 2, left, right: newR })
         const setMatch = (li, ri) => {
           const arr = [...(Array.isArray(correctArr) ? correctArr : [])]
           while (arr.length <= li) arr.push(null)
           arr[li] = ri === '' ? null : parseInt(ri)
           onChange('correct_answer', JSON.stringify(arr))
         }
+        // Fix: update both sides in one onChange call to avoid stale-closure overwrite
         const addItem = () => {
           if (left.length >= 10) return
-          setLeft([...left, ''])
-          setRight([...right, ''])
+          onChange('options', { v: 2, left: [...left, ''], right: [...right, ''] })
         }
         const removeItem = () => {
           if (left.length <= 1) return
-          setLeft(left.slice(0, -1))
-          setRight(right.slice(0, -1))
+          onChange('options', { v: 2, left: left.slice(0, -1), right: right.slice(0, -1) })
         }
 
         const handleMatchPhoto = async (side, file) => {
@@ -7452,27 +7449,43 @@ function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, flat = 
           try {
             const rawText = await ocrImage(file)
             const lines = rawText.split('\n').map(l => l.replace(/^\s*[\dA-Ja-j][.)]\s*/, '').trim()).filter(l => l.length > 1)
-            if (side === 'left')  setLeft( lines.slice(0, 10).concat(Array(Math.max(0, right.length - lines.slice(0,10).length)).fill('')))
-            else                  setRight(lines.slice(0, 10).concat(Array(Math.max(0, left.length  - lines.slice(0,10).length)).fill('')))
-          } catch {}
+            const extracted = lines.slice(0, 10)
+            if (side === 'left') {
+              const padded = extracted.concat(Array(Math.max(0, right.length - extracted.length)).fill(''))
+              onChange('options', { v: 2, left: padded, right })
+            } else {
+              const padded = extracted.concat(Array(Math.max(0, left.length - extracted.length)).fill(''))
+              onChange('options', { v: 2, left, right: padded })
+            }
+          } catch (err) {
+            console.error('[matchPhoto] OCR failed:', err)
+            alert('Could not read text from the photo. Please try a clearer image.')
+          }
           setMOcrLoading(null)
         }
 
         return (
           <div className="form-field">
+            {/* Hidden file inputs — triggered by button clicks via refs */}
+            <input ref={matchLeftPhotoRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files[0]; e.target.value = ''; handleMatchPhoto('left', f) }} />
+            <input ref={matchRightPhotoRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files[0]; e.target.value = ''; handleMatchPhoto('right', f) }} />
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Matching pairs</label>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', cursor: 'pointer', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.25rem 0.6rem' }}>
-                  <input ref={matchLeftPhotoRef} type="file" accept="image/*" style={{ display: 'none' }}
-                    onChange={e => { handleMatchPhoto('left', e.target.files[0]); e.target.value = '' }} />
-                  {mOcrLoading === 'left' ? '⏳' : '📸 Left from photo'}
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', cursor: 'pointer', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.25rem 0.6rem' }}>
-                  <input ref={matchRightPhotoRef} type="file" accept="image/*" style={{ display: 'none' }}
-                    onChange={e => { handleMatchPhoto('right', e.target.files[0]); e.target.value = '' }} />
-                  {mOcrLoading === 'right' ? '⏳' : '📸 Right from photo'}
-                </label>
+                <button type="button" className="btn-ghost"
+                  style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                  disabled={!!mOcrLoading}
+                  onClick={() => matchLeftPhotoRef.current?.click()}>
+                  {mOcrLoading === 'left' ? '⏳ Reading…' : '📸 Left from photo'}
+                </button>
+                <button type="button" className="btn-ghost"
+                  style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+                  disabled={!!mOcrLoading}
+                  onClick={() => matchRightPhotoRef.current?.click()}>
+                  {mOcrLoading === 'right' ? '⏳ Reading…' : '📸 Right from photo'}
+                </button>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
