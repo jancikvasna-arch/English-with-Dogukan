@@ -2126,6 +2126,9 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   )
   const [saving,         setSaving]         = useState(false)
   const [saveError,      setSaveError]      = useState(null)
+  // Matching: whether the interactive drag-and-drop pairs are enabled.
+  // Off = context-material-only matching exercise (no pairs required).
+  const [matchingDnd,    setMatchingDnd]    = useState(true)
   const [photoLoading,   setPhotoLoading]   = useState(false)
   const [photoError,     setPhotoError]     = useState(null)
   // OCR review state: null = not in review, string = raw text to review
@@ -2301,10 +2304,11 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
     if (!exLevel) { setSaveError('Please select a course for this exercise.'); return }
     const _courses = getAdminCourses()
     if (!_courses.find(c => c.name === exLevel)) { setSaveError('The selected course was deleted. Please choose a valid course.'); return }
+    const noDnd = selType === 'matching' && !matchingDnd
     if (stDef?.hasQuestions && !selType) return
-    if (stDef?.hasQuestions && !isVerbal && !questions.length) return
+    if (stDef?.hasQuestions && !isVerbal && !noDnd && !questions.length) return
     // Location fields are required for exercise stages
-    if (stDef?.hasQuestions && !isVerbal && (!exUnit || !exPage || !exSection.trim() || !exNo)) {
+    if (stDef?.hasQuestions && !isVerbal && !noDnd && (!exUnit || !exPage || !exSection.trim() || !exNo)) {
       setSaveError('Please fill in the location fields (unit, page, section, exercise number) — these are required for exercises.')
       return
     }
@@ -2323,10 +2327,13 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       level:     exLevel  || null,
       contextImageSettings: contextImageModes.length ? contextImageModes : null,
     }
-    // For listening/viewing: auto-create one dummy question as the activity type marker
+    // For listening/viewing: auto-create one dummy question as the activity type marker.
+    // For matching with drag-and-drop OFF: save no questions (context-material only).
     const questionsToSave = isVerbal
       ? [{ type: selType, prompt: '', order_index: 0, options: [], correct_answer: null, hint: null }]
-      : questions
+      : noDnd
+        ? []
+        : questions
     const result = isEdit
       ? await updateExerciseWithQuestions(initialExercise.id, meta, questionsToSave)
       : await createExerciseWithQuestions(meta, questionsToSave)
@@ -2369,6 +2376,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   }
 
   const stageTypeDef = STAGE_TYPES.find(t => t.value === stageType) || {}
+  // Matching exercise with drag-and-drop turned off → no questions required
+  const matchingNoDnd = selType === 'matching' && !matchingDnd
 
   return (
     <div>
@@ -2813,6 +2822,34 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
               ) : (
                 /* ── All other types: numbered question cards ── */
                 <>
+                  {/* Matching: optional drag-and-drop toggle */}
+                  {selType === 'matching' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '0.85rem' }}>
+                      <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>🔀 Interactive drag-and-drop pairs</span>
+                      <div style={{ display: 'flex', gap: '0.35rem', marginLeft: 'auto' }}>
+                        <button type="button"
+                          className={`radio-option ${matchingDnd ? 'selected' : ''}`}
+                          style={{ fontSize: '0.8rem', padding: '0.3rem 0.85rem' }}
+                          onClick={() => { setMatchingDnd(true); if (!questions.length) setQuestions([newQ('matching')]) }}>
+                          On
+                        </button>
+                        <button type="button"
+                          className={`radio-option ${!matchingDnd ? 'selected' : ''}`}
+                          style={{ fontSize: '0.8rem', padding: '0.3rem 0.85rem' }}
+                          onClick={() => setMatchingDnd(false)}>
+                          Off
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {matchingNoDnd ? (
+                    <div className="builder-section-sub" style={{ background: '#f8f5ee', border: '1px dashed var(--border)', borderRadius: '8px', padding: '0.75rem 0.9rem' }}>
+                      Drag-and-drop is off. Students will just see the context material and any instructions you add in the
+                      <strong> Description</strong> or <strong>Reading text</strong> above — no pairs to build.
+                    </div>
+                  ) : (
+                  <>
                   <div className="builder-section-header">
                     <h4 className="builder-section-title">❓ Questions</h4>
                     <button className="builder-ai-btn"
@@ -2857,6 +2894,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                     ))}
                   </div>
                   <button className="builder-add-q-btn" onClick={addQ}>+ Add question</button>
+                  </>
+                  )}
                 </>
               )}
             </div>
@@ -2867,7 +2906,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
         <button className="btn-gold" onClick={handleSave}
-          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!selType || (selType !== 'listening' && selType !== 'viewing' && selType !== 'speaking' && !questions.length)))}>
+          disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!selType || (selType !== 'listening' && selType !== 'viewing' && selType !== 'speaking' && !matchingNoDnd && !questions.length)))}>
           {saving
             ? 'Saving…'
             : isEdit
