@@ -3813,8 +3813,13 @@ function ExercisePlayer({ assignment, questions, studentId, onBack, onSubmitted 
     if (q.type === 'listening' || q.type === 'viewing') return true
     if (q.type === 'matching') {
       if (!answers[q.id]) return false
+      const isNewFmt = q.options && !Array.isArray(q.options) && q.options?.v === 2
       try {
         const matched = JSON.parse(answers[q.id])
+        if (isNewFmt) {
+          const leftLen = (q.options.left || []).length
+          return leftLen > 0 && Array.from({length: leftLen}, (_, i) => matched[i]).every(v => v != null)
+        }
         return (q.options || []).length > 0 && (q.options || []).every(p => matched[p.left])
       } catch { return false }
     }
@@ -4706,11 +4711,16 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack, bac
             )
           }
 
+          const matchIsNew = q.type === 'matching' && q.options && !Array.isArray(q.options) && q.options?.v === 2
+          const LTRS = ['A','B','C','D','E','F','G','H','I','J']
+
           return (
             <div key={q.id} className="exercise-question">
               <div className="eq-label">
                 <span className="eq-num">Q{idx + 1}</span>
                 <span className="eq-type">{typeLabel(q.type)}</span>
+                {sa?.is_correct === true  && <span className="demo-mark demo-mark--correct" style={{marginLeft:'auto'}}>✓ Correct</span>}
+                {sa?.is_correct === false && <span className="demo-mark demo-mark--wrong"   style={{marginLeft:'auto'}}>✗ Incorrect</span>}
               </div>
               {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
@@ -4727,11 +4737,23 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack, bac
                 ) : q.type === 'matching' && sa?.answer ? (
                   <div className="review-matching-pairs">
                     {(() => { try {
-                      const m = JSON.parse(sa.answer)
+                      const studentAns = JSON.parse(sa.answer)
+                      if (matchIsNew) {
+                        const left = q.options.left || [], right = q.options.right || []
+                        return left.map((lText, li) => {
+                          const ri = studentAns[li] ?? null
+                          return (
+                            <div key={li} className="review-match-row">
+                              <span><strong>{li+1}.</strong> {lText}</span><span>→</span>
+                              <span>{ri != null ? <><strong style={{color:'#2563eb'}}>{LTRS[ri]}.</strong> {right[ri]}</> : <em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                            </div>
+                          )
+                        })
+                      }
                       return (q.options||[]).map(p => (
                         <div key={p.left} className="review-match-row">
                           <span>{p.left}</span><span>→</span>
-                          <span>{m[p.left] || <em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                          <span>{studentAns[p.left] || <em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
                         </div>
                       ))
                     } catch { return <em>Error reading answer</em> } })()}
@@ -4739,6 +4761,13 @@ function StudentSubmissionReview({ assignment, questions, answerMap, onBack, bac
                 ) : (
                   <div className={`review-answer-box ${!sa?.answer?.trim() ? 'review-answer-empty' : ''}`}>
                     {sa?.answer?.trim() || <em>No answer given</em>}
+                  </div>
+                )}
+                {sa?.teacher_comment && (
+                  <div style={{ marginTop: '0.4rem', fontSize: '0.82rem', color: '#1e40af',
+                    background: '#eff6ff', borderRadius: '6px', padding: '0.35rem 0.6rem',
+                    border: '1px solid #bfdbfe' }}>
+                    💬 <strong>Note:</strong> {sa.teacher_comment}
                   </div>
                 )}
               </div>
@@ -8708,16 +8737,57 @@ function LessonStageBuilder({
 
 // ─── AdminExerciseReview ──────────────────────────────────────
 function AdminExerciseReview({ details, onBack }) {
+  const LETTERS    = ['A','B','C','D','E','F','G','H','I','J']
   const questions  = (details.exercises?.questions ?? [])
     .slice().sort((a, b) => a.order_index - b.order_index)
   const answerMap  = Object.fromEntries(details.studentAnswers.map(a => [a.question_id, a]))
 
-  const [feedback, setFeedback] = useState(details.teacher_feedback ?? '')
-  const [saving,   setSaving]   = useState(false)
-  const [saved,    setSaved]    = useState(false)
+  const [feedback,   setFeedback]   = useState(details.teacher_feedback ?? '')
+  // Per-question marks: { [question_id]: { id: answer.id, is_correct: bool|null, comment: string } }
+  const [marks, setMarks] = useState(() => {
+    const s = {}
+    details.studentAnswers.forEach(a => {
+      s[a.question_id] = { id: a.id, is_correct: a.is_correct ?? null, comment: a.teacher_comment || '' }
+    })
+    return s
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+
+  const toggleMark = (qId, val) => setMarks(prev => ({
+    ...prev,
+    [qId]: { ...prev[qId], is_correct: prev[qId]?.is_correct === val ? null : val }
+  }))
+  const setNote = (qId, txt) => setMarks(prev => ({
+    ...prev,
+    [qId]: { ...prev[qId], comment: txt }
+  }))
+
+  // Auto-check answer (returns true/false/null)
+  const autoCheck = (q, studentAnswer) => {
+    if (!studentAnswer || !q.correct_answer) return null
+    if (q.type === 'multiple_choice' || q.type === 'true_false') {
+      return studentAnswer.trim() === q.correct_answer.trim()
+    }
+    if (q.type === 'matching') {
+      const isNew = q.options && !Array.isArray(q.options) && q.options?.v === 2
+      if (!isNew) return null
+      try {
+        const studentArr = JSON.parse(studentAnswer)
+        const correctArr = JSON.parse(q.correct_answer || '[]')
+        const leftLen = (q.options.left || []).length
+        return Array.from({length: leftLen}, (_, i) => studentArr[i] === correctArr[i]).every(Boolean)
+      } catch { return null }
+    }
+    return null
+  }
 
   const handleSave = async () => {
     setSaving(true)
+    const reviews = Object.entries(marks)
+      .filter(([_, m]) => m.id)
+      .map(([_, m]) => ({ id: m.id, is_correct: m.is_correct, teacher_comment: m.comment }))
+    if (reviews.length) await saveAnswerReviews(reviews)
     await saveExerciseFeedback(details.id, feedback)
     setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
@@ -8759,29 +8829,23 @@ function AdminExerciseReview({ details, onBack }) {
         </div>
       )}
 
-      {/* Admin-only timing */}
       {exercise?.estimated_minutes && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0.4rem 0 0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', margin: '0.4rem 0 0.75rem' }}>
           <span className="admin-level-chip">⏱ ~{exercise.estimated_minutes} min</span>
         </div>
       )}
-      {/* Audio link */}
       {exercise?.audio_url && (
         <div className="exercise-audio-block" style={{ marginTop: '0.5rem' }}>
           <span className="exercise-context-label">🎧 Audio</span>
-          <a href={exercise.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
-            Open audio / video →
-          </a>
+          <a href={exercise.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">Open audio / video →</a>
         </div>
       )}
-      {/* Reading text */}
       {exercise?.context_text && (
         <div className="exercise-context-text" style={{ marginTop: '0.5rem' }}>
           <p className="exercise-context-label">📖 Reading text</p>
           <div className="exercise-context-passage">{exercise.context_text}</div>
         </div>
       )}
-      {/* Context images */}
       {exercise?.context_images?.length > 0 && (
         <div className="exercise-context-images" style={{ marginTop: '0.75rem' }}>
           <p className="exercise-context-label">📖 Reference material</p>
@@ -8800,17 +8864,36 @@ function AdminExerciseReview({ details, onBack }) {
         )}
         {questions.map((q, idx) => {
           if (q.type === 'listening' || q.type === 'viewing' || q.type === 'speaking') return null
-          const sa        = answerMap[q.id]
-          const hasAnswer = sa?.answer?.trim()
-          const correct   = autoCorrect(q)
+          const sa          = answerMap[q.id]
+          const hasAnswer   = !!sa?.answer?.trim()
+          const autoResult  = autoCheck(q, sa?.answer)
+          const mark        = marks[q.id]
+          // Manual mark overrides auto; auto is fallback for display
+          const effectiveMark = (mark?.is_correct != null) ? mark.is_correct : autoResult
+          const matchIsNew  = q.type === 'matching' && q.options && !Array.isArray(q.options) && q.options?.v === 2
 
           return (
             <div key={q.id} className="review-question">
+              {/* Header row: Q number, type, auto-mark, manual ✓/✗ buttons */}
               <div className="review-q-header">
                 <span className="eq-num">Q{idx + 1}</span>
                 <span className="eq-type">{typeLabel(q.type)}</span>
-                {hasAnswer && correct === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
-                {hasAnswer && correct === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
+                {hasAnswer && effectiveMark === true  && <span className="demo-mark demo-mark--correct">✓ Correct</span>}
+                {hasAnswer && effectiveMark === false && <span className="demo-mark demo-mark--wrong">✗ Wrong</span>}
+                {hasAnswer && (
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.3rem' }}>
+                    <button type="button" title="Mark correct" onClick={() => toggleMark(q.id, true)}
+                      style={{ padding: '0.15rem 0.5rem', borderRadius: '5px', cursor: 'pointer', fontSize: '0.82rem',
+                        border: `1.5px solid ${mark?.is_correct === true ? '#16a34a' : 'var(--border)'}`,
+                        background: mark?.is_correct === true ? '#dcfce7' : 'var(--bg-card)',
+                        color: mark?.is_correct === true ? '#15803d' : 'var(--text-muted)' }}>✓</button>
+                    <button type="button" title="Mark wrong" onClick={() => toggleMark(q.id, false)}
+                      style={{ padding: '0.15rem 0.5rem', borderRadius: '5px', cursor: 'pointer', fontSize: '0.82rem',
+                        border: `1.5px solid ${mark?.is_correct === false ? '#dc2626' : 'var(--border)'}`,
+                        background: mark?.is_correct === false ? '#fee2e2' : 'var(--bg-card)',
+                        color: mark?.is_correct === false ? '#dc2626' : 'var(--text-muted)' }}>✗</button>
+                  </div>
+                )}
               </div>
               {q.type !== 'word_choice' && q.type !== 'fill_blank' && <p className="eq-prompt" dangerouslySetInnerHTML={{ __html: q.prompt }} />}
 
@@ -8823,33 +8906,47 @@ function AdminExerciseReview({ details, onBack }) {
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'fill_blank' ? (
                   hasAnswer
-                    ? <InlineFillBlank
-                        prompt={q.prompt}
-                        answer={sa?.answer}
-                        onChange={() => {}}
-                        disabled={true}
-                        checked={true}
-                        correctAnswers={parseFillBlankCorrect(q.correct_answer ?? '')}
-                      />
+                    ? <InlineFillBlank prompt={q.prompt} answer={sa?.answer} onChange={() => {}} disabled={true} checked={true}
+                        correctAnswers={parseFillBlankCorrect(q.correct_answer ?? '')} />
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'matching' && hasAnswer ? (
                   <div className="review-matching-pairs">
                     {(() => { try {
-                      const m = JSON.parse(sa.answer)
+                      const studentAns = JSON.parse(sa.answer)
+                      if (matchIsNew) {
+                        const left = q.options.left || [], right = q.options.right || []
+                        const correctArr = (() => { try { return JSON.parse(q.correct_answer || '[]') } catch { return [] } })()
+                        return left.map((lText, li) => {
+                          const chosenRi  = studentAns[li] ?? null
+                          const isCorrect = chosenRi != null && chosenRi === correctArr[li]
+                          const isWrong   = chosenRi != null && chosenRi !== correctArr[li]
+                          return (
+                            <div key={li} className={`review-match-row ${isCorrect?'match-correct':isWrong?'match-wrong':''}`}>
+                              <span><strong>{li+1}.</strong> {lText}</span><span>→</span>
+                              <span>{chosenRi != null
+                                ? <><strong style={{color:'#2563eb'}}>{LETTERS[chosenRi]}.</strong> {right[chosenRi]}</>
+                                : <em style={{color:'var(--text-muted)'}}>not matched</em>}
+                              </span>
+                            </div>
+                          )
+                        })
+                      }
                       return (q.options||[]).map(p => (
-                        <div key={p.left} className={`review-match-row ${m[p.left]===p.right?'match-correct':'match-wrong'}`}>
+                        <div key={p.left} className={`review-match-row ${studentAns[p.left]===p.right?'match-correct':'match-wrong'}`}>
                           <span>{p.left}</span><span>→</span>
-                          <span>{m[p.left]||<em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
+                          <span>{studentAns[p.left]||<em style={{color:'var(--text-dim)'}}>not matched</em>}</span>
                         </div>
                       ))
                     } catch { return <em>Error reading answer</em> } })()}
                   </div>
                 ) : (
                   <div className={`review-answer-box ${!hasAnswer?'review-answer-empty':''}`}>
-                    {hasAnswer || <em>No answer given</em>}
+                    {hasAnswer ? sa.answer : <em>No answer given</em>}
                   </div>
                 )}
-                {q.correct_answer && q.type !== 'matching' && q.type !== 'word_choice' && q.type !== 'fill_blank' && (
+
+                {/* Correct answer */}
+                {q.correct_answer && !['matching','word_choice','fill_blank'].includes(q.type) && (
                   <div className="review-correct-answer">
                     <span className="review-label">Correct answer:</span> {q.correct_answer}
                   </div>
@@ -8865,21 +8962,41 @@ function AdminExerciseReview({ details, onBack }) {
                 {q.type === 'matching' && q.options && (
                   <div className="review-correct-answer">
                     <span className="review-label">Correct pairs:</span>{' '}
-                    {(q.options||[]).map(p => `${p.left} → ${p.right}`).join(' · ')}
+                    {matchIsNew ? (() => {
+                      const left = q.options.left||[], right = q.options.right||[]
+                      const cArr = (() => { try { return JSON.parse(q.correct_answer||'[]') } catch { return [] } })()
+                      return left.map((lText,li) => (
+                        <span key={li}>{li>0&&' · '}<strong>{li+1}. {lText}</strong> → {right[cArr[li]]??'?'}</span>
+                      ))
+                    })()
+                    : (q.options||[]).map((p,i) => <span key={i}>{i>0&&' · '}<strong>{p.left}</strong> → {p.right}</span>)
+                    }
+                  </div>
+                )}
+
+                {/* Per-question teacher note */}
+                {hasAnswer && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <input type="text"
+                      placeholder="Note for this question — visible to student after saving…"
+                      value={mark?.comment || ''}
+                      onChange={e => setNote(q.id, e.target.value)}
+                      style={{ width: '100%', fontSize: '0.82rem', padding: '0.28rem 0.5rem',
+                        border: '1px solid var(--border)', borderRadius: '5px',
+                        background: 'var(--bg-card)', color: 'var(--text)', fontFamily: 'inherit' }} />
                   </div>
                 )}
               </div>
-
             </div>
           )
         })}
       </div>
 
-      {/* ── Overall feedback box ── */}
+      {/* ── Overall feedback + Save all ── */}
       <div className="exercise-feedback-section">
         <div className="form-field">
           <label>
-            💬 Feedback for student
+            💬 Overall feedback for student
             <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.4rem' }}>
               — visible to student after you save
             </span>
@@ -8890,14 +9007,12 @@ function AdminExerciseReview({ details, onBack }) {
             onChange={e => setFeedback(e.target.value)}
           />
         </div>
-        {hasAnswers && (
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginTop: '0.75rem' }}>
-            <button className="btn-gold" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save feedback →'}
-            </button>
-            {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved — student can see your feedback</span>}
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginTop: '0.75rem' }}>
+          <button className="btn-gold" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save review →'}
+          </button>
+          {saved && <span style={{ color: '#4ade80', fontSize: '0.9rem' }}>✓ Saved — student can see your feedback</span>}
+        </div>
       </div>
     </div>
   )
