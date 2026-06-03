@@ -11708,11 +11708,15 @@ function AdminLevels() {
   const [editName, setEditName]   = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [allBooks, setAllBooks]   = useState([])
+  const [booksLoading, setBooksLoading] = useState(false)
   const [selectedBookId, setSelectedBookId] = useState({}) // {courseId: bookId}
 
-  useEffect(() => {
-    fetchAllBooks().then(bks => setAllBooks(bks))
-  }, [])
+  const loadBooks = () => {
+    setBooksLoading(true)
+    fetchAllBooks().then(bks => { setAllBooks(bks); setBooksLoading(false) })
+  }
+
+  useEffect(() => { loadBooks() }, [])
 
   const persist = (next) => {
     setCourses(next)
@@ -11812,7 +11816,7 @@ function AdminLevels() {
                   <div style={{ padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                     <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</span>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }}
-                      onClick={() => setExpandedId(isExpanded ? null : c.id)}>
+                      onClick={() => { if (!isExpanded) loadBooks(); setExpandedId(isExpanded ? null : c.id) }}>
                       📚 Books {linkedBooks.length > 0 ? `(${linkedBooks.length})` : ''} {isExpanded ? '▲' : '▼'}
                     </button>
                     <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.22rem 0.6rem' }} onClick={() => startEdit(c)}>Edit</button>
@@ -11838,10 +11842,16 @@ function AdminLevels() {
                     )}
 
                     {/* Link book from Books tab */}
-                    {allBooks.length === 0 ? (
-                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
-                        No books yet. Add books in the <strong>📖 Books</strong> tab first.
-                      </p>
+                    {booksLoading ? (
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>Loading books…</p>
+                    ) : allBooks.length === 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                          No books found. Add books in the <strong>📖 Books</strong> tab first.
+                        </p>
+                        <button className="btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', flexShrink: 0 }}
+                          onClick={loadBooks}>↺ Refresh</button>
+                      </div>
                     ) : unlinkableBooks.length === 0 ? (
                       <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>All books are linked to this course.</p>
                     ) : (
@@ -11849,7 +11859,7 @@ function AdminLevels() {
                         <select value={selectedBookId[c.id] || ''}
                           onChange={e => setSelectedBookId(prev => ({ ...prev, [c.id]: e.target.value }))}
                           style={{ flex: 1, fontSize: '0.85rem', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-                          <option value="">Select a book to link…</option>
+                          <option value="">— Select a book —</option>
                           {unlinkableBooks.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
                         </select>
                         <button className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.32rem 0.85rem', flexShrink: 0 }}
