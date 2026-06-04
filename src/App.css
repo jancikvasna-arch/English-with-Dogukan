@@ -130,6 +130,12 @@ a { text-decoration: none; }
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
+/* Navy public-homepage navbar so the gold wordmark pops */
+.navbar--navy {
+  background: #0F2044;
+  backdrop-filter: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
 .nav-inner {
   max-width: 1200px;
   margin: 0 auto;
@@ -155,6 +161,39 @@ a { text-decoration: none; }
 }
 .nav-links a:hover { color: var(--gold); }
 .nav-signin { padding: 0.55rem 1rem; font-size: 0.9rem; }
+
+/* ── Brand wordmark (navy navbar) ── */
+.brand { display: inline-flex; flex-direction: column; gap: 3px; line-height: 1; }
+.brand-top { display: flex; align-items: center; gap: 8px; }
+.brand-dot { width: 10px; height: 10px; border-radius: 50%; background: #F5C842; flex-shrink: 0; }
+.brand-word {
+  font-family: 'Inter', sans-serif; font-weight: 800;
+  font-size: 1.5rem; letter-spacing: -0.01em; color: #fff; line-height: 1;
+}
+.brand-rule { display: flex; height: 3px; margin-left: 18px; border-radius: 2px; overflow: hidden; }
+.brand-rule-dark { width: 60px; background: #fff; }
+.brand-rule-gold { width: 32px; background: #F5C842; }
+.brand-sub { margin-left: 18px; font-size: 0.82rem; font-weight: 500; color: #9fb3d6; }
+
+/* Navy-navbar link + button colours */
+.navbar--navy .nav-links a { color: #c4cfe2; }
+.navbar--navy .nav-links a:hover { color: #F5C842; }
+.navbar--navy .nav-signin {
+  background: transparent; border: 1px solid rgba(255, 255, 255, 0.35); color: #eef2f8;
+}
+.navbar--navy .nav-signin:hover { border-color: #F5C842; color: #F5C842; }
+.navbar--navy .btn-outline {
+  border-color: rgba(255, 255, 255, 0.35); color: #eef2f8;
+}
+.navbar--navy .btn-outline:hover { border-color: #F5C842; color: #F5C842; }
+.nav-book {
+  background: #F5C842; color: #1a1300; font-weight: 800;
+  border: none; border-radius: 10px; padding: 0.62rem 1.2rem;
+  font-size: 0.95rem; cursor: pointer; font-family: inherit;
+  transition: filter 0.15s, transform 0.1s;
+}
+.nav-book:hover { filter: brightness(1.06); }
+.nav-book:active { transform: scale(0.98); }
 
 /* ─── Hero ──────────────────────────────────────────────── */
 .hero-section {

@@ -236,10 +236,15 @@ export function FlowSteps({ current }) {
 // ─── Navbar ───────────────────────────────────────────────────
 export function Navbar({ onBook, user, onAccount, onSignIn }) {
   return (
-    <nav className="navbar">
+    <nav className="navbar navbar--navy">
       <div className="nav-inner">
-        <span className="nav-logo">
-          English with <span className="gold">Dogukan</span>
+        <span className="brand" aria-label="English with Dogukan">
+          <span className="brand-top">
+            <span className="brand-dot" />
+            <span className="brand-word">English</span>
+          </span>
+          <span className="brand-rule"><span className="brand-rule-dark" /><span className="brand-rule-gold" /></span>
+          <span className="brand-sub">with Dogukan</span>
         </span>
         <div className="nav-links">
           <a href="#how-it-works">How it works</a>
@@ -251,7 +256,7 @@ export function Navbar({ onBook, user, onAccount, onSignIn }) {
           ) : (
             <>
               <button className="btn-ghost nav-signin" onClick={onSignIn}>Sign in</button>
-              <button className="btn-gold" onClick={onBook}>Book free lesson</button>
+              <button className="nav-book" onClick={onBook}>Book free lesson</button>
             </>
           )}
         </div>
