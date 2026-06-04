@@ -21,19 +21,20 @@ html, body {
   margin: 0; padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 .site { background: var(--bg); min-height: 100vh; }
 .flow-wrapper { background: var(--bg); }
 
 /* ─── Typography ────────────────────────────────────────── */
 h1, h2, h3, h4 {
-  font-family: 'DM Serif Display', serif;
-  line-height: 1.2;
+  font-family: 'Inter', sans-serif; font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
-h1 { font-size: clamp(2rem, 5vw, 3.5rem); }
-h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); }
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; letter-spacing: -0.03em; }
+h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; }
 h3 { font-size: 1.25rem; }
 p { margin: 0; }
 a { text-decoration: none; }
@@ -54,7 +55,7 @@ a { text-decoration: none; }
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-weight: 700;
   font-size: 1rem;
   cursor: pointer;
@@ -71,7 +72,7 @@ a { text-decoration: none; }
   border: 1px solid var(--border);
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-weight: 500;
   font-size: 1rem;
   cursor: pointer;
@@ -86,7 +87,7 @@ a { text-decoration: none; }
   border: 1px solid var(--border);
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-weight: 500;
   font-size: 1rem;
   cursor: pointer;
@@ -138,7 +139,7 @@ a { text-decoration: none; }
   justify-content: space-between;
 }
 .nav-logo {
-  font-family: 'DM Serif Display', serif;
+  font-family: 'Inter', sans-serif; font-weight: 700;
   font-size: 1.25rem;
   color: var(--text);
 }
@@ -221,7 +222,7 @@ a { text-decoration: none; }
   padding: 1.5rem;
 }
 .hero-teacher-name {
-  font-family: 'DM Serif Display', serif;
+  font-family: 'Inter', sans-serif; font-weight: 700;
   font-size: 1.2rem;
   color: var(--text);
   margin: 0 0 0.6rem;
@@ -270,7 +271,7 @@ a { text-decoration: none; }
   padding: 1.75rem;
 }
 .step-number {
-  font-family: 'DM Serif Display', serif;
+  font-family: 'Inter', sans-serif; font-weight: 700;
   font-size: 2.5rem;
   color: rgba(0, 102, 153,0.25);
   margin-bottom: 1rem;
@@ -321,7 +322,7 @@ a { text-decoration: none; }
 .module-toggle {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
   background: transparent; border: none; padding: 0.65rem 0.9rem;
-  color: var(--text); font-size: 0.83rem; font-family: 'DM Sans', sans-serif;
+  color: var(--text); font-size: 0.83rem; font-family: 'Inter', sans-serif;
   cursor: pointer; text-align: left; gap: 0.5rem;
   transition: background 0.15s;
 }
@@ -397,7 +398,7 @@ a { text-decoration: none; }
 .pricing-card h3 { margin-bottom: 1rem; font-size: 1.1rem; }
 .pricing-price { margin-bottom: 1rem; }
 .price-amount {
-  font-family: 'DM Serif Display', serif;
+  font-family: 'Inter', sans-serif; font-weight: 700;
   font-size: 2.75rem;
   color: var(--gold);
   line-height: 1;
@@ -487,7 +488,7 @@ a { text-decoration: none; }
   padding: 0.55rem 1rem;
   font-size: 0.87rem;
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 .credential-icon { font-size: 1rem; }
 
@@ -528,7 +529,7 @@ a { text-decoration: none; }
   justify-content: space-between;
 }
 .flow-header-logo {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.92rem;
   color: var(--text-muted);
 }
@@ -541,7 +542,7 @@ a { text-decoration: none; }
   background: none;
   border: none;
   color: var(--text-muted);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.92rem;
   cursor: pointer;
   padding: 0;
@@ -571,7 +572,7 @@ a { text-decoration: none; }
   background: none;
   border: none;
   color: var(--text-muted);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.88rem;
   cursor: pointer;
   padding: 0;
@@ -594,7 +595,7 @@ a { text-decoration: none; }
   border-radius: 8px;
   padding: 0.75rem 1rem;
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
   outline: none;
   transition: border-color 0.2s;
@@ -716,7 +717,7 @@ a { text-decoration: none; }
 .passage-box p { color: var(--text-muted); font-size: 0.88rem; line-height: 1.8; }
 
 .test-question { margin-bottom: 1.5rem; }
-.question-text { font-size: 1.05rem; font-weight: 500; margin-bottom: 0.4rem; line-height: 1.55; color: var(--text); font-family: 'DM Sans', sans-serif; }
+.question-text { font-size: 1.05rem; font-weight: 500; margin-bottom: 0.4rem; line-height: 1.55; color: var(--text); font-family: 'Inter', sans-serif; }
 .question-hint { color: var(--text-dim); font-size: 0.85rem; }
 
 .options-list { display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: 2rem; }
@@ -726,7 +727,7 @@ a { text-decoration: none; }
   border-radius: 8px;
   padding: 0.9rem 1.25rem;
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.92rem;
   cursor: pointer;
   text-align: left;
@@ -748,7 +749,7 @@ a { text-decoration: none; }
   border-radius: 8px;
   padding: 0.85rem 1rem;
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
   outline: none;
   transition: border-color 0.2s;
@@ -790,7 +791,7 @@ a { text-decoration: none; }
   width: 80px;
   height: 80px;
   font-size: 1.6rem;
-  font-family: 'DM Serif Display', serif;
+  font-family: 'Inter', sans-serif; font-weight: 700;
   margin-bottom: 1rem;
 }
 .results-scores {
@@ -932,7 +933,7 @@ a { text-decoration: none; }
   border-radius: 8px;
   padding: 0.65rem 1rem;
   color: var(--text-muted);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.88rem;
   cursor: pointer;
   text-align: left;
@@ -1141,7 +1142,7 @@ a { text-decoration: none; }
 
 /* Student dashboard exercises section */
 .dashboard-exercises { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem; }
-.dashboard-section-title { font-family: 'DM Serif Display', serif; font-size: 1.15rem; color: var(--text); margin-bottom: 1rem; }
+.dashboard-section-title { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 1.15rem; color: var(--text); margin-bottom: 1rem; }
 .dashboard-empty-small { color: var(--text-muted); font-size: 0.9rem; }
 
 .exercise-list { display: flex; flex-direction: column; gap: 0.6rem; }
@@ -1209,7 +1210,7 @@ a { text-decoration: none; }
   border: none;
   border-radius: 7px 7px 0 0;
   padding: 0.6rem 1.1rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 0.88rem;
   color: rgba(255,255,255,0.72);
   cursor: pointer;
@@ -1253,7 +1254,7 @@ a { text-decoration: none; }
 .admin-assign-form select {
   width: 100%; padding: 0.65rem 0.9rem; background: var(--bg-darker);
   border: 1px solid var(--border); border-radius: 8px; color: var(--text);
-  font-family: 'DM Sans', sans-serif; font-size: 0.9rem; appearance: none;
+  font-family: 'Inter', sans-serif; font-size: 0.9rem; appearance: none;
 }
 .admin-asgn-section { margin-bottom: 1.5rem; }
 .admin-asgn-section-title {
@@ -1282,7 +1283,7 @@ a { text-decoration: none; }
 .review-mark-btn {
   background: none; border: 1px solid var(--border); border-radius: 6px;
   padding: 0.4rem 0.75rem; font-size: 0.82rem; color: var(--text-muted);
-  font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.15s; text-align: left;
+  font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.15s; text-align: left;
 }
 .review-mark-btn--correct.active { background: rgba(74,222,128,0.12); border-color: #4ade80; color: #4ade80; }
 .review-mark-btn--wrong.active   { background: rgba(248,113,113,0.12); border-color: #f87171; color: #f87171; }
@@ -1355,7 +1356,7 @@ a { text-decoration: none; }
   display: inline-flex; align-items: center; gap: 0.6rem;
   background: var(--bg-card); border: 1px dashed rgba(0,102,153,0.4);
   border-radius: 10px; padding: 1rem 1.5rem; color: var(--gold);
-  font-family: 'DM Sans', sans-serif; font-size: 0.92rem; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 0.92rem; cursor: pointer;
   transition: border-color 0.15s, background 0.15s; width: 100%;
   justify-content: center;
 }
@@ -1384,7 +1385,7 @@ a { text-decoration: none; }
 .builder-q-remove:hover { color: #f87171; }
 .builder-add-q-btn {
   width: 100%; padding: 0.7rem; background: none; border: 1px dashed var(--border);
-  border-radius: 8px; color: var(--text-muted); font-family: 'DM Sans', sans-serif;
+  border-radius: 8px; color: var(--text-muted); font-family: 'Inter', sans-serif;
   font-size: 0.88rem; cursor: pointer; transition: border-color 0.15s, color 0.15s;
 }
 .builder-add-q-btn:hover { border-color: var(--gold); color: var(--gold); }
@@ -1407,7 +1408,7 @@ a { text-decoration: none; }
 .builder-add-pair-btn {
   align-self: flex-start; background: none; border: 1px dashed var(--border);
   border-radius: 6px; padding: 0.35rem 0.75rem; color: var(--text-muted);
-  font-family: 'DM Sans', sans-serif; font-size: 0.82rem; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 0.82rem; cursor: pointer;
   transition: border-color 0.15s, color 0.15s; margin-top: 0.15rem;
 }
 .builder-add-pair-btn:hover { border-color: var(--gold); color: var(--gold); }
@@ -1430,7 +1431,7 @@ a { text-decoration: none; }
 .plan-picker-item {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 0.65rem 0.9rem; font-family: 'DM Sans', sans-serif; font-size: 0.88rem;
+  padding: 0.65rem 0.9rem; font-family: 'Inter', sans-serif; font-size: 0.88rem;
   color: var(--text-muted); cursor: pointer; text-align: left;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
@@ -1490,7 +1491,7 @@ a { text-decoration: none; }
   border-radius: 10px; padding: 0.5rem 1rem; min-width: 80px;
 }
 .access-bundle-count {
-  font-family: 'DM Serif Display', serif; font-size: 1.6rem; color: var(--gold);
+  font-family: 'Inter', sans-serif; font-weight: 700; font-size: 1.6rem; color: var(--gold);
   line-height: 1;
 }
 .access-bundle-count span { font-size: 0.9rem; color: var(--text-muted); }
@@ -1539,7 +1540,7 @@ a { text-decoration: none; }
 
 .lesson-feedback-btn {
   display: inline-block; margin-top: 0.5rem; background: none; border: none;
-  color: var(--gold); font-size: 0.84rem; font-family: 'DM Sans', sans-serif;
+  color: var(--gold); font-size: 0.84rem; font-family: 'Inter', sans-serif;
   cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px;
 }
 .lesson-feedback-btn:hover { color: var(--gold-light); }
@@ -1560,7 +1561,7 @@ a { text-decoration: none; }
 }
 .admin-access-select {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
-  color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
+  color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.9rem;
   padding: 0.55rem 0.85rem; cursor: pointer; flex: 1; min-width: 180px;
   appearance: auto;
 }
@@ -1664,7 +1665,7 @@ a { text-decoration: none; }
 }
 .builder-type-pill {
   background: var(--bg); border: 1px solid var(--border); border-radius: 20px;
-  padding: 0.45rem 1.1rem; font-family: 'DM Sans', sans-serif; font-size: 0.88rem;
+  padding: 0.45rem 1.1rem; font-family: 'Inter', sans-serif; font-size: 0.88rem;
   color: var(--text-muted); cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
@@ -1677,7 +1678,7 @@ a { text-decoration: none; }
 /* Upload button */
 .builder-upload-btn {
   background: none; border: 1px dashed var(--border); border-radius: 8px;
-  padding: 0.5rem 1rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif;
+  padding: 0.5rem 1rem; color: var(--text-muted); font-family: 'Inter', sans-serif;
   font-size: 0.85rem; cursor: pointer; white-space: nowrap; flex-shrink: 0;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -1703,7 +1704,7 @@ a { text-decoration: none; }
 /* AI extract button */
 .builder-ai-btn {
   background: none; border: 1px solid var(--border); border-radius: 8px;
-  padding: 0.45rem 0.9rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif;
+  padding: 0.45rem 0.9rem; color: var(--text-muted); font-family: 'Inter', sans-serif;
   font-size: 0.82rem; cursor: pointer; white-space: nowrap; flex-shrink: 0;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -2177,7 +2178,7 @@ button.label-chip:hover { opacity: 0.8; }
 }
 .location-field { display: flex; flex-direction: column; gap: 0.3rem; }
 .location-field label {
-  font-size: 0.8rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif;
+  font-size: 0.8rem; color: var(--text-muted); font-family: 'Inter', sans-serif;
 }
 .location-field input { padding: 0.45rem 0.65rem; font-size: 0.88rem; }
 .required-star { color: #e05c5c; margin-left: 0.15rem; }
@@ -2193,7 +2194,7 @@ button.label-chip:hover { opacity: 0.8; }
 .location-filter-input {
   padding: 0.3rem 0.55rem; font-size: 0.82rem; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
-  width: 5rem; font-family: 'DM Sans', sans-serif;
+  width: 5rem; font-family: 'Inter', sans-serif;
 }
 .location-filter-input--wide { width: 9rem; }
 .location-filter-input::placeholder { color: var(--text-dim); }
@@ -2384,12 +2385,12 @@ button.label-chip:hover { opacity: 0.8; }
 }
 .plan-stage-num {
   font-weight: 700; font-size: 0.88rem;
-  white-space: nowrap; font-family: 'DM Sans', sans-serif;
+  white-space: nowrap; font-family: 'Inter', sans-serif;
 }
 .plan-stage-name-input {
   flex: 1; padding: 0.32rem 0.6rem; font-size: 0.85rem; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 .plan-stage-items { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
 
@@ -2535,7 +2536,7 @@ button.label-chip:hover { opacity: 0.8; }
   align-items: center;
   gap: 1rem;
   cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   font-size: 1rem;
   font-weight: 600;
   color: var(--text);
@@ -2837,7 +2838,7 @@ button.label-chip:hover { opacity: 0.8; }
 .demo-option {
   width: 100%; text-align: left; background: var(--bg); border: 1.5px solid var(--border);
   border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.88rem; cursor: pointer;
-  font-family: 'DM Sans', sans-serif; color: var(--text); transition: border-color 0.15s;
+  font-family: 'Inter', sans-serif; color: var(--text); transition: border-color 0.15s;
 }
 .demo-option:hover:not(:disabled)   { border-color: var(--gold); }
 .demo-option.selected { border-color: var(--gold); background: rgba(0,102,153,0.06); }
@@ -2846,7 +2847,7 @@ button.label-chip:hover { opacity: 0.8; }
 .demo-tf { display: flex; gap: 0.5rem; }
 .demo-tf-btn {
   flex: 1; padding: 0.6rem; border: 1.5px solid var(--border); border-radius: 8px;
-  background: var(--bg); cursor: pointer; font-family: 'DM Sans', sans-serif;
+  background: var(--bg); cursor: pointer; font-family: 'Inter', sans-serif;
   font-size: 0.9rem; color: var(--text); font-weight: 500; transition: border-color 0.15s;
 }
 .demo-tf-btn.selected { border-color: var(--gold); background: rgba(0,102,153,0.06); }
@@ -2854,7 +2855,7 @@ button.label-chip:hover { opacity: 0.8; }
 .demo-tf-btn.wrong    { border-color: #ef4444; background: rgba(239,68,68,0.08); }
 .demo-fill-input {
   width: 100%; padding: 0.55rem 0.75rem; border: 1.5px solid var(--border);
-  border-radius: 8px; font-size: 0.9rem; font-family: 'DM Sans', sans-serif;
+  border-radius: 8px; font-size: 0.9rem; font-family: 'Inter', sans-serif;
   background: var(--bg); color: var(--text);
 }
 .demo-fill-input.correct { border-color: #22c55e; }
@@ -2895,7 +2896,7 @@ button.label-chip:hover { opacity: 0.8; }
   background: none; border: none; cursor: pointer;
   padding: 0.85rem 0;
   font-size: 0.95rem; font-weight: 600; color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   border-bottom: 1px solid var(--border);
 }
 .notes-section-toggle:hover { color: var(--gold); }
@@ -2945,7 +2946,7 @@ button.label-chip:hover { opacity: 0.8; }
   flex: 1;
   border: 1px solid var(--border); border-radius: 0.5rem;
   padding: 0.55rem 0.75rem;
-  font-size: 0.9rem; font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem; font-family: 'Inter', sans-serif;
   color: var(--text); background: var(--bg);
   resize: vertical; min-height: 2.8rem;
 }
