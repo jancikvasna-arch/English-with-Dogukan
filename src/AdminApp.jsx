@@ -2129,6 +2129,11 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   // Matching: whether the interactive drag-and-drop pairs are enabled.
   // Off = context-material-only matching exercise (no pairs required).
   const [matchingDnd,    setMatchingDnd]    = useState(true)
+  // Speaking: whether the (optional) written questions section is shown.
+  // Off = pure verbal speaking activity, no written questions.
+  const [speakingQuestions, setSpeakingQuestions] = useState(
+    () => (initialExercise?.questions || []).some(q => q.type === 'speaking' && (q.prompt || '').trim().length > 0)
+  )
   const [photoLoading,   setPhotoLoading]   = useState(false)
   const [photoError,     setPhotoError]     = useState(null)
   // OCR review state: null = not in review, string = raw text to review
@@ -2327,9 +2332,12 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       level:     exLevel  || null,
       contextImageSettings: contextImageModes.length ? contextImageModes : null,
     }
-    // For listening/viewing: auto-create one dummy question as the activity type marker.
-    // For matching with drag-and-drop OFF: save no questions (context-material only).
-    const questionsToSave = isVerbal
+    // Pure-verbal activities (listening, viewing, or speaking with questions OFF):
+    // save one dummy question as the activity-type marker.
+    // Matching with drag-and-drop OFF: save no questions (context-material only).
+    const speakingNoQuestions = selType === 'speaking' && !speakingQuestions
+    const pureVerbal = selType === 'listening' || selType === 'viewing' || speakingNoQuestions
+    const questionsToSave = pureVerbal
       ? [{ type: selType, prompt: '', order_index: 0, options: [], correct_answer: null, hint: null }]
       : noDnd
         ? []
@@ -2378,6 +2386,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const stageTypeDef = STAGE_TYPES.find(t => t.value === stageType) || {}
   // Matching exercise with drag-and-drop turned off → no questions required
   const matchingNoDnd = selType === 'matching' && !matchingDnd
+  // Speaking exercise with the questions section turned off → pure verbal
+  const speakingNoQ = selType === 'speaking' && !speakingQuestions
 
   return (
     <div>
@@ -2865,10 +2875,36 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                     </div>
                   )}
 
+                  {/* Speaking: optional written-questions toggle */}
+                  {selType === 'speaking' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '0.85rem' }}>
+                      <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>❓ Written questions</span>
+                      <div style={{ display: 'flex', gap: '0.35rem', marginLeft: 'auto' }}>
+                        <button type="button"
+                          className={`radio-option ${speakingQuestions ? 'selected' : ''}`}
+                          style={{ fontSize: '0.8rem', padding: '0.3rem 0.85rem' }}
+                          onClick={() => { setSpeakingQuestions(true); if (!questions.length) setQuestions([newQ('speaking')]) }}>
+                          On
+                        </button>
+                        <button type="button"
+                          className={`radio-option ${!speakingQuestions ? 'selected' : ''}`}
+                          style={{ fontSize: '0.8rem', padding: '0.3rem 0.85rem' }}
+                          onClick={() => setSpeakingQuestions(false)}>
+                          Off
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {matchingNoDnd ? (
                     <div className="builder-section-sub" style={{ background: '#f8f5ee', border: '1px dashed var(--border)', borderRadius: '8px', padding: '0.75rem 0.9rem' }}>
                       Drag-and-drop is off. Students will just see the context material and any instructions you add in the
                       <strong> Description</strong> or <strong>Reading text</strong> above — no pairs to build.
+                    </div>
+                  ) : speakingNoQ ? (
+                    <div className="builder-section-sub" style={{ background: '#f8f5ee', border: '1px dashed var(--border)', borderRadius: '8px', padding: '0.75rem 0.9rem' }}>
+                      Written questions are off. This is a verbal speaking activity — students discuss with you, no written
+                      questions needed. Turn this on if you want to add prompts.
                     </div>
                   ) : (
                   <>
