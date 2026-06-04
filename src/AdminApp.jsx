@@ -2141,6 +2141,9 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   // fill_blank picture upload state
   const [fbPicLoading,   setFbPicLoading]   = useState(false)
   const [fbPicError,        setFbPicError]        = useState(null)
+  // fill_blank word-bank state
+  const [newWordInput,   setNewWordInput]   = useState('')
+  const [wordOcrLoading, setWordOcrLoading] = useState(false)
   // Annotation modes per context image [{circles, lines}]
   const [contextImageModes, setContextImageModes] = useState(
     Array.isArray(initialExercise?.context_image_settings)
@@ -2155,6 +2158,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const contextFileRef  = useRef(null)
   const exerciseFileRef = useRef(null)
   const fbPicFileRef    = useRef(null)
+  const wordOcrFileRef  = useRef(null)
   const thumbnailRef    = useRef(null)
 
   // ── Context images ──────────────────────────────────────────
@@ -2207,16 +2211,64 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       setContextImages([compressed])
       // 2. Detect blank bounding boxes
       const blanks = await detectImageBlanks(compressed)
-      // 3. Store as overlay prompt (even if 0 blanks — Dogukan can tap to add)
-      const prompt = JSON.stringify({ overlay: true, blanks })
+      // 3. Store as overlay prompt (even if 0 blanks — Dogukan can tap to add).
+      //    Preserve any existing mode + word bank.
       setQuestions(prev => {
         const q = prev[0] ?? newQ('fill_blank')
-        return [{ ...q, type: 'fill_blank', prompt, correct_answer: '' }]
+        const cur = parseOverlayPrompt(q.prompt) || {}
+        const merged = {
+          overlay: true, blanks,
+          mode:  cur.mode === 'wordbank' ? 'wordbank' : 'type',
+          words: Array.isArray(cur.words) ? cur.words : [],
+        }
+        return [{ ...q, type: 'fill_blank', prompt: JSON.stringify(merged), correct_answer: '' }]
       })
     } catch (err) {
       setFbPicError(err.message ?? 'Failed to read the picture. Please try again.')
     } finally {
       setFbPicLoading(false)
+    }
+  }
+
+  // ── Fill-blank word bank (mode 2) ───────────────────────────
+  // Patch the overlay prompt on questions[0], preserving the other fields.
+  const patchFbOverlay = (patch) => setQuestions(prev => {
+    const q = prev[0] ?? newQ('fill_blank')
+    const cur = parseOverlayPrompt(q.prompt) || { overlay: true, blanks: [] }
+    const next = { ...cur, overlay: true, ...patch }
+    const rest = prev.slice(1)
+    return [{ ...q, type: 'fill_blank', prompt: JSON.stringify(next) }, ...rest]
+  })
+  const setFbMode  = (mode)  => patchFbOverlay({ mode })
+  const addFbWords = (list)  => setQuestions(prev => {
+    const q = prev[0] ?? newQ('fill_blank')
+    const cur = parseOverlayPrompt(q.prompt) || { overlay: true, blanks: [] }
+    const words = [...(Array.isArray(cur.words) ? cur.words : []), ...list]
+    return [{ ...q, type: 'fill_blank', prompt: JSON.stringify({ ...cur, overlay: true, mode: 'wordbank', words }) }, ...prev.slice(1)]
+  })
+  const removeFbWord = (idx) => setQuestions(prev => {
+    const q = prev[0]; if (!q) return prev
+    const cur = parseOverlayPrompt(q.prompt) || { overlay: true, blanks: [] }
+    const words = (Array.isArray(cur.words) ? cur.words : []).filter((_, i) => i !== idx)
+    return [{ ...q, prompt: JSON.stringify({ ...cur, overlay: true, words }) }, ...prev.slice(1)]
+  })
+
+  // OCR a picture → extract candidate words → add to the bank
+  const handleWordOcr = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    e.target.value = ''
+    setWordOcrLoading(true); setFbPicError(null)
+    try {
+      const raw = await ocrImage(file)
+      const detected = raw.split(/\s+/)
+        .map(w => w.replace(/[^\p{L}\p{N}'’-]/gu, '').trim())
+        .filter(w => w.length > 1)
+      if (!detected.length) { setFbPicError('No words detected — try a clearer photo of the word list.'); return }
+      addFbWords(detected)
+    } catch (err) {
+      setFbPicError(err.message ?? 'Failed to read the picture.')
+    } finally {
+      setWordOcrLoading(false)
     }
   }
 
@@ -2773,13 +2825,46 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
             <div className="builder-section">
               {selType === 'fill_blank' ? (
                 /* ── Fill-in-the-blank: upload picture → auto-extract blanks ── */
-                <>
+                (() => {
+                  const overlay = parseOverlayPrompt(questions[0]?.prompt) || { overlay: true, blanks: [] }
+                  const fbMode  = overlay.mode === 'wordbank' ? 'wordbank' : 'type'
+                  const blanks  = overlay.blanks ?? []
+                  const words   = Array.isArray(overlay.words) ? overlay.words : []
+                  const updateBlanks = (next) => {
+                    const cur = parseOverlayPrompt(questions[0].prompt) || { overlay: true, blanks: [] }
+                    updateQ(questions[0].tempId, 'prompt', JSON.stringify({ ...cur, overlay: true, blanks: next }))
+                  }
+                  const addWordsFromInput = () => {
+                    const parts = newWordInput.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+                    if (parts.length) addFbWords(parts)
+                    setNewWordInput('')
+                  }
+                  return (
+                  <>
+                  {/* Mode selector — the two ways to fill the blanks */}
+                  <div style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '0.85rem' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>How do students fill the blanks?</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button type="button"
+                        className={`radio-option ${fbMode === 'type' ? 'selected' : ''}`}
+                        style={{ fontSize: '0.82rem', padding: '0.4rem 0.9rem' }}
+                        onClick={() => setFbMode('type')}>
+                        ✍️ Type the answers
+                      </button>
+                      <button type="button"
+                        className={`radio-option ${fbMode === 'wordbank' ? 'selected' : ''}`}
+                        style={{ fontSize: '0.82rem', padding: '0.4rem 0.9rem' }}
+                        onClick={() => setFbMode('wordbank')}>
+                        🧩 Drag words from a bank
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="fb-upload-area">
                     <input ref={fbPicFileRef} type="file" accept="image/*" style={{ display: 'none' }}
                       onChange={handleFbPicUpload} />
 
                     {contextImages.length === 0 ? (
-                      /* No picture yet — big prominent upload CTA */
                       <button
                         type="button"
                         className="fb-upload-cta"
@@ -2791,7 +2876,6 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                         }
                       </button>
                     ) : (
-                      /* Picture uploaded — show thumbnail + re-upload option */
                       <div className="fb-pic-row">
                         <img src={contextImages[0]} alt="Exercise" className="fb-pic-thumb" />
                         <div className="fb-pic-actions">
@@ -2814,18 +2898,12 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                   </div>
 
                   {/* Preview: image with detected blanks + tap-to-add tool */}
-                  {contextImages[0] && questions[0] && (() => {
-                    const overlay = parseOverlayPrompt(questions[0].prompt)
-                    const blanks  = overlay?.blanks ?? []
-                    const updateBlanks = (next) => {
-                      updateQ(questions[0].tempId, 'prompt', JSON.stringify({ overlay: true, blanks: next }))
-                    }
-                    return (
+                  {contextImages[0] && questions[0] && (
                       <div className="fb-preview-section">
                         <div className="fb-preview-header">
                           <span className="fb-preview-label">
                             {blanks.length > 0
-                              ? `✅ ${blanks.length} blank${blanks.length !== 1 ? 's' : ''} detected — students will type directly on the image`
+                              ? `✅ ${blanks.length} blank${blanks.length !== 1 ? 's' : ''} detected — students will ${fbMode === 'wordbank' ? 'drag words into these gaps' : 'type directly on the image'}`
                               : '⚠️ No blanks detected automatically — tap on the image below to add blank boxes'}
                           </span>
                           {blanks.length > 0 && (
@@ -2837,7 +2915,6 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                           )}
                         </div>
 
-                        {/* Tap-to-draw blank boxes on the image */}
                         <FbBlankEditor
                           src={contextImages[0]}
                           blanks={blanks}
@@ -2848,9 +2925,50 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                           💡 Click and drag on the image to add a blank. Click an existing blank to remove it.
                         </p>
                       </div>
-                    )
-                  })()}
-                </>
+                  )}
+
+                  {/* Word bank editor (mode 2 only) */}
+                  {fbMode === 'wordbank' && (
+                    <div className="fb-preview-section" style={{ marginTop: '0.85rem' }}>
+                      <div className="fb-preview-header">
+                        <span className="fb-preview-label">🧩 Word bank ({words.length})</span>
+                      </div>
+                      <p className="builder-section-sub" style={{ marginTop: 0 }}>
+                        Add the words students will drag into the blanks. Each word is used once.
+                      </p>
+                      {words.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
+                          {words.map((w, i) => (
+                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#fff', border: '1px solid var(--border)', borderRadius: '20px', padding: '0.25rem 0.7rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                              {w}
+                              <button type="button" onClick={() => removeFbWord(i)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e05c5c', fontSize: '0.85rem', lineHeight: 1, padding: 0 }}>✕</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={newWordInput}
+                          onChange={e => setNewWordInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addWordsFromInput() } }}
+                          placeholder="Type a word (or several, comma-separated)…"
+                          style={{ flex: 1, minWidth: '200px', fontSize: '0.85rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                        <button type="button" className="btn-ghost" style={{ fontSize: '0.82rem' }}
+                          onClick={addWordsFromInput} disabled={!newWordInput.trim()}>+ Add</button>
+                        <input ref={wordOcrFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleWordOcr} />
+                        <button type="button" className="btn-ghost" style={{ fontSize: '0.82rem' }}
+                          disabled={wordOcrLoading}
+                          onClick={() => wordOcrFileRef.current?.click()}>
+                          {wordOcrLoading ? '⏳ Reading…' : '📸 Detect words from a picture'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  </>
+                  )
+                })()
               ) : (
                 /* ── All other types: numbered question cards ── */
                 <>
@@ -5024,7 +5142,7 @@ export function AdminStudentPlanView({ plan, studentId, studentName, onBack, adm
                 <div key={q.id} className="exercise-fill-block">
                   {q.hint && <p className="eq-hint" style={{ marginBottom: '0.4rem' }}>💡 {q.hint}</p>}
                   {overlay && cached.context_images?.[0] ? (
-                    <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks}
+                    <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks} words={overlay.words || null}
                       answers={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
                   ) : (
                     <InlineFillBlank prompt={q.prompt} answer={answers[q.id] || null} onChange={val => setAns(q.id, val)} />

@@ -387,7 +387,7 @@ export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExerci
               <div key={q.id} className="exercise-fill-block">
                 {q.hint && <p className="eq-hint" style={{ marginBottom: '0.4rem' }}>💡 {q.hint}</p>}
                 {overlay && cached.context_images?.[0] ? (
-                  <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks}
+                  <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks} words={overlay.words || null}
                     answers={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
                 ) : (
                   <InlineFillBlank prompt={q.prompt} answer={answers[q.id] || null} onChange={val => setAns(q.id, val)} />
@@ -734,10 +734,114 @@ export function FbBlankEditor({ src, blanks, onChange }) {
   )
 }
 
+// ─── ImageOverlayWordBank ─────────────────────────────────────
+// Image with blank drop-zones + a word bank below. Students drag (or tap) a
+// word into each blank. Each word is used once. Answer format matches the type
+// mode: { blankIndex: "word" }.
+export function ImageOverlayWordBank({ src, blanks, words, answers, onChange }) {
+  const imgRef = useRef(null)
+  const [renderedH, setRenderedH] = useState(0)
+  const [selectedKey, setSelectedKey] = useState(null) // word index selected via tap
+  const [dragOver, setDragOver] = useState(null)        // blank index hovered while dragging
+
+  const updateH = () => { if (imgRef.current) setRenderedH(imgRef.current.clientHeight) }
+  useEffect(() => {
+    updateH()
+    window.addEventListener('resize', updateH)
+    return () => window.removeEventListener('resize', updateH)
+  }, [src])
+
+  const current = (() => { try { return JSON.parse(answers || '{}') } catch { return {} } })()
+
+  // Remaining words = full list minus what's already placed (multiset, handles duplicates)
+  const placedCounts = {}
+  Object.values(current).forEach(w => { placedCounts[w] = (placedCounts[w] || 0) + 1 })
+  const seen = {}
+  const available = []
+  words.forEach((w, i) => {
+    seen[w] = (seen[w] || 0) + 1
+    if (seen[w] > (placedCounts[w] || 0)) available.push({ word: w, key: i })
+  })
+
+  const blankFontSize = (b) => {
+    if (!renderedH || !b.h) return 14
+    return Math.min(24, Math.max(9, Math.round(renderedH * (b.h / 100) * 0.55)))
+  }
+
+  const placeWord = (blankIdx, word) => {
+    onChange(JSON.stringify({ ...current, [blankIdx]: word }))
+    setSelectedKey(null)
+  }
+  const clearBlank = (blankIdx) => {
+    const next = { ...current }; delete next[blankIdx]
+    onChange(JSON.stringify(next))
+  }
+
+  const onBlankClick = (blankIdx) => {
+    if (current[blankIdx] != null) { clearBlank(blankIdx); return }   // tap filled → clear
+    if (selectedKey != null) placeWord(blankIdx, words[selectedKey])  // tap empty w/ selection → place
+  }
+
+  return (
+    <div>
+      <div className="img-overlay-wrap">
+        <img ref={imgRef} src={src} alt="Exercise" className="img-overlay-img" onLoad={updateH} />
+        {blanks.map((b, i) => {
+          const filled = current[i] != null
+          const isOver = dragOver === i
+          return (
+            <div
+              key={i}
+              onClick={() => onBlankClick(i)}
+              onDragOver={e => { e.preventDefault(); setDragOver(i) }}
+              onDragLeave={() => setDragOver(null)}
+              onDrop={e => { e.preventDefault(); const w = e.dataTransfer.getData('text/plain'); if (w) placeWord(i, w); setDragOver(null) }}
+              title={filled ? 'Tap to remove' : 'Tap a word, then tap here'}
+              style={{
+                position: 'absolute',
+                left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', boxSizing: 'border-box',
+                border: `2px solid ${isOver ? '#2563eb' : filled ? '#16a34a' : '#d4a853'}`,
+                background: isOver ? 'rgba(37,99,235,0.18)' : filled ? 'rgba(22,163,74,0.16)' : 'rgba(212,168,83,0.12)',
+                borderRadius: '4px',
+                fontSize: `${blankFontSize(b)}px`,
+                fontWeight: 600, color: '#1a2030', overflow: 'hidden', lineHeight: 1.1,
+              }}>
+              {filled ? current[i] : ''}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Word bank */}
+      <div className="matching-bank" style={{ marginTop: '0.75rem' }}>
+        <p className="matching-bank-label">
+          {available.length > 0 ? 'Drag a word into a gap (or tap a word, then tap a gap) ↓' : '✓ All words placed'}
+        </p>
+        <div className="matching-bank-items">
+          {available.map(({ word, key }) => (
+            <div key={key}
+              className="matching-chip"
+              draggable
+              onDragStart={e => e.dataTransfer.setData('text/plain', word)}
+              onClick={() => setSelectedKey(selectedKey === key ? null : key)}
+              style={selectedKey === key ? { outline: '2px solid #2563eb', outlineOffset: '1px' } : undefined}>
+              {word}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── ImageOverlayFill ─────────────────────────────────────────
 // Shows an exercise image with absolutely-positioned <input> boxes
 // placed over each detected blank. Students type directly on the image.
-export function ImageOverlayFill({ src, blanks, answers, onChange, disabled = false }) {
+// When `words` is provided (word-bank mode) and interactive, delegates to
+// ImageOverlayWordBank (drag/tap words into the gaps instead of typing).
+export function ImageOverlayFill({ src, blanks, answers, onChange, disabled = false, words = null }) {
   const imgRef = useRef(null)
   const [renderedH, setRenderedH] = useState(0)
 
@@ -763,6 +867,11 @@ export function ImageOverlayFill({ src, blanks, answers, onChange, disabled = fa
   const blankFontSize = (b) => {
     if (!renderedH || !b.h) return 14
     return Math.min(28, Math.max(9, Math.round(renderedH * (b.h / 100) * 0.60)))
+  }
+
+  // Word-bank mode (interactive): delegate to the drag/tap component.
+  if (words && words.length && !disabled) {
+    return <ImageOverlayWordBank src={src} blanks={blanks} words={words} answers={answers} onChange={onChange} />
   }
 
   return (
@@ -946,6 +1055,7 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
                   <ImageOverlayFill
                     src={ex.context_images[0]}
                     blanks={overlay.blanks}
+                    words={overlay.words || null}
                     answers={answers[q.id] || null}
                     onChange={val => setAnswer(q.id, val)}
                   />
@@ -1526,6 +1636,7 @@ export function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = fal
                   <ImageOverlayFill
                     src={exercise.context_images[0]}
                     blanks={overlay.blanks}
+                    words={overlay.words || null}
                     answers={answers[q.id] || null}
                     onChange={val => setAnswer(q.id, val)}
                   />
