@@ -3,7 +3,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 're
 import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignedPlansForStudent, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
 import { ADMIN_EMAIL, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
 import { COURSES_DATA } from './content'
-import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
+import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WORD_PILL_COLORS, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
 import { AccessBadge } from './StudentDashboard.jsx'
 
 export function fileToBase64(file) {
@@ -2860,6 +2860,49 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                     </div>
                   </div>
 
+                  {/* Word bank editor (mode 2 only) — shown above the picture */}
+                  {fbMode === 'wordbank' && (
+                    <div className="fb-preview-section" style={{ marginBottom: '0.85rem' }}>
+                      <div className="fb-preview-header">
+                        <span className="fb-preview-label">🧩 Word bank ({words.length})</span>
+                      </div>
+                      <p className="builder-section-sub" style={{ marginTop: 0 }}>
+                        Add the words students will drag into the blanks. Each word is used once.
+                      </p>
+                      {words.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
+                          {words.map((w, i) => {
+                            const c = WORD_PILL_COLORS[i % WORD_PILL_COLORS.length]
+                            return (
+                              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: c.bg, color: c.text, border: `1.5px solid ${c.border}`, borderRadius: '20px', padding: '0.25rem 0.7rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                                {w}
+                                <button type="button" onClick={() => removeFbWord(i)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: c.text, opacity: 0.7, fontSize: '0.85rem', lineHeight: 1, padding: 0 }}>✕</button>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={newWordInput}
+                          onChange={e => setNewWordInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addWordsFromInput() } }}
+                          placeholder="Type a word (or several, comma-separated)…"
+                          style={{ flex: 1, minWidth: '200px', fontSize: '0.85rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                        <button type="button" className="btn-ghost" style={{ fontSize: '0.82rem' }}
+                          onClick={addWordsFromInput} disabled={!newWordInput.trim()}>+ Add</button>
+                        <input ref={wordOcrFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleWordOcr} />
+                        <button type="button" className="btn-ghost" style={{ fontSize: '0.82rem' }}
+                          disabled={wordOcrLoading}
+                          onClick={() => wordOcrFileRef.current?.click()}>
+                          {wordOcrLoading ? '⏳ Reading…' : '📸 Detect words from a picture'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="fb-upload-area">
                     <input ref={fbPicFileRef} type="file" accept="image/*" style={{ display: 'none' }}
                       onChange={handleFbPicUpload} />
@@ -2925,46 +2968,6 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                           💡 Click and drag on the image to add a blank. Click an existing blank to remove it.
                         </p>
                       </div>
-                  )}
-
-                  {/* Word bank editor (mode 2 only) */}
-                  {fbMode === 'wordbank' && (
-                    <div className="fb-preview-section" style={{ marginTop: '0.85rem' }}>
-                      <div className="fb-preview-header">
-                        <span className="fb-preview-label">🧩 Word bank ({words.length})</span>
-                      </div>
-                      <p className="builder-section-sub" style={{ marginTop: 0 }}>
-                        Add the words students will drag into the blanks. Each word is used once.
-                      </p>
-                      {words.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
-                          {words.map((w, i) => (
-                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#fff', border: '1px solid var(--border)', borderRadius: '20px', padding: '0.25rem 0.7rem', fontSize: '0.85rem', fontWeight: 600 }}>
-                              {w}
-                              <button type="button" onClick={() => removeFbWord(i)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e05c5c', fontSize: '0.85rem', lineHeight: 1, padding: 0 }}>✕</button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          value={newWordInput}
-                          onChange={e => setNewWordInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addWordsFromInput() } }}
-                          placeholder="Type a word (or several, comma-separated)…"
-                          style={{ flex: 1, minWidth: '200px', fontSize: '0.85rem', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border)' }} />
-                        <button type="button" className="btn-ghost" style={{ fontSize: '0.82rem' }}
-                          onClick={addWordsFromInput} disabled={!newWordInput.trim()}>+ Add</button>
-                        <input ref={wordOcrFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleWordOcr} />
-                        <button type="button" className="btn-ghost" style={{ fontSize: '0.82rem' }}
-                          disabled={wordOcrLoading}
-                          onClick={() => wordOcrFileRef.current?.click()}>
-                          {wordOcrLoading ? '⏳ Reading…' : '📸 Detect words from a picture'}
-                        </button>
-                      </div>
-                    </div>
                   )}
                   </>
                   )

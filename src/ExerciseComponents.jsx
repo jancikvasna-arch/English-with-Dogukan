@@ -734,8 +734,19 @@ export function FbBlankEditor({ src, blanks, onChange }) {
   )
 }
 
+// Rotating colour palette for word-bank pills (builder + student views).
+export const WORD_PILL_COLORS = [
+  { bg: '#fde68a', border: '#f59e0b', text: '#78350f' }, // amber
+  { bg: '#bfdbfe', border: '#3b82f6', text: '#1e3a8a' }, // blue
+  { bg: '#bbf7d0', border: '#22c55e', text: '#14532d' }, // green
+  { bg: '#fbcfe8', border: '#ec4899', text: '#831843' }, // pink
+  { bg: '#ddd6fe', border: '#8b5cf6', text: '#4c1d95' }, // purple
+  { bg: '#fed7aa', border: '#f97316', text: '#7c2d12' }, // orange
+  { bg: '#a5f3fc', border: '#06b6d4', text: '#164e63' }, // cyan
+]
+
 // ─── ImageOverlayWordBank ─────────────────────────────────────
-// Image with blank drop-zones + a word bank below. Students drag (or tap) a
+// Word bank (above) + image with blank drop-zones. Students drag (or tap) a
 // word into each blank. Each word is used once. Answer format matches the type
 // mode: { blankIndex: "word" }.
 export function ImageOverlayWordBank({ src, blanks, words, answers, onChange }) {
@@ -784,6 +795,33 @@ export function ImageOverlayWordBank({ src, blanks, words, answers, onChange }) 
 
   return (
     <div>
+      {/* Word bank (above the image) */}
+      <div className="matching-bank" style={{ marginBottom: '0.75rem' }}>
+        <p className="matching-bank-label">
+          {available.length > 0 ? 'Drag a word into a gap (or tap a word, then tap a gap) ↓' : '✓ All words placed'}
+        </p>
+        <div className="matching-bank-items">
+          {available.map(({ word, key }) => {
+            const c = WORD_PILL_COLORS[key % WORD_PILL_COLORS.length]
+            const sel = selectedKey === key
+            return (
+              <div key={key}
+                className="matching-chip"
+                draggable
+                onDragStart={e => e.dataTransfer.setData('text/plain', word)}
+                onClick={() => setSelectedKey(sel ? null : key)}
+                style={{
+                  background: c.bg, color: c.text,
+                  border: `1.5px solid ${c.border}`,
+                  ...(sel ? { outline: '2px solid #1a2030', outlineOffset: '1px' } : {}),
+                }}>
+                {word}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       <div className="img-overlay-wrap">
         <img ref={imgRef} src={src} alt="Exercise" className="img-overlay-img" onLoad={updateH} />
         {blanks.map((b, i) => {
@@ -812,25 +850,6 @@ export function ImageOverlayWordBank({ src, blanks, words, answers, onChange }) 
             </div>
           )
         })}
-      </div>
-
-      {/* Word bank */}
-      <div className="matching-bank" style={{ marginTop: '0.75rem' }}>
-        <p className="matching-bank-label">
-          {available.length > 0 ? 'Drag a word into a gap (or tap a word, then tap a gap) ↓' : '✓ All words placed'}
-        </p>
-        <div className="matching-bank-items">
-          {available.map(({ word, key }) => (
-            <div key={key}
-              className="matching-chip"
-              draggable
-              onDragStart={e => e.dataTransfer.setData('text/plain', word)}
-              onClick={() => setSelectedKey(selectedKey === key ? null : key)}
-              style={selectedKey === key ? { outline: '2px solid #2563eb', outlineOffset: '1px' } : undefined}>
-              {word}
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   )
