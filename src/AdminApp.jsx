@@ -4588,7 +4588,7 @@ export function AdminExerciseReview({ details, onBack }) {
           <div className="exercise-context-passage">{exercise.context_text}</div>
         </div>
       )}
-      {exercise?.context_images?.length > 0 && (
+      {exercise?.context_images?.length > 0 && !(questions[0]?.type === 'fill_blank' && parseOverlayPrompt(questions[0].prompt)) && (
         <div className="exercise-context-images" style={{ marginTop: '0.75rem' }}>
           <p className="exercise-context-label">📖 Reference material{details.student_annotations ? ' (student annotations shown)' : ''}</p>
           {exercise.context_images.map((src, i) => {
@@ -4659,10 +4659,20 @@ export function AdminExerciseReview({ details, onBack }) {
                     ? <WordChoiceQuestion template={q.prompt} answer={sa?.answer} onChange={() => {}} disabled={true} />
                     : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
                 ) : q.type === 'fill_blank' ? (
-                  hasAnswer
-                    ? <InlineFillBlank prompt={q.prompt} answer={sa?.answer} onChange={() => {}} disabled={true} checked={true}
-                        correctAnswers={parseFillBlankCorrect(q.correct_answer ?? '')} />
-                    : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                  (() => {
+                    const overlay = parseOverlayPrompt(q.prompt)
+                    if (overlay && exercise?.context_images?.[0]) {
+                      // Image-overlay fill-blank: show the student's words placed on the picture
+                      return hasAnswer
+                        ? <ImageOverlayFill src={exercise.context_images[0]} blanks={overlay.blanks}
+                            answers={sa?.answer} onChange={() => {}} disabled={true} />
+                        : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                    }
+                    return hasAnswer
+                      ? <InlineFillBlank prompt={q.prompt} answer={sa?.answer} onChange={() => {}} disabled={true} checked={true}
+                          correctAnswers={parseFillBlankCorrect(q.correct_answer ?? '')} />
+                      : <div className="review-answer-box review-answer-empty"><em>No answer given</em></div>
+                  })()
                 ) : q.type === 'matching' && hasAnswer ? (
                   <div className="review-matching-pairs">
                     {(() => { try {
