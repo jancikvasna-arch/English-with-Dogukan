@@ -633,28 +633,63 @@ export async function updateStudentAccessLevel(studentId, accessLevel) {
 /** Admin: fetch all non-admin student profiles with latest submission + result. */
 export async function fetchStudentsAdmin() {
   if (!supabase) return []
-  const { data, error } = await supabase
-    .from('profiles')
-    .select(`
-      id, name, email, access_level, access_granted_at, created_at, english_level,
+  const baseSelect = (withArchived) => `
+      id, name, email, access_level, access_granted_at, created_at, english_level${withArchived ? ', archived' : ''},
       questionnaire_submissions ( id, level, goal, submitted_at,
         placement_results ( id, cefr_level, overall_score, writing_reviewed ) )
-    `)
-    .eq('role', 'student')
-    .order('created_at', { ascending: false })
+    `
+  let { data, error } = await supabase
+    .from('profiles').select(baseSelect(true)).eq('role', 'student').order('created_at', { ascending: false })
+  if (error) {
+    // archived column may not exist yet (migration not run) — retry without it
+    ;({ data, error } = await supabase
+      .from('profiles').select(baseSelect(false)).eq('role', 'student').order('created_at', { ascending: false }))
+  }
   if (error) { console.error('[supabase] fetchStudentsAdmin:', error); return [] }
-  return data ?? []
+  return (data ?? []).filter(s => !s.archived)
 }
 
 /** Admin: fetch manually created students (no auth account). */
 export async function fetchManualStudents() {
   if (!supabase) return []
-  const { data, error } = await supabase
-    .from('manual_students')
-    .select('id, name, email, english_level, notes, created_at')
-    .order('name')
+  let { data, error } = await supabase
+    .from('manual_students').select('id, name, email, english_level, notes, created_at, archived').order('name')
+  if (error) {
+    ;({ data, error } = await supabase
+      .from('manual_students').select('id, name, email, english_level, notes, created_at').order('name'))
+  }
   if (error) { console.error('[supabase] fetchManualStudents:', error); return [] }
-  return data ?? []
+  return (data ?? []).filter(s => !s.archived)
+}
+
+/** Admin: archive / restore a registered student (soft delete). */
+export async function setStudentArchived(id, archived) {
+  if (!supabase) return false
+  const { error } = await supabase.from('profiles').update({ archived }).eq('id', id)
+  if (error) { console.error('[supabase] setStudentArchived:', error); return false }
+  return true
+}
+
+/** Admin: archive / restore a manual student. */
+export async function setManualStudentArchived(id, archived) {
+  if (!supabase) return false
+  const { error } = await supabase.from('manual_students').update({ archived }).eq('id', id)
+  if (error) { console.error('[supabase] setManualStudentArchived:', error); return false }
+  return true
+}
+
+/** Admin: fetch archived students (both registered + manual). */
+export async function fetchArchivedStudentsAll() {
+  if (!supabase) return { auth: [], manual: [] }
+  const [{ data: auth }, { data: manual }] = await Promise.all([
+    supabase.from('profiles')
+      .select('id, name, email, access_level, created_at, english_level, archived')
+      .eq('role', 'student').eq('archived', true).order('created_at', { ascending: false }),
+    supabase.from('manual_students')
+      .select('id, name, email, english_level, notes, created_at, archived')
+      .eq('archived', true).order('name'),
+  ])
+  return { auth: auth ?? [], manual: manual ?? [] }
 }
 
 /** Admin: create a student record that doesn't require a Supabase auth account. */

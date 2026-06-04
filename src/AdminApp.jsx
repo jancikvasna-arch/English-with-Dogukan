@@ -1,6 +1,6 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
-import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignedPlansForStudent, fetchAssignmentDetails, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
+import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignedPlansForStudent, fetchAssignmentDetails, fetchArchivedStudentsAll, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, setManualStudentArchived, setStudentArchived, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
 import { ADMIN_EMAIL, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
 import { COURSES_DATA } from './content'
 import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WORD_PILL_COLORS, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
@@ -7905,6 +7905,11 @@ export function AdminPanel({ user, onSignOut }) {
   const [prospectCount,       setProspectCount]       = useState(0)
   // Unreviewed submissions per student (studentId → count of submitted & not-yet-reviewed)
   const [unreviewed,          setUnreviewed]          = useState({})
+  // Student archive
+  const [confirmDeleteStudent, setConfirmDeleteStudent] = useState(null) // student id awaiting confirm
+  const [showStudentArchive,   setShowStudentArchive]   = useState(false)
+  const [archivedStudents,     setArchivedStudents]     = useState({ auth: [], manual: [] })
+  const [studentArchiveLoading, setStudentArchiveLoading] = useState(false)
   const [archivedProspects,   setArchivedProspects]   = useState([])
   const [showArchived,        setShowArchived]        = useState(false)
   const [archivedLoading,     setArchivedLoading]     = useState(false)
@@ -8206,6 +8211,46 @@ export function AdminPanel({ user, onSignOut }) {
     setEditManualLevel(s.english_level || '')
     setEditManualLevelSaved(false)
   }
+
+  // ── Student archive (soft delete) ──
+  const refreshStudentArchive = () => {
+    setStudentArchiveLoading(true)
+    fetchArchivedStudentsAll().then(data => { setArchivedStudents(data); setStudentArchiveLoading(false) })
+  }
+  const archiveStudent = async (s, isManual) => {
+    const ok = isManual ? await setManualStudentArchived(s.id, true) : await setStudentArchived(s.id, true)
+    if (!ok) return
+    setConfirmDeleteStudent(null)
+    if (isManual) setManualStudents(prev => prev.filter(x => x.id !== s.id))
+    else          setStudents(prev => prev.filter(x => x.id !== s.id))
+    setArchivedStudents(prev => isManual
+      ? { ...prev, manual: [s, ...prev.manual] }
+      : { ...prev, auth: [s, ...prev.auth] })
+  }
+  const restoreStudent = async (s, isManual) => {
+    const ok = isManual ? await setManualStudentArchived(s.id, false) : await setStudentArchived(s.id, false)
+    if (!ok) return
+    setArchivedStudents(prev => isManual
+      ? { ...prev, manual: prev.manual.filter(x => x.id !== s.id) }
+      : { ...prev, auth: prev.auth.filter(x => x.id !== s.id) })
+    if (isManual) setManualStudents(prev => [s, ...prev])
+    else          setStudents(prev => [s, ...prev])
+  }
+  const renderDeleteControl = (s, isManual) => (
+    confirmDeleteStudent === s.id ? (
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+        <span style={{ fontSize: '0.76rem', color: '#b91c1c', fontWeight: 600 }}>Archive?</span>
+        <button className="btn-ghost" style={{ fontSize: '0.74rem', padding: '0.18rem 0.5rem', color: '#b91c1c', borderColor: '#fca5a5' }}
+          onClick={e => { e.stopPropagation(); archiveStudent(s, isManual) }}>Confirm</button>
+        <button className="btn-ghost" style={{ fontSize: '0.74rem', padding: '0.18rem 0.5rem' }}
+          onClick={e => { e.stopPropagation(); setConfirmDeleteStudent(null) }}>Cancel</button>
+      </div>
+    ) : (
+      <button title="Delete student (move to archive)"
+        onClick={e => { e.stopPropagation(); setConfirmDeleteStudent(s.id) }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1rem', flexShrink: 0, padding: '0.2rem 0.35rem', lineHeight: 1 }}>🗑</button>
+    )
+  )
 
   const handleManualLevelSave = async () => {
     setEditManualLevelSaving(true)
@@ -9022,6 +9067,7 @@ export function AdminPanel({ user, onSignOut }) {
                                   {renderTestStatus(s)}
                                   <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
                                 </div>
+                                {renderDeleteControl(s, false)}
                                 <span className="admin-arrow">›</span>
                               </div>
                             </React.Fragment>
@@ -9051,6 +9097,7 @@ export function AdminPanel({ user, onSignOut }) {
                                 {renderTestStatus(s)}
                                 <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
                               </div>
+                              {renderDeleteControl(s, true)}
                               <span className="admin-arrow">›</span>
                             </div>
                           </React.Fragment>
@@ -9067,6 +9114,41 @@ export function AdminPanel({ user, onSignOut }) {
                   </>
                 )
               })()}
+            </div>
+          )}
+
+          {/* Student Archive — bottom right */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem' }}
+              onClick={() => { const next = !showStudentArchive; setShowStudentArchive(next); if (next) refreshStudentArchive() }}>
+              🗃 {showStudentArchive ? 'Hide Student Archive' : 'Student Archive'}
+            </button>
+          </div>
+          {showStudentArchive && (
+            <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+              <h4 style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>🗃 Student Archive</h4>
+              {studentArchiveLoading ? (
+                <div className="dashboard-loading" style={{ padding: '0.5rem 0' }}>Loading…</div>
+              ) : (archivedStudents.auth.length + archivedStudents.manual.length) === 0 ? (
+                <p className="dashboard-empty-small" style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No archived students.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {[...archivedStudents.auth.map(s => ({ s, isManual: false })),
+                    ...archivedStudents.manual.map(s => ({ s, isManual: true }))].map(({ s, isManual }) => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.55rem 0.8rem', opacity: 0.85 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <strong style={{ fontSize: '0.9rem' }}>{s.name || 'Unknown'}</strong>
+                        {isManual && <span className="admin-level-chip" style={{ marginLeft: '0.4rem', opacity: 0.65, fontSize: '0.7rem' }}>Manual</span>}
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.email || 'No email'}</div>
+                      </div>
+                      <button className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem', color: 'var(--gold)', borderColor: 'var(--gold)' }}
+                        onClick={() => restoreStudent(s, isManual)}>
+                        ↩ Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
