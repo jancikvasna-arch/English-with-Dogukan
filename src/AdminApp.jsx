@@ -8229,7 +8229,10 @@ export function AdminPanel({ user, onSignOut }) {
   }
   const archiveStudent = async (s, isManual) => {
     const ok = isManual ? await setManualStudentArchived(s.id, true) : await setStudentArchived(s.id, true)
-    if (!ok) return
+    if (!ok) {
+      alert('Could not archive this student. The "Student Archive" feature needs a one-time database setup — please run the archive SQL in Supabase, then try again.')
+      return
+    }
     setConfirmDeleteStudent(null)
     if (isManual) setManualStudents(prev => prev.filter(x => x.id !== s.id))
     else          setStudents(prev => prev.filter(x => x.id !== s.id))
@@ -8239,7 +8242,7 @@ export function AdminPanel({ user, onSignOut }) {
   }
   const restoreStudent = async (s, isManual) => {
     const ok = isManual ? await setManualStudentArchived(s.id, false) : await setStudentArchived(s.id, false)
-    if (!ok) return
+    if (!ok) { alert('Could not restore this student. Please try again.'); return }
     setArchivedStudents(prev => isManual
       ? { ...prev, manual: prev.manual.filter(x => x.id !== s.id) }
       : { ...prev, auth: prev.auth.filter(x => x.id !== s.id) })
