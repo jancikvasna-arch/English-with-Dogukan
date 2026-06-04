@@ -3927,6 +3927,9 @@ export function LessonStageBuilder({
 
   // Exercise picker/creator overlay: null | { groupNumber, mode: 'pick'|'create' }
   const [pickerCtx,    setPickerCtx]    = useState(null)
+  // Inline edit of an existing exercise from within the plan
+  const [editingStageEx,  setEditingStageEx]  = useState(null) // { groupNumber, itemId | for:'homework', homeworkId, exercise }
+  const [loadingEditExId, setLoadingEditExId] = useState(null)
   // All exercises including ones created inline during this session
   const [exercises,    setExercises]    = useState(allExercises)
   // Ref for the "Add stage" button — used to scroll into view after adding
@@ -4073,6 +4076,30 @@ export function LessonStageBuilder({
     closePickerCtx()
   }
 
+  // ── Edit an existing exercise inline (opens the full ExerciseBuilder) ──
+  const openEditExercise = async (ctx, exerciseId) => {
+    setLoadingEditExId(exerciseId)
+    const full = await fetchExerciseWithQuestions(exerciseId)
+    setLoadingEditExId(null)
+    if (!full) { alert('Could not load this exercise. It may have been deleted.'); return }
+    setEditingStageEx({ ...ctx, exercise: full })
+  }
+
+  const handleEditExerciseSaved = async (exId) => {
+    const reloaded = await fetchAllExercises()
+    setExercises(reloaded)
+    const updated = reloaded.find(e => e.id === exId)
+    // Refresh the cached title/type on the stage item (homework looks up by id, no cache to update)
+    if (updated && editingStageEx && editingStageEx.for !== 'homework') {
+      setStageGroups(prev => prev.map(g => g.number === editingStageEx.groupNumber
+        ? { ...g, items: g.items.map(it => it.id === editingStageEx.itemId
+            ? { ...it, exerciseTitle: updated.title, type: updated.stage_type || it.type }
+            : it) }
+        : g))
+    }
+    setEditingStageEx(null)
+  }
+
   // ── Save ──────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!title.trim()) return
@@ -4134,6 +4161,14 @@ export function LessonStageBuilder({
       allLabels={labels} allBooks={books}
       onSaved={handleNewExerciseSaved}
       onCancel={closePickerCtx}
+      cancelLabel="← Back to lesson plan" />
+  }
+  if (editingStageEx) {
+    return <ExerciseBuilder
+      initialExercise={editingStageEx.exercise}
+      allLabels={labels} allBooks={books}
+      onSaved={handleEditExerciseSaved}
+      onCancel={() => setEditingStageEx(null)}
       cancelLabel="← Back to lesson plan" />
   }
 
@@ -4321,6 +4356,14 @@ export function LessonStageBuilder({
                                 style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(0,0,0,0.14)', borderRadius: '4px', cursor: itemIdx === group.items.length - 1 ? 'default' : 'pointer', fontSize: '0.55rem', lineHeight: 1, padding: '2px 6px', color: 'var(--text-muted)', opacity: itemIdx === group.items.length - 1 ? 0.35 : 1 }}>▼</button>
                             </div>
                           )}
+                          {item.exerciseId && (
+                            <button type="button" title="Edit this exercise"
+                              onClick={() => openEditExercise({ groupNumber: group.number, itemId: item.id }, item.exerciseId)}
+                              disabled={loadingEditExId === item.exerciseId}
+                              style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--gold)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600, padding: '0.22rem 0.55rem', color: 'var(--gold)', marginRight: '0.3rem', flexShrink: 0, fontFamily: 'inherit' }}>
+                              {loadingEditExId === item.exerciseId ? '…' : '✏️ Edit'}
+                            </button>
+                          )}
                           <button type="button" className="plan-stage-item-remove"
                             onClick={() => removeItemFromGroup(group.number, item.id)}>✕</button>
                         </div>
@@ -4392,6 +4435,13 @@ export function LessonStageBuilder({
                   onClick={() => setPickerCtx({ for:'homework', homeworkId:hw.id, mode:'create' })}>
                   ✏️ Create new
                 </button>
+                {hw.exerciseId && (
+                  <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.55rem', color:'var(--gold)', borderColor:'var(--gold)' }}
+                    onClick={() => openEditExercise({ for:'homework', homeworkId:hw.id }, hw.exerciseId)}
+                    disabled={loadingEditExId === hw.exerciseId}>
+                    {loadingEditExId === hw.exerciseId ? '…' : '✏️ Edit'}
+                  </button>
+                )}
                 <button className="btn-ghost" style={{ fontSize:'0.8rem', padding:'0.25rem 0.45rem', color:'#e05c5c' }}
                   onClick={() => removeHomeworkItem(hw.id)}>✕</button>
               </div>
