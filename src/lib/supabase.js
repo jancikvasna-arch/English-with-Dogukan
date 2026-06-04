@@ -301,7 +301,7 @@ export async function fetchAllAssignmentsAdmin() {
   const { data, error } = await supabase
     .from('exercise_assignments')
     .select(`
-      id, mode, status, note, assigned_at, submitted_at,
+      id, mode, status, note, assigned_at, submitted_at, feedback_at,
       exercises ( id, title, course, lesson_no ),
       student_id
     `)
@@ -315,7 +315,7 @@ export async function fetchStudentAssignmentsAdmin(studentId) {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('exercise_assignments')
-    .select('id, mode, status, note, assigned_at, submitted_at, exercises ( id, title, course )')
+    .select('id, mode, status, note, assigned_at, submitted_at, feedback_at, exercises ( id, title, course )')
     .eq('student_id', studentId)
     .order('assigned_at', { ascending: false })
   if (error) { console.error('[supabase] fetchStudentAssignmentsAdmin:', error); return [] }
@@ -1684,7 +1684,7 @@ export async function fetchPlanAssignmentsAdmin(planId) {
   if (!supabase || !planId) return []
   const { data, error } = await supabase
     .from('exercise_assignments')
-    .select('id, exercise_id, student_id, status, submitted_at, assigned_at, exercises(id, title), profiles:student_id(id, name, email)')
+    .select('id, exercise_id, student_id, status, submitted_at, assigned_at, feedback_at, exercises(id, title), profiles:student_id(id, name, email)')
     .eq('lesson_plan_id', planId)
   if (error) { console.error('[supabase] fetchPlanAssignmentsAdmin:', error); return [] }
   return data ?? []

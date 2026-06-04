@@ -1305,12 +1305,12 @@ export function TeachView({ plan, onBack }) {
   }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh student submissions every 30s
+  const refreshPlanAsgns = () => fetchPlanAssignmentsAdmin(plan.id).then(data => {
+    setPlanAsgns(data); setLastRefresh(new Date())
+  })
   useEffect(() => {
-    const load = () => fetchPlanAssignmentsAdmin(plan.id).then(data => {
-      setPlanAsgns(data); setLastRefresh(new Date())
-    })
-    load()
-    const iv = setInterval(load, 30000)
+    refreshPlanAsgns()
+    const iv = setInterval(refreshPlanAsgns, 30000)
     return () => clearInterval(iv)
   }, [plan.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1333,14 +1333,19 @@ export function TeachView({ plan, onBack }) {
         {asgns.map(a => {
           const name = a.profiles?.name || a.profiles?.email || 'Student'
           const submitted = a.status === 'submitted'
+          const reviewed  = !!a.feedback_at
           return (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+              {submitted && !reviewed && <span title="New — not reviewed yet" style={{ width: 8, height: 8, borderRadius: '50%', background: '#e05c5c', flexShrink: 0 }} />}
               <span style={{ fontSize: '0.82rem', flex: 1, fontWeight: 500 }}>{name}</span>
               {submitted ? (
-                <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', color: '#16a34a', borderColor: '#bbf7d0' }}
+                <button className="btn-ghost"
+                  style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem',
+                    color: reviewed ? '#16a34a' : '#b91c1c',
+                    borderColor: reviewed ? '#bbf7d0' : '#fca5a5' }}
                   onClick={() => openAsgnReview(a.id)}
                   disabled={loadingAsgnId === a.id}>
-                  {loadingAsgnId === a.id ? '…' : '📋 Review answers'}
+                  {loadingAsgnId === a.id ? '…' : reviewed ? '✓ Reviewed' : '📥 Review answers'}
                 </button>
               ) : (
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>⏳ Not submitted</span>
@@ -1414,7 +1419,7 @@ export function TeachView({ plan, onBack }) {
       <div className="teach-view-wrapper" style={{ background: '#F2EFE8', margin: '-1.5rem', padding: '1.5rem', borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', minHeight: '60vh' }}>
         <AdminExerciseReview
           details={reviewingDetails}
-          onBack={() => setReviewingDetails(null)}
+          onBack={() => { setReviewingDetails(null); refreshPlanAsgns() }}
         />
       </div>
     )
@@ -5010,9 +5015,11 @@ export function AdminStudentExercises({ student, onReview, adminUserId = null })
                   : ` · Assigned ${new Date(a.assigned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
               </span>
             </div>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, flexShrink: 0,
-              color: a.status === 'submitted' ? '#4ade80' : 'var(--text-muted)' }}>
-              {a.status === 'submitted' ? '✓ Done' : '⏳ Pending'}
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, flexShrink: 0,
+              color: a.status !== 'submitted' ? 'var(--text-muted)'
+                : a.feedback_at ? '#16a34a' : '#b91c1c' }}>
+              {a.status !== 'submitted' ? '⏳ Pending'
+                : a.feedback_at ? '✓ Reviewed' : '📥 Review answers'}
             </span>
           </button>
           <button title="Remove assignment" onClick={() => setConfirmId(a.id)}
@@ -7896,6 +7903,8 @@ export function AdminPanel({ user, onSignOut }) {
   const [prospects,           setProspects]           = useState([])
   const [prospectsLoading,    setProspectsLoading]    = useState(false)
   const [prospectCount,       setProspectCount]       = useState(0)
+  // Unreviewed submissions per student (studentId → count of submitted & not-yet-reviewed)
+  const [unreviewed,          setUnreviewed]          = useState({})
   const [archivedProspects,   setArchivedProspects]   = useState([])
   const [showArchived,        setShowArchived]        = useState(false)
   const [archivedLoading,     setArchivedLoading]     = useState(false)
@@ -7930,7 +7939,20 @@ export function AdminPanel({ user, onSignOut }) {
       setProspects(data)
       setProspectCount(data.filter(p => p.status === 'new').length)
     })
+    refreshUnreviewed()
   }, [isAdmin])
+
+  // Count submitted-but-not-reviewed exercises per student (for the "needs review" badges)
+  const refreshUnreviewed = () => {
+    fetchAllAssignmentsAdmin().then(asgns => {
+      const map = {}
+      asgns.forEach(a => {
+        if (a.status === 'submitted' && !a.feedback_at) map[a.student_id] = (map[a.student_id] || 0) + 1
+      })
+      setUnreviewed(map)
+    })
+  }
+  const unreviewedTotal = Object.values(unreviewed).reduce((a, b) => a + b, 0)
 
   // Load referrals when Referrals tab is opened
   useEffect(() => {
@@ -8261,7 +8283,7 @@ export function AdminPanel({ user, onSignOut }) {
       <div className="flow-card admin-detail">
         <AdminExerciseReview
           details={reviewingFromStudent}
-          onBack={() => setReviewingFromStudent(null)}
+          onBack={() => { setReviewingFromStudent(null); refreshUnreviewed() }}
         />
       </div>
     )
@@ -8609,6 +8631,10 @@ export function AdminPanel({ user, onSignOut }) {
             {tab.label}
             {tab.badge === 'prospect' && prospectCount > 0 && <span className="admin-tab-badge">{prospectCount}</span>}
             {tab.badge === 'pending'  && pendingCount  > 0 && <span className="admin-tab-badge">{pendingCount}</span>}
+            {tab.key === 'students' && unreviewedTotal > 0 && (
+              <span className="admin-tab-badge" title="Exercises waiting to be reviewed"
+                style={{ background: '#e05c5c' }}>{unreviewedTotal}</span>
+            )}
           </button>
         ))}
         <button className={`admin-tab admin-tab--homepage ${adminTab === 'courses' ? 'active' : ''}`}
@@ -8984,6 +9010,12 @@ export function AdminPanel({ user, onSignOut }) {
                                 </div>
                                 <div className="admin-student-meta">
                                   <AccessBadge level={s.access_level} />
+                                  {unreviewed[s.id] > 0 && (
+                                    <span className="admin-level-chip" title="Completed exercises waiting to be reviewed"
+                                      style={{ background: '#fee2e2', color: '#b91c1c', fontWeight: 700, border: '1px solid #fca5a5' }}>
+                                      📥 {unreviewed[s.id]} to review
+                                    </span>
+                                  )}
                                   {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
                                   {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
                                   {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
