@@ -260,22 +260,36 @@ export async function deleteLesson(lessonId) {
   return !error
 }
 
+/**
+ * Attach student profile objects to rows that have a `student_id`.
+ * Needed because tables whose student_id references auth.users (exercise_assignments,
+ * lessons) cannot embed `profiles:student_id` directly via PostgREST. We fetch the
+ * profiles in one extra query and merge them in as `row.profiles`.
+ */
+async function attachStudentProfiles(rows) {
+  if (!supabase || !rows?.length) return rows ?? []
+  const ids = [...new Set(rows.map(r => r.student_id).filter(Boolean))]
+  if (!ids.length) return rows
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('id, name, email, english_level')
+    .in('id', ids)
+  const byId = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
+  return rows.map(r => ({ ...r, profiles: r.student_id ? (byId[r.student_id] || null) : null }))
+}
+
 /** Admin: fetch ALL upcoming lessons (all students) ordered by date — for the calendar view. */
 export async function fetchAllUpcomingLessons() {
   if (!supabase) return []
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('lessons')
-    .select(`
-      id, lesson_no, title, scheduled_at, status, duration_minutes, created_at,
-      student_id,
-      profiles:student_id ( id, name, email )
-    `)
+    .select(`id, lesson_no, title, scheduled_at, status, duration_minutes, created_at, student_id`)
     .gte('scheduled_at', now)
     .order('scheduled_at', { ascending: true })
     .limit(100)
   if (error) { console.error('[supabase] fetchAllUpcomingLessons:', error); return [] }
-  return data ?? []
+  return attachStudentProfiles(data ?? [])
 }
 
 /** Admin: fetch ALL lessons (all students) for a given date range — calendar month view. */
@@ -283,16 +297,12 @@ export async function fetchLessonsInRange(from, to) {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('lessons')
-    .select(`
-      id, lesson_no, title, scheduled_at, status, duration_minutes,
-      student_id,
-      profiles:student_id ( id, name, email )
-    `)
+    .select(`id, lesson_no, title, scheduled_at, status, duration_minutes, student_id`)
     .gte('scheduled_at', from)
     .lte('scheduled_at', to)
     .order('scheduled_at', { ascending: true })
   if (error) { console.error('[supabase] fetchLessonsInRange:', error); return [] }
-  return data ?? []
+  return attachStudentProfiles(data ?? [])
 }
 
 /** Fetch all assignments with exercise + student info (admin list view). */
@@ -328,7 +338,7 @@ export async function fetchAssignmentDetails(assignmentId) {
   const [{ data: assignment, error: aErr }, { data: answers, error: anErr }] = await Promise.all([
     supabase
       .from('exercise_assignments')
-      .select(`*, exercises ( *, questions ( * ) ), profiles:student_id ( name, email )`)
+      .select(`*, exercises ( *, questions ( * ) )`)
       .eq('id', assignmentId)
       .single(),
     supabase
@@ -338,7 +348,14 @@ export async function fetchAssignmentDetails(assignmentId) {
   ])
   if (aErr)  { console.error('[supabase] fetchAssignmentDetails assignment:', aErr);  return null }
   if (anErr) { console.error('[supabase] fetchAssignmentDetails answers:',    anErr); return null }
-  return { ...assignment, studentAnswers: answers ?? [], student_annotations: assignment.student_annotations ?? null }
+  // student_id references auth.users, not profiles — fetch the profile separately
+  let profiles = null
+  if (assignment.student_id) {
+    const { data: prof } = await supabase
+      .from('profiles').select('name, email').eq('id', assignment.student_id).maybeSingle()
+    profiles = prof || null
+  }
+  return { ...assignment, profiles, studentAnswers: answers ?? [], student_annotations: assignment.student_annotations ?? null }
 }
 
 /** Student: save image annotation data to an exercise assignment. */
@@ -1640,14 +1657,15 @@ export async function fetchPlanAssignmentHistory(planId) {
   if (!supabase || !planId) return []
   const { data } = await supabase
     .from('exercise_assignments')
-    .select('student_id, lesson_plan_id, scheduled_at, assigned_at, profiles:student_id ( id, name, email ), manual_student_id')
+    .select('student_id, lesson_plan_id, scheduled_at, assigned_at, manual_student_id')
     .eq('lesson_plan_id', planId)
     .not('student_id', 'is', null)
     .order('scheduled_at', { ascending: false, nullsFirst: false })
   if (!data) return []
+  const withProfiles = await attachStudentProfiles(data)
   // Deduplicate: one entry per (student_id, scheduled_at) pair
   const seen = new Set()
-  return data.filter(row => {
+  return withProfiles.filter(row => {
     const key = `${row.student_id}::${row.scheduled_at ?? row.assigned_at}`
     if (seen.has(key)) return false
     seen.add(key)
@@ -1684,10 +1702,10 @@ export async function fetchPlanAssignmentsAdmin(planId) {
   if (!supabase || !planId) return []
   const { data, error } = await supabase
     .from('exercise_assignments')
-    .select('id, exercise_id, student_id, status, submitted_at, assigned_at, feedback_at, exercises(id, title), profiles:student_id(id, name, email)')
+    .select('id, exercise_id, student_id, status, submitted_at, assigned_at, feedback_at, exercises(id, title)')
     .eq('lesson_plan_id', planId)
   if (error) { console.error('[supabase] fetchPlanAssignmentsAdmin:', error); return [] }
-  return data ?? []
+  return attachStudentProfiles(data ?? [])
 }
 
 /** Link or unlink a lesson plan to a lesson record. */
