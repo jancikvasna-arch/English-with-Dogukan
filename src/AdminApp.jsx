@@ -2106,7 +2106,16 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
     initialExercise?.estimated_minutes && ![5,10,15].includes(initialExercise.estimated_minutes)
       ? String(initialExercise.estimated_minutes) : ''
   )
-  const [bookId,         setBookId]         = useState(initialExercise?.book_id     ?? null)
+  const [bookId,         setBookId]         = useState(() => {
+    if (initialExercise) return initialExercise.book_id ?? null
+    // New exercise: pre-fill with the last book used, if it still exists
+    try { const last = localStorage.getItem('lastBookId_v1'); if (last && allBooks.some(b => b.id === last)) return last } catch {}
+    return null
+  })
+  const selectBook = (id) => {
+    setBookId(id)
+    try { if (id) localStorage.setItem('lastBookId_v1', id); else localStorage.removeItem('lastBookId_v1') } catch {}
+  }
   const [exUnit,         setExUnit]         = useState(initialExercise?.unit        ?? null)
   const [exPage,         setExPage]         = useState(initialExercise?.page        ?? null)
   const [exSection,      setExSection]      = useState(initialExercise?.section     ?? '')
@@ -2336,7 +2345,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
     setSavingBook(false)
     if (bk) {
       setLocalBooks(p => [...p, bk].sort((a, b) => a.title.localeCompare(b.title)))
-      setBookId(bk.id)
+      selectBook(bk.id)
       setNewBookTitle(''); setShowBookForm(false)
       onBookCreated?.(bk)
     }
@@ -2580,14 +2589,26 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
           </div>
         )}
 
-        <select value={bookId || ''}
-          onChange={e => setBookId(e.target.value || null)}
-          style={{ marginTop: showBookForm ? 0 : '0.25rem' }}>
-          <option value="">— No book selected —</option>
-          {localBooks.map(bk => (
-            <option key={bk.id} value={bk.id}>{bk.title}</option>
-          ))}
-        </select>
+        {localBooks.length === 0 ? (
+          <p className="builder-section-sub" style={{ marginTop: '0.25rem' }}>No books yet — add one with “+ New book”.</p>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: showBookForm ? 0 : '0.25rem' }}>
+            {localBooks.map(bk => {
+              const active = bookId === bk.id
+              return (
+                <button key={bk.id} type="button"
+                  onClick={() => selectBook(active ? null : bk.id)}
+                  style={{ fontSize: '0.82rem', padding: '0.4rem 0.85rem', borderRadius: '8px', cursor: 'pointer',
+                    fontFamily: 'inherit', fontWeight: 600,
+                    border: `1.5px solid ${active ? 'var(--gold)' : 'var(--border)'}`,
+                    background: active ? 'var(--gold)' : '#fff',
+                    color: active ? '#fff' : 'var(--text)' }}>
+                  {bk.title}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Location in textbook ── */}
