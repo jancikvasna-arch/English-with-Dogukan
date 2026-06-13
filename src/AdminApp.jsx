@@ -1962,6 +1962,7 @@ export const BUILDER_TYPES = [
   { value: 'true_false',      label: 'True / False', icon: '✓✗' },
   { value: 'matching',        label: 'Matching', icon: '↔️' },
   { value: 'word_choice',     label: 'Word Choice', icon: '↕️' },
+  { value: 'free_text',       label: 'Q&A', icon: '💬' },
   { value: 'listening',       label: 'Listening', icon: '🎧' },
   { value: 'viewing',         label: 'Viewing',   icon: '🎥' },
   { value: 'speaking',        label: 'Speaking',  icon: '🎙️' },
@@ -3210,6 +3211,7 @@ export function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, 
             placeholder={
               type === 'multiple_choice' ? 'e.g. Which sentence is correct?'
               : type === 'true_false'    ? 'e.g. "Good morning" is used in the evening.'
+              : type === 'free_text'     ? 'e.g. What is your name?'
               : 'e.g. Match the words to their definitions.'
             }
             value={prompt}
