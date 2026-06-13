@@ -846,7 +846,7 @@ export function LessonPlanView({ plan, exercises, onBack, adminUserId = null, ad
           {plan.language_analysis && (
             <>
               <strong>🔬 Language analysis</strong>
-              <div style={{ margin: '0.25rem 0' }} dangerouslySetInnerHTML={{ __html: plan.language_analysis }} />
+              <div style={{ margin: '0.25rem 0' }}><LangBoardView value={plan.language_analysis} /></div>
             </>
           )}
         </div>
@@ -3899,6 +3899,136 @@ export function StageCard({ stage, idx, exercises, onChange, onRemove, onMoveUp,
   )
 }
 
+// ─── Language-analysis free board ─────────────────────────────
+// Free-placement notes: draggable, colour-coded text boxes you can put anywhere
+// on the board. Serialised to JSON in the language_analysis field. Falls back to
+// legacy HTML for plans created before this existed.
+const LANG_BOARD_COLORS = [
+  { hex: '#1a2030', name: 'Black'  },
+  { hex: '#2563eb', name: 'Blue'   },
+  { hex: '#16a34a', name: 'Green'  },
+  { hex: '#dc2626', name: 'Red'    },
+  { hex: '#7c3aed', name: 'Purple' },
+  { hex: '#d4a820', name: 'Gold'   },
+]
+
+function parseLangBoard(value) {
+  if (!value) return { __board: true, boxes: [] }
+  try {
+    const o = JSON.parse(value)
+    if (o && o.__board && Array.isArray(o.boxes)) return o
+  } catch { /* legacy HTML */ }
+  return null
+}
+
+const stripHtml = (html) => (html || '')
+  .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n')
+  .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim()
+
+export function LangBoardView({ value }) {
+  const board = parseLangBoard(value)
+  if (!board) return <div dangerouslySetInnerHTML={{ __html: value }} />
+  if (!board.boxes.length) return null
+  const maxBottom = board.boxes.reduce((m, b) => Math.max(m, (b.y || 0) + 70), 0)
+  return (
+    <div style={{ position: 'relative', width: '100%', minHeight: Math.max(90, maxBottom + 16),
+      background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+      {board.boxes.map(b => (
+        <div key={b.id} style={{ position: 'absolute', left: `${b.x}%`, top: b.y, width: b.w,
+          color: b.color, fontSize: '0.85rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', fontWeight: 500 }}>
+          {b.text}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function LangBoardEditor({ value, onChange, placeholder }) {
+  const boardRef = useRef(null)
+  const [boxes, setBoxes] = useState(() => {
+    const b = parseLangBoard(value)
+    if (b) return b.boxes
+    const txt = stripHtml(value)
+    return txt ? [{ id: crypto.randomUUID(), x: 2, y: 10, w: 240, text: txt, color: '#1a2030' }] : []
+  })
+  const boxesRef = useRef(boxes)
+  const setAll = (next) => { boxesRef.current = next; setBoxes(next) }
+  const commit = (next) => { setAll(next); onChange(JSON.stringify({ __board: true, boxes: next })) }
+  const update = (id, patch) => commit(boxesRef.current.map(b => b.id === id ? { ...b, ...patch } : b))
+  const remove = (id) => commit(boxesRef.current.filter(b => b.id !== id))
+  const addBox = () => {
+    const n = boxes.length
+    commit([...boxesRef.current, { id: crypto.randomUUID(), x: 3 + (n * 4) % 36, y: 12 + (n * 30) % 170, w: 220, text: '', color: '#1a2030' }])
+  }
+
+  const startDrag = (e, box) => {
+    e.preventDefault()
+    const bd = boardRef.current.getBoundingClientRect()
+    const offX = e.clientX - (bd.left + bd.width * (box.x / 100))
+    const offY = e.clientY - (bd.top + box.y)
+    const move = (ev) => {
+      const r = boardRef.current.getBoundingClientRect()
+      let nx = ((ev.clientX - offX - r.left) / r.width) * 100
+      let ny = ev.clientY - offY - r.top
+      nx = Math.max(0, Math.min(94, nx)); ny = Math.max(0, ny)
+      setAll(boxesRef.current.map(b => b.id === box.id ? { ...b, x: nx, y: ny } : b))
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      onChange(JSON.stringify({ __board: true, boxes: boxesRef.current }))
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
+
+  const boardHeight = Math.max(260, boxes.reduce((m, b) => Math.max(m, (b.y || 0) + 90), 0))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
+        <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+          onClick={addBox}>+ Add note</button>
+        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Drag the grip (⠿) to place a note anywhere.</span>
+      </div>
+      <div ref={boardRef} style={{ position: 'relative', width: '100%', height: boardHeight,
+        background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden',
+        backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+        {boxes.length === 0 && (
+          <span style={{ position: 'absolute', left: 14, top: 12, fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            {placeholder || 'Click “+ Add note”, then drag notes anywhere on the board.'}
+          </span>
+        )}
+        {boxes.map(box => (
+          <div key={box.id} style={{ position: 'absolute', left: `${box.x}%`, top: box.y, width: box.w,
+            border: '1px solid #e4ded0', borderRadius: '7px', background: '#fffef9', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 5px', borderBottom: '1px solid #efe9da', background: '#faf6ec', borderRadius: '7px 7px 0 0' }}>
+              <span onMouseDown={e => startDrag(e, box)} title="Drag to move"
+                style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '0 2px', userSelect: 'none' }}>⠿</span>
+              <div style={{ display: 'flex', gap: '3px', marginLeft: '2px' }}>
+                {LANG_BOARD_COLORS.map(c => (
+                  <button key={c.hex} type="button" title={c.name} onClick={() => update(box.id, { color: c.hex })}
+                    style={{ width: 13, height: 13, borderRadius: '50%', background: c.hex, cursor: 'pointer', flexShrink: 0,
+                      border: box.color === c.hex ? '2px solid #fff' : '1px solid rgba(0,0,0,0.15)',
+                      boxShadow: box.color === c.hex ? `0 0 0 1.5px ${c.hex}` : 'none' }} />
+                ))}
+              </div>
+              <button type="button" title="Delete note" onClick={() => remove(box.id)}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#e05c5c', fontSize: '0.85rem', lineHeight: 1, padding: '0 2px' }}>✕</button>
+            </div>
+            <textarea
+              value={box.text}
+              onChange={e => update(box.id, { text: e.target.value })}
+              placeholder="Type…"
+              rows={2}
+              style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', background: 'transparent',
+                padding: '6px 8px', fontSize: '0.85rem', lineHeight: 1.45, color: box.color, fontWeight: 500,
+                fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── LessonStageBuilder v2 ────────────────────────────────────
 export function LessonStageBuilder({
   exercises: allExercises, labels, books, authStudents = [], manualStudents = [],
@@ -4256,9 +4386,8 @@ export function LessonStageBuilder({
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>🔬 Language analysis</label>
-          <RichTextEditor value={langAnalysis} onChange={v => setLangAnalysis(v)}
-            placeholder="e.g. Form: S + V(s) + O. Meaning: habitual actions. Pronunciation: /s/ /z/ /ɪz/ endings."
-            minHeight="160px" />
+          <LangBoardEditor value={langAnalysis} onChange={v => setLangAnalysis(v)}
+            placeholder="Add notes and drag them anywhere — e.g. Form, Meaning, Pronunciation as separate colour-coded notes." />
         </div>
       </div>
 
@@ -5475,7 +5604,7 @@ export function AdminStudentPlanView({ plan, studentId, studentName, onBack, adm
           {plan.language_analysis && (
             <div>
               <strong style={{ fontSize: '0.82rem' }}>🔬 Language analysis</strong>
-              <div style={{ margin: '0.15rem 0 0', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: plan.language_analysis }} />
+              <div style={{ margin: '0.15rem 0 0', fontSize: '0.85rem' }}><LangBoardView value={plan.language_analysis} /></div>
             </div>
           )}
         </div>
