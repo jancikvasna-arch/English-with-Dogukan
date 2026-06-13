@@ -25,19 +25,23 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
   const wrapRef    = useRef(null)
   const instanceId = useRef(`ai${Math.random().toString(36).slice(2,7)}`).current
 
+  // ── Single shared colour for every tool ───────────────────
+  const [color, setColor] = useState('#dc2626')
+
   // ── Circle state ──────────────────────────────────────────
   const [circles,       setCircles]       = useState(() => initialCircles || [])
   const [circleDrawing, setCircleDrawing] = useState(null)
   const [circleMode,    setCircleMode]    = useState(false)
-  const [circleColor,   setCircleColor]   = useState('#dc2626')
 
-  // ── Line state ────────────────────────────────────────────
-  const [lines,     setLines]     = useState(() => initialLines || [])
-  const [lineMode,  setLineMode]  = useState(false)
-  const [lineStart, setLineStart] = useState(null)
-  const [lineMouse, setLineMouse] = useState(null)
-  const [lineThick, setLineThick] = useState(3)
+  // ── Line state (arrow = with arrowhead, straight = plain line) ──
+  const [lines,        setLines]        = useState(() => initialLines || [])
+  const [arrowMode,    setArrowMode]    = useState(false)
+  const [straightMode, setStraightMode] = useState(false)
+  const [lineStart,    setLineStart]    = useState(null)
+  const [lineMouse,    setLineMouse]    = useState(null)
+  const [lineThick,    setLineThick]    = useState(3)
   const justDrewRef = useRef(false)
+  const drawMode = arrowMode || straightMode  // either line tool is active
 
   // Notify parent when annotations change (skip on initial render)
   const isFirstRender = useRef(true)
@@ -46,16 +50,16 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
     onAnnotationChange?.(circles, lines)
   }, [circles, lines]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const activeMode     = circleMode ? 'circle' : lineMode ? 'line' : null
-  const nextLineColor  = LINE_COLORS[lines.length % LINE_COLORS.length]
+  const activeMode = circleMode ? 'circle' : drawMode ? 'line' : null
 
   const pct = (e) => {
     const r = wrapRef.current.getBoundingClientRect()
     return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 }
   }
 
-  const toggleCircle = () => { setCircleMode(m => !m); setLineMode(false); setLineStart(null) }
-  const toggleLine   = () => { setLineMode(m => !m);   setCircleMode(false); setCircleDrawing(null) }
+  const toggleCircle   = () => { setCircleMode(m => !m); setArrowMode(false); setStraightMode(false); setLineStart(null) }
+  const toggleArrow    = () => { setArrowMode(m => !m);  setCircleMode(false); setStraightMode(false); setCircleDrawing(null); setLineStart(null) }
+  const toggleStraight = () => { setStraightMode(m => !m); setCircleMode(false); setArrowMode(false); setCircleDrawing(null); setLineStart(null) }
 
   const onMouseDown = (e) => {
     if (!circleMode || e.button !== 0) return
@@ -66,9 +70,9 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
   const onMouseMove = (e) => {
     const p = pct(e)
     if (circleMode && circleDrawing) setCircleDrawing(d => ({ ...d, cx: p.x, cy: p.y }))
-    if (lineMode) setLineMouse(p)
+    if (drawMode) setLineMouse(p)
   }
-  const onMouseUp = (e) => {
+  const onMouseUp = () => {
     if (!circleMode || !circleDrawing) return
     const rx = Math.abs(circleDrawing.cx - circleDrawing.sx) / 2
     const ry = Math.abs(circleDrawing.cy - circleDrawing.sy) / 2
@@ -76,7 +80,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
       setCircles(prev => [...prev, {
         cx: (circleDrawing.sx + circleDrawing.cx) / 2,
         cy: (circleDrawing.sy + circleDrawing.cy) / 2,
-        rx, ry, color: circleColor,
+        rx, ry, color,
       }])
       justDrewRef.current = true
     }
@@ -84,13 +88,12 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
   }
   const onClick = (e) => {
     if (justDrewRef.current) { justDrewRef.current = false; return }
-    if (!lineMode) return
+    if (!drawMode) return
     const p = pct(e)
     if (!lineStart) {
       setLineStart(p)
     } else {
-      const color = LINE_COLORS[lines.length % LINE_COLORS.length]
-      setLines(prev => [...prev, { x1: lineStart.x, y1: lineStart.y, x2: p.x, y2: p.y, color, thickness: lineThick }])
+      setLines(prev => [...prev, { x1: lineStart.x, y1: lineStart.y, x2: p.x, y2: p.y, color, thickness: lineThick, arrow: arrowMode }])
       setLineStart(null)
     }
   }
@@ -112,50 +115,49 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
 
   return (
     <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
-      {/* ── Toolbar ── */}
+      {/* ── Toolbar (hidden in read-only view) ── */}
+      {(circlesEnabled || linesEnabled) && (
       <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
 
-        {/* Circle tools */}
-        {circlesEnabled && (<>
-          <button type="button" onClick={toggleCircle} style={annTbBtn(circleMode, '#dc2626', '#fee2e2')}>
-            {circleMode ? '⭕ Drawing — click to stop' : '⭕ Draw circle'}
-          </button>
-          {/* Circle color swatches */}
-          <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-            {CIRCLE_COLORS.map(c => (
-              <button key={c.hex} type="button" title={c.name} onClick={() => setCircleColor(c.hex)}
-                style={{ width: 15, height: 15, borderRadius: '50%', padding: 0, cursor: 'pointer',
-                  background: c.hex, outline: 'none', flexShrink: 0,
-                  border: circleColor === c.hex ? '2.5px solid #fff' : '2px solid transparent',
-                  boxShadow: circleColor === c.hex ? `0 0 0 2px ${c.hex}` : 'none' }} />
-            ))}
-          </div>
-        </>)}
+        {/* One shared colour picker for every tool */}
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Colour:</span>
+        <div style={{ display: 'flex', gap: '3px', alignItems: 'center', marginRight: '0.2rem' }}>
+          {CIRCLE_COLORS.map(c => (
+            <button key={c.hex} type="button" title={c.name} onClick={() => setColor(c.hex)}
+              style={{ width: 16, height: 16, borderRadius: '50%', padding: 0, cursor: 'pointer',
+                background: c.hex, outline: 'none', flexShrink: 0,
+                border: color === c.hex ? '2.5px solid #fff' : '2px solid transparent',
+                boxShadow: color === c.hex ? `0 0 0 2px ${c.hex}` : 'none' }} />
+          ))}
+        </div>
 
-        {/* Divider */}
-        {circlesEnabled && linesEnabled && (
-          <span style={{ color: 'var(--border)', fontSize: '0.9rem', userSelect: 'none' }}>│</span>
+        <span style={{ color: 'var(--border)', fontSize: '0.9rem', userSelect: 'none' }}>│</span>
+
+        {/* Tools */}
+        {circlesEnabled && (
+          <button type="button" onClick={toggleCircle} style={annTbBtn(circleMode, '#dc2626', '#fee2e2')}>
+            {circleMode ? '⭕ Drawing — click to stop' : '⭕ Circle'}
+          </button>
+        )}
+        {linesEnabled && (
+          <button type="button" onClick={toggleStraight} style={annTbBtn(straightMode, '#0f766e', '#ccfbf1')}>
+            {straightMode ? (lineStart ? '➖ Click endpoint…' : '➖ Click start…') : '➖ Line'}
+          </button>
+        )}
+        {linesEnabled && (
+          <button type="button" onClick={toggleArrow} style={annTbBtn(arrowMode, '#2563eb', '#eff6ff')}>
+            {arrowMode ? (lineStart ? '🏹 Click endpoint…' : '🏹 Click start…') : '🏹 Arrow'}
+          </button>
         )}
 
-        {/* Line tools */}
-        {linesEnabled && (<>
-          <button type="button" onClick={toggleLine} style={annTbBtn(lineMode, '#2563eb', '#eff6ff')}>
-            {lineMode ? (lineStart ? '🏹 Click endpoint…' : '🏹 Click start…') : '🏹 Draw line'}
+        {/* Thickness — shared by Line + Arrow */}
+        {linesEnabled && drawMode && LINE_THICKNESSES.map(t => (
+          <button key={t.px} type="button" title={`${t.label} line`}
+            onClick={() => setLineThick(t.px)}
+            style={annTbBtn(lineThick === t.px, '#444', '#eee')}>
+            {t.label}
           </button>
-          {/* Thickness picker */}
-          {LINE_THICKNESSES.map(t => (
-            <button key={t.px} type="button" title={`${t.label} line`}
-              onClick={() => setLineThick(t.px)}
-              style={annTbBtn(lineThick === t.px, '#2563eb', '#eff6ff')}>
-              {t.label}
-            </button>
-          ))}
-          {/* Next-line color preview dot */}
-          {lineMode && (
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: nextLineColor,
-              display: 'inline-block', flexShrink: 0 }} title="Next line colour" />
-          )}
-        </>)}
+        ))}
 
         {/* Clear all */}
         {hasAnnotations && (
@@ -165,9 +167,10 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
           </button>
         )}
       </div>
+      )}
 
       {/* Status hint */}
-      {lineMode && lineStart && (
+      {drawMode && lineStart && (
         <p style={{ fontSize: '0.71rem', color: '#2563eb', margin: '0 0 0.25rem', fontStyle: 'italic' }}>
           ● Start point set — now click the endpoint on the image
         </p>
@@ -176,7 +179,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
       {/* ── Image + SVG overlay ── */}
       <div ref={wrapRef}
         style={{ position: 'relative', display: 'inline-block', maxWidth: '100%',
-          cursor: circleMode ? 'crosshair' : lineMode ? 'cell' : 'default' }}
+          cursor: circleMode ? 'crosshair' : drawMode ? 'cell' : 'default' }}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
         onClick={onClick}
         onMouseLeave={() => { setCircleDrawing(null); setLineMouse(null) }}>
@@ -184,7 +187,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
         <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
           overflow: 'visible', pointerEvents: activeMode ? 'none' : 'all' }}>
           <defs>
-            {LINE_COLORS.map(c => {
+            {[...new Set([...CIRCLE_COLORS.map(c => c.hex), ...LINE_COLORS, ...lines.map(l => l.color), color])].map(c => {
               const mid = `${instanceId}-${c.replace('#','')}`
               return (
                 <marker key={mid} id={mid} markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
@@ -205,33 +208,35 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
           {previewEll && (
             <ellipse cx={`${previewEll.cx}%`} cy={`${previewEll.cy}%`}
               rx={`${previewEll.rx}%`} ry={`${previewEll.ry}%`}
-              fill="none" stroke={circleColor} strokeWidth="2.5" strokeDasharray="6 3" />
+              fill="none" stroke={color} strokeWidth="2.5" strokeDasharray="6 3" />
           )}
 
-          {/* Lines */}
+          {/* Lines (arrow = with arrowhead; straight = plain). Legacy lines have no
+              `arrow` field — treat those as arrows to preserve old drawings. */}
           {lines.map((l, i) => {
+            const isArrow = l.arrow !== false
             const mid = `${instanceId}-${l.color.replace('#','')}`
             return (
               <g key={`l${i}`} style={{ cursor: activeMode ? 'default' : 'pointer' }}
                 onClick={() => !activeMode && setLines(p => p.filter((_, j) => j !== i))}>
-                <circle cx={`${l.x1}%`} cy={`${l.y1}%`} r="4" fill={l.color} />
+                {isArrow && <circle cx={`${l.x1}%`} cy={`${l.y1}%`} r="4" fill={l.color} />}
                 <line x1={`${l.x1}%`} y1={`${l.y1}%`} x2={`${l.x2}%`} y2={`${l.y2}%`}
-                  stroke={l.color} strokeWidth={l.thickness}
-                  markerEnd={`url(#${mid})`} />
+                  stroke={l.color} strokeWidth={l.thickness} strokeLinecap="round"
+                  markerEnd={isArrow ? `url(#${mid})` : undefined} />
               </g>
             )
           })}
 
           {/* Line preview while hovering */}
-          {lineMode && lineStart && lineMouse && (() => {
-            const mid = `${instanceId}-${nextLineColor.replace('#','')}`
+          {drawMode && lineStart && lineMouse && (() => {
+            const mid = `${instanceId}-${color.replace('#','')}`
             return (
               <g>
-                <circle cx={`${lineStart.x}%`} cy={`${lineStart.y}%`} r="4" fill={nextLineColor} />
+                {arrowMode && <circle cx={`${lineStart.x}%`} cy={`${lineStart.y}%`} r="4" fill={color} />}
                 <line x1={`${lineStart.x}%`} y1={`${lineStart.y}%`}
                   x2={`${lineMouse.x}%`} y2={`${lineMouse.y}%`}
-                  stroke={nextLineColor} strokeWidth={lineThick}
-                  strokeDasharray="6 3" markerEnd={`url(#${mid})`} />
+                  stroke={color} strokeWidth={lineThick} strokeLinecap="round"
+                  strokeDasharray="6 3" markerEnd={arrowMode ? `url(#${mid})` : undefined} />
               </g>
             )
           })()}
