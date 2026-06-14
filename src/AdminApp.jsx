@@ -3948,16 +3948,54 @@ const stripHtml = (html) => (html || '')
   .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n')
   .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim()
 
+// Frame (border) colour options for notes
+const LANG_BOARD_FRAMES = [
+  { name: 'None',   value: null },
+  { name: 'Blue',   value: '#2563eb' },
+  { name: 'Red',    value: '#dc2626' },
+  { name: 'Green',  value: '#16a34a' },
+  { name: 'Orange', value: '#ea580c' },
+  { name: 'Purple', value: '#7c3aed' },
+  { name: 'Black',  value: '#1a2030' },
+]
+
+// Auto-growing textarea so long notes show all their text (no inner scroll)
+function LangAutoTextarea({ value, onChange, color, placeholder }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
+  })
+  return (
+    <textarea ref={ref} value={value} placeholder={placeholder} rows={1}
+      onChange={e => onChange(e.target.value)}
+      onMouseDown={e => e.stopPropagation()}
+      style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', overflow: 'hidden',
+        background: 'transparent', padding: '6px 8px', fontSize: '0.85rem', lineHeight: 1.45,
+        color, fontWeight: 500, fontFamily: 'inherit', boxSizing: 'border-box', display: 'block' }} />
+  )
+}
+
 export function LangBoardView({ value }) {
+  const ref = useRef(null)
+  const [h, setH] = useState(110)
   const board = parseLangBoard(value)
+  useLayoutEffect(() => {
+    if (!ref.current) return
+    let max = 0
+    ref.current.querySelectorAll('[data-note]').forEach(el => { max = Math.max(max, el.offsetTop + el.offsetHeight) })
+    setH(Math.max(80, max + 14))
+  })
   if (!board) return <div dangerouslySetInnerHTML={{ __html: value }} />
   if (!board.boxes.length) return null
-  const maxBottom = board.boxes.reduce((m, b) => Math.max(m, (b.y || 0) + 70), 0)
   return (
-    <div style={{ position: 'relative', width: '100%', minHeight: Math.max(90, maxBottom + 16),
+    <div ref={ref} style={{ position: 'relative', width: '100%', height: h,
       background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
       {board.boxes.map(b => (
-        <div key={b.id} style={{ position: 'absolute', left: `${b.x}%`, top: b.y, width: b.w,
+        <div key={b.id} data-note style={{ position: 'absolute', left: `${b.x}%`, top: b.y, width: b.w,
+          background: b.bg || 'transparent',
+          border: b.border ? `1.5px solid ${b.border}` : (b.bg ? '1px solid rgba(0,0,0,0.08)' : 'none'),
+          borderRadius: '7px', padding: (b.bg || b.border) ? '6px 9px' : '2px',
           color: b.color, fontSize: '0.85rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', fontWeight: 500 }}>
           {b.text}
         </div>
@@ -3972,8 +4010,10 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
     const b = parseLangBoard(value)
     if (b) return b.boxes
     const txt = stripHtml(value)
-    return txt ? [{ id: crypto.randomUUID(), x: 2, y: 10, w: 240, text: txt, color: '#1a2030' }] : []
+    return txt ? [{ id: crypto.randomUUID(), x: 2, y: 10, w: 260, text: txt, color: '#1a2030' }] : []
   })
+  const [openStyleId, setOpenStyleId] = useState(null)
+  const [boardH, setBoardH] = useState(260)
   const boxesRef = useRef(boxes)
   const setAll = (next) => { boxesRef.current = next; setBoxes(next) }
   const commit = (next) => { setAll(next); onChange(JSON.stringify({ __board: true, boxes: next })) }
@@ -3981,8 +4021,16 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
   const remove = (id) => commit(boxesRef.current.filter(b => b.id !== id))
   const addBox = () => {
     const n = boxes.length
-    commit([...boxesRef.current, { id: crypto.randomUUID(), x: 3 + (n * 4) % 36, y: 12 + (n * 30) % 170, w: 220, text: '', color: '#1a2030' }])
+    commit([...boxesRef.current, { id: crypto.randomUUID(), x: 3 + (n * 4) % 36, y: 12 + (n * 34) % 170, w: 230, text: '', color: '#1a2030', bg: '#fffef9', border: null }])
   }
+
+  // Keep the board tall enough to contain all notes
+  useLayoutEffect(() => {
+    if (!boardRef.current) return
+    let max = 0
+    boardRef.current.querySelectorAll('[data-note]').forEach(el => { max = Math.max(max, el.offsetTop + el.offsetHeight) })
+    setBoardH(Math.max(260, max + 40))
+  })
 
   const startDrag = (e, box) => {
     e.preventDefault()
@@ -4003,48 +4051,94 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }
 
-  const boardHeight = Math.max(260, boxes.reduce((m, b) => Math.max(m, (b.y || 0) + 90), 0))
+  const startResize = (e, box) => {
+    e.preventDefault(); e.stopPropagation()
+    const startX = e.clientX, startW = box.w
+    const move = (ev) => {
+      const nw = Math.max(130, Math.min(600, startW + (ev.clientX - startX)))
+      setAll(boxesRef.current.map(b => b.id === box.id ? { ...b, w: nw } : b))
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      onChange(JSON.stringify({ __board: true, boxes: boxesRef.current }))
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
+
+  const swatchRow = (label, items, current, key, box, round) => (
+    <div style={{ marginTop: '0.35rem' }}>
+      <div style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.2rem' }}>{label}</div>
+      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+        {items.map(c => {
+          const active = current === c.value || current === c.hex
+          const val = c.value !== undefined ? c.value : c.hex
+          return (
+            <button key={c.name} type="button" title={c.name} onClick={() => update(box.id, { [key]: val })}
+              style={{ width: 17, height: 17, borderRadius: round ? '50%' : '4px', cursor: 'pointer', flexShrink: 0,
+                background: val || '#fff',
+                backgroundImage: val ? undefined : 'linear-gradient(45deg, transparent 45%, #e05c5c 45%, #e05c5c 55%, transparent 55%)',
+                border: active ? '2px solid #1a2030' : '1px solid rgba(0,0,0,0.2)' }} />
+          )
+        })}
+      </div>
+    </div>
+  )
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
         <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
           onClick={addBox}>+ Add note</button>
-        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Drag the grip (⠿) to place a note anywhere.</span>
+        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>Drag ⠿ to move · drag the corner to resize · 🎨 for colours.</span>
       </div>
-      <div ref={boardRef} style={{ position: 'relative', width: '100%', height: boardHeight,
-        background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden',
-        backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+      <div ref={boardRef}
+        onMouseDown={() => setOpenStyleId(null)}
+        style={{ position: 'relative', width: '100%', height: boardH,
+          background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden',
+          backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
         {boxes.length === 0 && (
           <span style={{ position: 'absolute', left: 14, top: 12, fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
             {placeholder || 'Click “+ Add note”, then drag notes anywhere on the board.'}
           </span>
         )}
         {boxes.map(box => (
-          <div key={box.id} style={{ position: 'absolute', left: `${box.x}%`, top: box.y, width: box.w,
-            border: '1px solid #e4ded0', borderRadius: '7px', background: '#fffef9', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 5px', borderBottom: '1px solid #efe9da', background: '#faf6ec', borderRadius: '7px 7px 0 0' }}>
+          <div key={box.id} data-note style={{ position: 'absolute', left: `${box.x}%`, top: box.y, width: box.w,
+            border: `1.5px solid ${box.border || '#e4ded0'}`, borderRadius: '7px',
+            background: box.bg || '#fffef9', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 5px',
+              borderBottom: `1px solid ${box.border ? box.border + '40' : '#efe9da'}`, borderRadius: '6px 6px 0 0',
+              background: 'rgba(0,0,0,0.03)' }}>
               <span onMouseDown={e => startDrag(e, box)} title="Drag to move"
                 style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '0 2px', userSelect: 'none' }}>⠿</span>
-              <div style={{ display: 'flex', gap: '3px', marginLeft: '2px' }}>
-                {LANG_BOARD_COLORS.map(c => (
-                  <button key={c.hex} type="button" title={c.name} onClick={() => update(box.id, { color: c.hex })}
-                    style={{ width: 13, height: 13, borderRadius: '50%', background: c.hex, cursor: 'pointer', flexShrink: 0,
-                      border: box.color === c.hex ? '2px solid #fff' : '1px solid rgba(0,0,0,0.15)',
-                      boxShadow: box.color === c.hex ? `0 0 0 1.5px ${c.hex}` : 'none' }} />
-                ))}
-              </div>
+              <button type="button" title="Colours & frame"
+                onMouseDown={e => e.stopPropagation()}
+                onClick={() => setOpenStyleId(id => id === box.id ? null : box.id)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem', padding: '0 2px' }}>🎨</button>
               <button type="button" title="Delete note" onClick={() => remove(box.id)}
+                onMouseDown={e => e.stopPropagation()}
                 style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#e05c5c', fontSize: '0.85rem', lineHeight: 1, padding: '0 2px' }}>✕</button>
             </div>
-            <textarea
-              value={box.text}
-              onChange={e => update(box.id, { text: e.target.value })}
-              placeholder="Type…"
-              rows={2}
-              style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', background: 'transparent',
-                padding: '6px 8px', fontSize: '0.85rem', lineHeight: 1.45, color: box.color, fontWeight: 500,
-                fontFamily: 'inherit', boxSizing: 'border-box' }} />
+
+            <LangAutoTextarea value={box.text} color={box.color} placeholder="Type…"
+              onChange={v => update(box.id, { text: v })} />
+
+            {/* Resize handle (bottom-right) */}
+            <span onMouseDown={e => startResize(e, box)} title="Drag to resize width"
+              style={{ position: 'absolute', right: 1, bottom: 1, width: 14, height: 14, cursor: 'ew-resize',
+                background: 'linear-gradient(135deg, transparent 50%, var(--text-muted) 50%, var(--text-muted) 60%, transparent 60%, transparent 72%, var(--text-muted) 72%, var(--text-muted) 82%, transparent 82%)',
+                opacity: 0.5, borderRadius: '0 0 6px 0' }} />
+
+            {/* Style popover */}
+            {openStyleId === box.id && (
+              <div onMouseDown={e => e.stopPropagation()}
+                style={{ position: 'absolute', top: '100%', left: 0, marginTop: 3, zIndex: 40,
+                  background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 22px rgba(0,0,0,0.16)',
+                  padding: '0.5rem 0.6rem', width: 196 }}>
+                {swatchRow('Text colour', LANG_BOARD_COLORS, box.color, 'color', box, true)}
+                {swatchRow('Background', FILL_COLORS, box.bg ?? null, 'bg', box, false)}
+                {swatchRow('Frame', LANG_BOARD_FRAMES, box.border ?? null, 'border', box, false)}
+              </div>
+            )}
           </div>
         ))}
       </div>
