@@ -244,9 +244,22 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
     }
   }
 
+  // After a student clicks Finish, immediately show them their submitted answers
+  // (read-only) so they keep seeing what they wrote. Works for every exercise type.
+  const showMyAnswers = async (assignment, exercise, inPlan) => {
+    if (!assignment || !exercise) return
+    const [qs, ans] = await Promise.all([
+      fetchQuestionsForReview(exercise.id),
+      fetchMyAnswersForAssignment(assignment.id),
+    ])
+    const answerMap = Object.fromEntries((ans || []).map(sa => [sa.question_id, sa]))
+    const payload = { assignment: { ...assignment, exercises: exercise }, questions: qs, answerMap }
+    if (inPlan) setViewingPlanSubmission(payload)
+    else        setViewingSubmission(payload)
+  }
+
   const openPlanSubmission = async (exerciseId) => {
-    const planAssignments = assignments.filter(a => a.lesson_plan_id === activePlan?.id)
-    const asgn = planAssignments.find(a => (a.exercises?.id === exerciseId || a.exercise_id === exerciseId) && a.status === 'submitted')
+    const asgn = assignments.find(a => (a.exercises?.id === exerciseId || a.exercise_id === exerciseId) && a.status === 'submitted')
     if (!asgn) return
     setLoadingViewPlanExId(exerciseId)
     const [qs, ans] = await Promise.all([
@@ -278,6 +291,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
         onBack={() => setActiveAssignment(null)}
         onSubmitted={async (id) => {
           setAssignments(prev => prev.map(a => a.id === id ? { ...a, status: 'submitted' } : a))
+          await showMyAnswers(activeAssignment.assignment, activeAssignment.assignment.exercises, false)
           setActiveAssignment(null)
           // Check for newly earned badges
           const newlyEarned = await checkAndAwardBadges(user.id)
@@ -323,6 +337,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
               return [...prev, { ...planAssignment, exercises: planEx, status: 'submitted', submitted_at: new Date().toISOString() }]
             })
             setActivePlanExercise(null)
+            showMyAnswers(planAssignment, planEx, true)
           }}
         />
       )
@@ -447,7 +462,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                       <button className="btn-ghost" style={{ fontSize: '0.73rem', padding: '0.18rem 0.48rem' }}
                         onClick={e => { e.stopPropagation(); openPlanSubmission(ex.id) }}
                         disabled={loadingViewPlanExId === ex.id}>
-                        {loadingViewPlanExId === ex.id ? '…' : '👁 View'}
+                        {loadingViewPlanExId === ex.id ? '…' : '👁 My answers'}
                       </button>
                       <button className="btn-ghost" style={{ fontSize: '0.73rem', padding: '0.18rem 0.48rem' }}
                         onClick={e => { e.stopPropagation(); openInlineExercise(stage.id, activePlan.id, ex.id) }}
@@ -491,6 +506,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                       return [...prev, { ...inlineData.assignment, exercises: inlineData.exercise, status: 'submitted', submitted_at: new Date().toISOString() }]
                     })
                     closeInlineExercise(stage.id)
+                    showMyAnswers(inlineData.assignment, inlineData.exercise, true)
                   }}
                 />
               ) : inlineData ? (
