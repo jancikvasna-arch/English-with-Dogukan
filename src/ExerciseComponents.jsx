@@ -1201,9 +1201,9 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
 
 // ─── MatchingQuestion (student drag-and-drop) ─────────────────
 export function MatchingQuestion({ pairs, answer, onChange }) {
-  const LETTERS = ['A','B','C','D','E','F','G','H','I','J']
+  const LETTERS = Array.from({ length: 30 }, (_, i) => i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + i - 26).repeat(2))
 
-  // Detect new format: pairs = { v:2, left: [], right: [] }
+  // Detect new format: pairs = { v:2, left: [], right: [], leftTitle?, rightTitle? }
   const isNew = pairs && !Array.isArray(pairs) && pairs?.v === 2
 
   // ── All hooks must be called unconditionally (Rules of Hooks) ──
@@ -1246,6 +1246,7 @@ export function MatchingQuestion({ pairs, answer, onChange }) {
         {/* Unmatched right items bank */}
         {shuffledIdx.filter(ri => !usedRightIdx.includes(ri)).length > 0 && (
           <div className="matching-bank" style={{ width: '100%' }}>
+            {pairs.rightTitle && <p style={{ fontWeight: 700, fontSize: '0.95rem', margin: '0 0 0.25rem', color: '#2563eb' }}>{pairs.rightTitle}</p>}
             <p className="matching-bank-label">Drag to match ↓</p>
             <div className="matching-bank-items">
               {shuffledIdx.filter(ri => !usedRightIdx.includes(ri)).map(ri => (
@@ -1258,6 +1259,7 @@ export function MatchingQuestion({ pairs, answer, onChange }) {
             </div>
           </div>
         )}
+        {pairs.leftTitle && <p style={{ fontWeight: 700, fontSize: '0.95rem', margin: '0.5rem 0 0.3rem', color: 'var(--gold)' }}>{pairs.leftTitle}</p>}
         <div className="matching-pairs">
           {left.map((leftText, li) => {
             const matchedRi = current[li] != null ? current[li] : null
@@ -1866,7 +1868,7 @@ export function StudentSubmissionReview({ assignment, questions, answerMap, onBa
           }
 
           const matchIsNew = q.type === 'matching' && q.options && !Array.isArray(q.options) && q.options?.v === 2
-          const LTRS = ['A','B','C','D','E','F','G','H','I','J']
+          const LTRS = Array.from({ length: 30 }, (_, i) => i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + i - 26).repeat(2))
 
           return (
             <div key={q.id} className="exercise-question">

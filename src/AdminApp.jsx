@@ -3356,10 +3356,12 @@ export function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, 
       )}
 
       {type === 'matching' && (() => {
-        const LETTERS = ['A','B','C','D','E','F','G','H','I','J']
+        const LETTERS = Array.from({ length: 30 }, (_, i) => i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + i - 26).repeat(2))
+        const MAX_PAIRS = 30
         const isNew = options && !Array.isArray(options) && options?.v === 2
-        const left  = isNew ? (options.left  || []) : []
-        const right = isNew ? (options.right || []) : []
+        const opts  = isNew ? options : { v: 2, left: [], right: [] }
+        const left  = opts.left  || []
+        const right = opts.right || []
         const correctArr = (() => { try { return correct_answer ? JSON.parse(correct_answer) : [] } catch { return [] } })()
 
         const setMatch = (li, ri) => {
@@ -3369,13 +3371,14 @@ export function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, 
           onChange('correct_answer', JSON.stringify(arr))
         }
         // Fix: update both sides in one onChange call to avoid stale-closure overwrite
+        // (...opts preserves leftTitle / rightTitle)
         const addItem = () => {
-          if (left.length >= 10) return
-          onChange('options', { v: 2, left: [...left, ''], right: [...right, ''] })
+          if (left.length >= MAX_PAIRS) return
+          onChange('options', { ...opts, left: [...left, ''], right: [...right, ''] })
         }
         const removeItem = () => {
           if (left.length <= 1) return
-          onChange('options', { v: 2, left: left.slice(0, -1), right: right.slice(0, -1) })
+          onChange('options', { ...opts, left: left.slice(0, -1), right: right.slice(0, -1) })
         }
 
         const handleMatchPhoto = async (side, file) => {
@@ -3383,14 +3386,14 @@ export function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, 
           setMOcrLoading(side)
           try {
             const rawText = await ocrImage(file)
-            const lines = rawText.split('\n').map(l => l.replace(/^\s*[\dA-Ja-j][.)]\s*/, '').trim()).filter(l => l.length > 1)
-            const extracted = lines.slice(0, 10)
+            const lines = rawText.split('\n').map(l => l.replace(/^\s*[\dA-Za-z][.)]\s*/, '').trim()).filter(l => l.length > 1)
+            const extracted = lines.slice(0, MAX_PAIRS)
             if (side === 'left') {
               const padded = extracted.concat(Array(Math.max(0, right.length - extracted.length)).fill(''))
-              onChange('options', { v: 2, left: padded, right })
+              onChange('options', { ...opts, left: padded })
             } else {
               const padded = extracted.concat(Array(Math.max(0, left.length - extracted.length)).fill(''))
-              onChange('options', { v: 2, left, right: padded })
+              onChange('options', { ...opts, right: padded })
             }
           } catch (err) {
             console.error('[matchPhoto] OCR failed:', err)
@@ -3426,12 +3429,15 @@ export function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               {/* Left column */}
               <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Numbered list</div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Numbered list</div>
+                <input type="text" placeholder="Optional title for this list…" value={opts.leftTitle || ''}
+                  onChange={e => onChange('options', { ...opts, leftTitle: e.target.value })}
+                  style={{ width: '100%', fontSize: '0.8rem', fontWeight: 600, padding: '0.3rem 0.5rem', borderRadius: '5px', border: '1px solid var(--border)', marginBottom: '0.45rem', boxSizing: 'border-box' }} />
                 {left.map((text, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--gold)', width: '18px', flexShrink: 0 }}>{i+1}.</span>
                     <input type="text" style={{ flex: 1 }} placeholder={`Item ${i+1}…`} value={text}
-                      onChange={e => { const n=[...left]; n[i]=e.target.value; onChange('options', { v: 2, left: n, right }) }} />
+                      onChange={e => { const n=[...left]; n[i]=e.target.value; onChange('options', { ...opts, left: n }) }} />
                     <select style={{ fontSize: '0.78rem', padding: '0.28rem 0.4rem', borderRadius: '5px', border: '1px solid var(--border)', background: 'var(--bg-card)', width: '54px', flexShrink: 0 }}
                       value={correctArr[i] != null ? correctArr[i] : ''}
                       onChange={e => setMatch(i, e.target.value)}
@@ -3446,18 +3452,21 @@ export function BuilderQuestion({ idx, question, onChange, onRemove, canRemove, 
               </div>
               {/* Right column */}
               <div>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Lettered list</div>
+                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Lettered list</div>
+                <input type="text" placeholder="Optional title for this list…" value={opts.rightTitle || ''}
+                  onChange={e => onChange('options', { ...opts, rightTitle: e.target.value })}
+                  style={{ width: '100%', fontSize: '0.8rem', fontWeight: 600, padding: '0.3rem 0.5rem', borderRadius: '5px', border: '1px solid var(--border)', marginBottom: '0.45rem', boxSizing: 'border-box' }} />
                 {right.map((text, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#2563eb', width: '18px', flexShrink: 0 }}>{LETTERS[i]}.</span>
                     <input type="text" style={{ flex: 1 }} placeholder={`Item ${LETTERS[i]}…`} value={text}
-                      onChange={e => { const n=[...right]; n[i]=e.target.value; onChange('options', { v: 2, left, right: n }) }} />
+                      onChange={e => { const n=[...right]; n[i]=e.target.value; onChange('options', { ...opts, right: n }) }} />
                   </div>
                 ))}
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.35rem' }}>
-              {left.length < 10 && (
+              {left.length < MAX_PAIRS && (
                 <button type="button" className="builder-add-pair-btn" onClick={addItem}>+ Add pair</button>
               )}
               {left.length > 1 && (
@@ -4725,7 +4734,7 @@ export function LessonStageBuilder({
 
 // ─── AdminExerciseReview ──────────────────────────────────────
 export function AdminExerciseReview({ details, onBack }) {
-  const LETTERS    = ['A','B','C','D','E','F','G','H','I','J']
+  const LETTERS    = Array.from({ length: 30 }, (_, i) => i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + i - 26).repeat(2))
   const questions  = (details.exercises?.questions ?? [])
     .slice().sort((a, b) => a.order_index - b.order_index)
   const answerMap  = Object.fromEntries(details.studentAnswers.map(a => [a.question_id, a]))
