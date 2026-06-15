@@ -4102,7 +4102,7 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
       </div>
       <div ref={boardRef}
         onMouseDown={() => setOpenStyleId(null)}
-        style={{ position: 'relative', width: '100%', height: boardH,
+        style={{ position: 'relative', width: '100%', height: boardH + (openStyleId ? 180 : 0),
           background: '#fff', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden',
           backgroundImage: 'radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
         {boxes.length === 0 && (
@@ -4146,8 +4146,8 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
             {/* Style popover */}
             {openStyleId === box.id && (
               <div onMouseDown={e => e.stopPropagation()}
-                style={{ position: 'absolute', top: '100%', left: 0, marginTop: 3, zIndex: 40,
-                  background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 22px rgba(0,0,0,0.16)',
+                style={{ position: 'absolute', top: '28px', left: 0, zIndex: 40,
+                  background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 22px rgba(0,0,0,0.18)',
                   padding: '0.5rem 0.6rem', width: 196 }}>
                 {swatchRow('Text colour', LANG_BOARD_COLORS, box.color, 'color', box, true)}
                 {swatchRow('Background', FILL_COLORS, box.bg ?? null, 'bg', box, false)}
