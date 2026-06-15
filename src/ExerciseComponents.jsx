@@ -359,7 +359,7 @@ export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExerci
       {cached.context_text && (
         <div className="exercise-context-text" style={{ marginBottom: '0.5rem' }}>
           <p className="exercise-context-label">📖 Read this first</p>
-          <div className="exercise-context-passage">{cached.context_text}</div>
+          <div className="exercise-context-passage" dangerouslySetInnerHTML={{ __html: cached.context_text }} />
         </div>
       )}
       {cached.context_images?.length > 0 && !(
@@ -1624,7 +1624,7 @@ export function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = fal
       {exercise?.context_text && (
         <div className="exercise-context-text">
           <p className="exercise-context-label">📖 Read this first</p>
-          <div className="exercise-context-passage">{exercise.context_text}</div>
+          <div className="exercise-context-passage" dangerouslySetInnerHTML={{ __html: exercise.context_text }} />
         </div>
       )}
       {exercise?.context_images?.length > 0 && !(
