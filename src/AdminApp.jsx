@@ -1263,6 +1263,135 @@ export function TeachWhiteboard({ value = '', onChange, placeholder, style = {},
   )
 }
 
+// ─── FloatingWhiteboard ───────────────────────────────────────
+// Wraps TeachWhiteboard in a draggable / resizable floating window that
+// stays in view while the teacher scrolls down the Teach page. Minimises
+// to a small "📝 Whiteboard" bar. Window placement (pos/size/min) is
+// remembered globally; the board CONTENT stays per-plan via storageKey.
+function FloatingWhiteboard({ value, onChange, storageKey, hasContent, onClear }) {
+  const readLS = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb } catch { return fb } }
+  const defPos = () => {
+    const w = 520
+    const x = (typeof window !== 'undefined') ? Math.max(16, window.innerWidth - w - 28) : 24
+    return { x, y: 96 }
+  }
+  const [pos, setPos]   = useState(() => readLS('teach_wb_pos', defPos()))
+  const [size, setSize] = useState(() => readLS('teach_wb_size', { w: 520, h: 360 }))
+  const [min, setMin]   = useState(() => readLS('teach_wb_min', false))
+
+  const persist = (p, s, m) => {
+    try {
+      localStorage.setItem('teach_wb_pos', JSON.stringify(p))
+      localStorage.setItem('teach_wb_size', JSON.stringify(s))
+      localStorage.setItem('teach_wb_min', JSON.stringify(m))
+    } catch {}
+  }
+
+  const clampPos = (x, y) => ({
+    x: Math.max(0, Math.min((window.innerWidth || 1200) - 140, x)),
+    y: Math.max(0, Math.min((window.innerHeight || 800) - 44, y)),
+  })
+
+  const startDrag = (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const sx = e.clientX, sy = e.clientY, ox = pos.x, oy = pos.y
+    let next = pos
+    const move = (ev) => { next = clampPos(ox + ev.clientX - sx, oy + ev.clientY - sy); setPos(next) }
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      persist(next, size, min)
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
+
+  const startResize = (e) => {
+    if (e.button !== 0) return
+    e.preventDefault(); e.stopPropagation()
+    const sx = e.clientX, sy = e.clientY, ow = size.w, oh = size.h
+    let next = size
+    const move = (ev) => {
+      next = { w: Math.max(320, ow + ev.clientX - sx), h: Math.max(220, oh + ev.clientY - sy) }
+      setSize(next)
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      persist(pos, next, min)
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
+
+  const toggleMin = (m) => { setMin(m); persist(pos, size, m) }
+
+  // ── Minimised bar ──
+  if (min) {
+    return (
+      <div
+        onMouseDown={startDrag}
+        style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 1000, cursor: 'grab',
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          background: 'var(--gold)', color: '#1c2a3a', border: '2px solid var(--gold)',
+          borderRadius: 999, padding: '0.4rem 0.55rem 0.4rem 0.85rem',
+          boxShadow: '0 6px 20px rgba(0,0,0,0.22)', fontWeight: 700, fontSize: '0.86rem', userSelect: 'none' }}>
+        <span>📝 Whiteboard</span>
+        {hasContent && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1c2a3a', opacity: 0.55 }} title="Has notes" />}
+        <button type="button" title="Open whiteboard"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={() => toggleMin(false)}
+          style={{ border: 'none', background: 'rgba(0,0,0,0.12)', color: '#1c2a3a', cursor: 'pointer',
+            width: 24, height: 24, borderRadius: '50%', fontSize: '0.9rem', lineHeight: 1, display: 'grid', placeItems: 'center' }}>
+          ⤢
+        </button>
+      </div>
+    )
+  }
+
+  // ── Full window ──
+  return (
+    <div style={{ position: 'fixed', left: pos.x, top: pos.y, width: size.w, zIndex: 1000,
+      background: '#fff', border: '2px solid var(--gold)', borderRadius: 12,
+      boxShadow: '0 12px 36px rgba(0,0,0,0.26)', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden', maxWidth: 'calc(100vw - 24px)' }}>
+      {/* Title bar (drag handle) */}
+      <div onMouseDown={startDrag}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'grab', userSelect: 'none',
+          background: 'var(--gold)', color: '#1c2a3a', padding: '0.45rem 0.6rem' }}>
+        <strong style={{ fontSize: '0.9rem' }}>📝 Whiteboard</strong>
+        <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>drag to move</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+          onMouseDown={e => e.stopPropagation()}>
+          {hasContent && (
+            <button type="button" onClick={onClear} title="Clear whiteboard"
+              style={{ border: 'none', background: 'rgba(0,0,0,0.10)', color: '#7a2020', cursor: 'pointer',
+                borderRadius: 6, fontSize: '0.74rem', padding: '0.2rem 0.45rem', fontWeight: 600 }}>
+              ✕ Clear
+            </button>
+          )}
+          <button type="button" onClick={() => toggleMin(true)} title="Minimise to bar"
+            style={{ border: 'none', background: 'rgba(0,0,0,0.10)', color: '#1c2a3a', cursor: 'pointer',
+              width: 26, height: 26, borderRadius: 6, fontSize: '1.05rem', lineHeight: 1, display: 'grid', placeItems: 'center', fontWeight: 700 }}>
+            –
+          </button>
+        </div>
+      </div>
+      {/* Body */}
+      <div style={{ height: size.h, overflow: 'auto', padding: '0.6rem', background: '#fff' }}>
+        <TeachWhiteboard
+          value={value}
+          onChange={onChange}
+          placeholder="Type your notes, emerging language, or instructions here…"
+          storageKey={storageKey}
+        />
+      </div>
+      {/* Resize handle */}
+      <div onMouseDown={startResize}
+        title="Drag to resize"
+        style={{ position: 'absolute', right: 2, bottom: 2, width: 18, height: 18, cursor: 'nwse-resize',
+          background: 'linear-gradient(135deg, transparent 45%, var(--gold) 45%, var(--gold) 60%, transparent 60%, transparent 75%, var(--gold) 75%)' }} />
+    </div>
+  )
+}
+
 // ─── TeachView ────────────────────────────────────────────────
 export function TeachView({ plan, onBack }) {
   const [whiteboard,     setWhiteboard]     = useState(() => { try { return localStorage.getItem('wb_' + plan.id) || '' } catch { return '' } })
@@ -1443,25 +1572,14 @@ export function TeachView({ plan, onBack }) {
       {/* Title */}
       <h2 style={{ margin: '0 0 1.25rem', fontSize: '1.6rem', fontFamily: 'Inter, sans-serif', fontWeight: 700 }}>{plan.title}</h2>
 
-      {/* Whiteboard */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
-          <strong style={{ fontSize: '0.92rem' }}>📝 Whiteboard</strong>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>(drag bottom-right corner to resize · select text then click ⬜ Box to frame it)</span>
-          {whiteboard && (
-            <button type="button" className="btn-ghost"
-              style={{ fontSize: '0.72rem', padding: '0.18rem 0.5rem', marginLeft: 'auto', color: '#e05c5c' }}
-              onClick={() => saveWb('')}>✕ Clear</button>
-          )}
-        </div>
-        <TeachWhiteboard
-          value={whiteboard}
-          onChange={saveWb}
-          placeholder="Type your notes, emerging language, or instructions here…"
-          style={{ border: '2px solid var(--gold)', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,102,153,0.10)' }}
-          storageKey={`teach_boxes_${plan.id}`}
-        />
-      </div>
+      {/* Whiteboard — floating window (stays in view while scrolling) */}
+      <FloatingWhiteboard
+        value={whiteboard}
+        onChange={saveWb}
+        storageKey={`teach_boxes_${plan.id}`}
+        hasContent={!!whiteboard}
+        onClear={() => saveWb('')}
+      />
 
       {/* Lesson stages */}
       {Object.keys(stageGroups).length > 0 && (
