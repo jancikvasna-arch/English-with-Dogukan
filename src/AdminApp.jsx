@@ -3969,19 +3969,20 @@ const LANG_BOARD_FRAMES = [
 ]
 
 // Auto-growing textarea so long notes show all their text (no inner scroll)
-function LangAutoTextarea({ value, onChange, color, placeholder }) {
+// Rich note (contentEditable): bold / italic / underline, auto-grows with text.
+// Stores HTML. Initialises innerHTML once so re-renders never wipe the content.
+function LangRichNote({ value, onChange, color, placeholder }) {
   const ref = useRef(null)
   useLayoutEffect(() => {
-    const el = ref.current
-    if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
-  })
+    if (ref.current && !ref.current._init) { ref.current.innerHTML = value || ''; ref.current._init = true }
+  }, [])
   return (
-    <textarea ref={ref} value={value} placeholder={placeholder} rows={1}
-      onChange={e => onChange(e.target.value)}
+    <div ref={ref} contentEditable suppressContentEditableWarning
+      className="lang-note-edit" data-ph={placeholder || 'Type…'}
+      onInput={e => onChange(e.currentTarget.innerHTML)}
       onMouseDown={e => e.stopPropagation()}
-      style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', overflow: 'hidden',
-        background: 'transparent', padding: '6px 8px', fontSize: '0.85rem', lineHeight: 1.45,
-        color, fontWeight: 500, fontFamily: 'inherit', boxSizing: 'border-box', display: 'block' }} />
+      style={{ padding: '6px 8px', outline: 'none', minHeight: '22px', fontSize: '0.85rem', lineHeight: 1.45,
+        color, fontWeight: 500, fontFamily: 'inherit', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
   )
 }
 
@@ -4005,9 +4006,8 @@ export function LangBoardView({ value }) {
           background: b.bg || 'transparent',
           border: b.border ? `1.5px solid ${b.border}` : (b.bg ? '1px solid rgba(0,0,0,0.08)' : 'none'),
           borderRadius: '7px', padding: (b.bg || b.border) ? '6px 9px' : '2px',
-          color: b.color, fontSize: '0.85rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', fontWeight: 500 }}>
-          {b.text}
-        </div>
+          color: b.color, fontSize: '0.85rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', fontWeight: 500 }}
+          dangerouslySetInnerHTML={{ __html: b.text || '' }} />
       ))}
     </div>
   )
@@ -4018,8 +4018,8 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
   const [boxes, setBoxes] = useState(() => {
     const b = parseLangBoard(value)
     if (b) return b.boxes
-    const txt = stripHtml(value)
-    return txt ? [{ id: crypto.randomUUID(), x: 2, y: 10, w: 260, text: txt, color: '#1a2030' }] : []
+    // Legacy value was rich-text HTML — keep it (with formatting) in one note
+    return stripHtml(value) ? [{ id: crypto.randomUUID(), x: 2, y: 10, w: 280, text: value, color: '#1a2030' }] : []
   })
   const [openStyleId, setOpenStyleId] = useState(null)
   const [boardH, setBoardH] = useState(260)
@@ -4119,6 +4119,12 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
               background: 'rgba(0,0,0,0.03)' }}>
               <span onMouseDown={e => startDrag(e, box)} title="Drag to move"
                 style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '0 2px', userSelect: 'none' }}>⠿</span>
+              <button type="button" title="Bold" onMouseDown={e => { e.preventDefault(); document.execCommand('bold') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: '0.82rem', padding: '0 3px', color: 'var(--text-muted)' }}>B</button>
+              <button type="button" title="Italic" onMouseDown={e => { e.preventDefault(); document.execCommand('italic') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontStyle: 'italic', fontSize: '0.82rem', padding: '0 3px', color: 'var(--text-muted)' }}>I</button>
+              <button type="button" title="Underline" onMouseDown={e => { e.preventDefault(); document.execCommand('underline') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.82rem', padding: '0 3px', color: 'var(--text-muted)' }}>U</button>
               <button type="button" title="Colours & frame"
                 onMouseDown={e => e.stopPropagation()}
                 onClick={() => setOpenStyleId(id => id === box.id ? null : box.id)}
@@ -4128,7 +4134,7 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
                 style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#e05c5c', fontSize: '0.85rem', lineHeight: 1, padding: '0 2px' }}>✕</button>
             </div>
 
-            <LangAutoTextarea value={box.text} color={box.color} placeholder="Type…"
+            <LangRichNote value={box.text} color={box.color} placeholder="Type…"
               onChange={v => update(box.id, { text: v })} />
 
             {/* Resize handle (bottom-right) */}

@@ -2189,6 +2189,13 @@ a { text-decoration: none; }
 }
 
 /* ─── Labels ─────────────────────────────────────────────────── */
+.lang-note-edit:empty:before {
+  content: attr(data-ph);
+  color: var(--text-muted);
+  font-weight: 400;
+  pointer-events: none;
+}
+
 .label-chip {
   display: inline-flex; align-items: center;
   padding: 0.2rem 0.6rem; border-radius: 100px;
