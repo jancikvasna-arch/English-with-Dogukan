@@ -1200,7 +1200,8 @@ export function TeachWhiteboard({ value = '', onChange, placeholder, style = {},
           suppressContentEditableWarning
           className="rte-content"
           data-placeholder={placeholder}
-          style={{ minHeight: '160px', resize: 'vertical', overflow: 'auto' }}
+          style={{ minHeight: '160px', resize: 'vertical', overflow: 'auto',
+            background: '#FCF7E8', border: '1px solid #efe4c6', borderRadius: '8px' }}
           onInput={emit}
           onBlur={emit}
           onClick={() => { setShowRectPalette(false); setSelectedBoxId(null) }}
