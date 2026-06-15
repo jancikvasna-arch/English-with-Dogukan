@@ -11,6 +11,8 @@ export const LABEL_COLORS = [
   { value: '#f87171', label: 'Red'    },
   { value: '#c084fc', label: 'Purple' },
   { value: '#fb923c', label: 'Orange' },
+  { value: '#2dd4bf', label: 'Teal'   },
+  { value: '#9ca3af', label: 'Gray'   },
 ]
 
 export function parseOverlayPrompt(prompt) {

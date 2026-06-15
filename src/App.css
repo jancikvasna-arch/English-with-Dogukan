@@ -2199,8 +2199,12 @@ a { text-decoration: none; }
   cursor: default; white-space: nowrap;
 }
 .label-chip--selected {
-  background: color-mix(in srgb, var(--lbl-color, var(--gold)) 28%, transparent);
-  border-color: color-mix(in srgb, var(--lbl-color, var(--gold)) 55%, transparent);
+  background: var(--lbl-color, var(--gold));
+  border-color: var(--lbl-color, var(--gold));
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--lbl-color, var(--gold)) 50%, transparent);
 }
 /* Clickable label chip in builder */
 button.label-chip {
@@ -2245,9 +2249,11 @@ button.label-chip:hover { opacity: 0.8; }
 }
 .filter-chip:hover { background: rgba(0,0,0,0.04); color: var(--text); }
 .filter-chip--active {
-  background: color-mix(in srgb, var(--lbl-color, var(--gold)) 18%, transparent);
-  border-color: color-mix(in srgb, var(--lbl-color, var(--gold)) 45%, transparent);
-  color: var(--lbl-color, var(--gold));
+  background: var(--lbl-color, var(--gold));
+  border-color: var(--lbl-color, var(--gold));
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--lbl-color, var(--gold)) 50%, transparent);
 }
 
 /* ─── Label manager panel ────────────────────────────────────── */
