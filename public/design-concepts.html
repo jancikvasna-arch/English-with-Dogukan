@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design Concepts — English with Dogukan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'DM Sans', sans-serif; }
+
+    /* ── Tab bar ── */
+    .tab-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: #111; display: flex; align-items: center;
+      padding: 0 1.5rem; gap: 0.25rem;
+      border-bottom: 1px solid #2a2a2a; height: 48px;
+    }
+    .tab-label { color: #555; font-size: 0.78rem; margin-right: 0.75rem; letter-spacing: 0.04em; }
+    .tab-btn {
+      padding: 0.5rem 1.25rem; background: none; border: none;
+      color: #666; font-family: 'DM Sans', sans-serif; font-size: 0.88rem;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all 0.18s; height: 48px;
+    }
+    .tab-btn:hover { color: #ccc; }
+    .tab-btn.active { color: #fff; border-bottom-color: #d4a853; }
+
+    /* ── Concept panels ── */
+    .concept { display: none; padding-top: 48px; min-height: 100vh; }
+    .concept.active { display: block; }
+
+    /* ─────────────────────────────────────────────────
+       CONCEPT 1 — WARM IVORY
+    ───────────────────────────────────────────────── */
+    #c1 { background: #faf7f0; }
+
+    .c1-nav {
+      background: rgba(250,247,240,0.96); backdrop-filter: blur(8px);
+      border-bottom: 1px solid #e2d8c8; padding: 0 2.5rem; height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .c1-logo { font-family: 'DM Serif Display', serif; font-size: 1.25rem; color: #1c1917; }
+    .c1-logo span { color: #c18a28; }
+    .c1-navlinks { display: flex; gap: 2rem; align-items: center; }
+    .c1-navlinks a { color: #6b6258; font-size: 0.88rem; text-decoration: none; font-weight: 500; }
+    .c1-cta-btn {
+      background: #c18a28; color: #fff; border: none; padding: 0.55rem 1.2rem;
+      border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem;
+      font-weight: 700; cursor: pointer;
+    }
+
+    .c1-hero {
+      display: grid; grid-template-columns: 1fr 1fr;
+      align-items: center; gap: 5rem;
+      padding: 5rem 6rem 4rem;
+      background: linear-gradient(160deg, #faf7f0 60%, #f2e8d8 100%);
+    }
+    .c1-badge {
+      display: inline-block; background: #f5e9d0; border: 1px solid #e0c898;
+      color: #8a6020; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em;
+      text-transform: uppercase; padding: 0.38rem 0.9rem; border-radius: 20px; margin-bottom: 1.5rem;
+    }
+    .c1-h1 {
+      font-family: 'DM Serif Display', serif; font-size: 3rem; line-height: 1.15;
+      color: #1c1917; margin-bottom: 1.25rem;
+    }
+    .c1-h1 em { color: #c18a28; font-style: normal; }
+    .c1-sub { color: #6b6258; font-size: 1.02rem; line-height: 1.75; margin-bottom: 2rem; max-width: 440px; }
+    .c1-actions { display: flex; gap: 0.9rem; align-items: center; }
+    .c1-btn-p {
+      background: #c18a28; color: #fff; border: none; padding: 0.82rem 1.65rem;
+      border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.98rem;
+      font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(193,138,40,0.3);
+    }
+    .c1-btn-g {
+      color: #6b6258; font-size: 0.95rem; cursor: pointer; background: none;
+      border: 1.5px solid #d5c4a8; padding: 0.82rem 1.4rem;
+      border-radius: 10px; font-family: 'DM Sans', sans-serif;
+    }
+
+    .c1-photo-col { display: flex; justify-content: center; position: relative; }
+    .c1-photo-frame {
+      width: 340px; height: 430px; border-radius: 22px;
+      background: linear-gradient(155deg, #ede0cc 0%, #d8c8ae 100%);
+      overflow: hidden; position: relative;
+      box-shadow: 0 24px 64px rgba(100,70,20,0.15);
+    }
+    .c1-photo-frame img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center top;
+    }
+    .c1-photo-inner {
+      width: 100%; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end; padding-bottom: 2.5rem;
+      gap: 0.4rem;
+    }
+    .photo-avatar {
+      width: 100px; height: 100px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.8rem; margin-bottom: 0.75rem;
+    }
+    .photo-name { font-family: 'DM Serif Display', serif; font-size: 1.4rem; }
+    .photo-role { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.65; }
+    .c1-photo-pill {
+      position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      background: rgba(250,247,240,0.93); border: 1px solid #e2d8c8;
+      border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.77rem;
+      color: #6b6258; white-space: nowrap;
+    }
+    .c1-cert-chip {
+      position: absolute; top: 1.5rem; right: -1.25rem;
+      background: #c18a28; color: #fff; border-radius: 10px;
+      padding: 0.6rem 0.85rem; font-size: 0.72rem; font-weight: 700;
+      text-align: center; line-height: 1.4;
+      box-shadow: 0 4px 16px rgba(193,138,40,0.35);
+    }
+    .c1-stat-chip {
+      position: absolute; bottom: 4.5rem; left: -1.25rem;
+      background: #fff; border: 1px solid #e2d8c8; border-radius: 10px;
+      padding: 0.6rem 0.9rem; font-size: 0.75rem; color: #1c1917;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.07); white-space: nowrap;
+    }
+    .c1-stat-chip strong { color: #c18a28; font-size: 1rem; display: block; }
+
+    .c1-palette {
+      display: flex; gap: 0.9rem; padding: 2rem 6rem; background: #f0e8d8;
+      border-top: 1px solid #e2d8c8; align-items: center; flex-wrap: wrap;
+    }
+    .pal-label { font-size: 0.8rem; color: #8a7a6a; margin-right: 0.5rem; }
+    .sw-group { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+    .sw { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.07); }
+    .sw-name { font-size: 0.7rem; color: #8a7a6a; }
+    .c1-note {
+      padding: 1rem 6rem 2rem; font-size: 0.88rem; color: #8a7a6a; line-height: 1.65;
+      max-width: 720px;
+    }
+
+    /* ─────────────────────────────────────────────────
+       CONCEPT 2 — WARM NIGHT (amber-dark)
+    ───────────────────────────────────────────────── */
+    #c2 { background: #100d09; }
+
+    .c2-nav {
+      background: rgba(16,13,9,0.97); backdrop-filter: blur(8px);
+      border-bottom: 1px solid #2e2318; padding: 0 2.5rem; height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .c2-logo { font-family: 'DM Serif Display', serif; font-size: 1.25rem; color: #f5ede0; }
+    .c2-logo span { color: #d4a853; }
+    .c2-navlinks { display: flex; gap: 2rem; align-items: center; }
+    .c2-navlinks a { color: #9a856a; font-size: 0.88rem; text-decoration: none; font-weight: 500; }
+    .c2-cta-btn {
+      background: #d4a853; color: #100d09; border: none; padding: 0.55rem 1.2rem;
+      border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem;
+      font-weight: 700; cursor: pointer;
+    }
+
+    .c2-hero {
+      display: grid; grid-template-columns: 1fr 1fr;
+      align-items: center; gap: 5rem;
+      padding: 5rem 6rem 4rem;
+      background: radial-gradient(ellipse at 75% 40%, #241808 0%, #100d09 65%);
+    }
+    .c2-badge {
+      display: inline-block; background: rgba(212,168,83,0.1); border: 1px solid rgba(212,168,83,0.25);
+      color: #d4a853; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em;
+      text-transform: uppercase; padding: 0.38rem 0.9rem; border-radius: 20px; margin-bottom: 1.5rem;
+    }
+    .c2-h1 {
+      font-family: 'DM Serif Display', serif; font-size: 3rem; line-height: 1.15;
+      color: #f5ede0; margin-bottom: 1.25rem;
+    }
+    .c2-h1 em { color: #d4a853; font-style: normal; }
+    .c2-sub { color: #9a856a; font-size: 1.02rem; line-height: 1.75; margin-bottom: 2rem; max-width: 440px; }
+    .c2-actions { display: flex; gap: 0.9rem; align-items: center; }
+    .c2-btn-p {
+      background: #d4a853; color: #100d09; border: none; padding: 0.82rem 1.65rem;
+      border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.98rem;
+      font-weight: 700; cursor: pointer; box-shadow: 0 4px 20px rgba(212,168,83,0.35);
+    }
+    .c2-btn-g {
+      color: #9a856a; font-size: 0.95rem; cursor: pointer; background: none;
+      border: 1.5px solid #3a2c18; padding: 0.82rem 1.4rem;
+      border-radius: 10px; font-family: 'DM Sans', sans-serif;
+    }
+
+    .c2-photo-col { display: flex; justify-content: center; position: relative; }
+    .c2-photo-frame {
+      width: 340px; height: 430px; border-radius: 22px;
+      background: linear-gradient(155deg, #2a1c0c 0%, #1a1008 100%);
+      overflow: hidden; position: relative;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 48px rgba(212,168,83,0.06);
+    }
+    .c2-photo-frame img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center top;
+      filter: sepia(0.15) brightness(0.92) contrast(1.05);
+    }
+    .c2-photo-inner {
+      width: 100%; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end; padding-bottom: 2.5rem; gap: 0.4rem;
+    }
+    .c2-photo-pill {
+      position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      background: rgba(16,13,9,0.9); border: 1px solid #2e2318;
+      border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.77rem;
+      color: #9a856a; white-space: nowrap;
+    }
+    .c2-cert-chip {
+      position: absolute; top: 1.5rem; right: -1.25rem;
+      background: #d4a853; color: #100d09; border-radius: 10px;
+      padding: 0.6rem 0.85rem; font-size: 0.72rem; font-weight: 700;
+      text-align: center; line-height: 1.4;
+      box-shadow: 0 4px 16px rgba(212,168,83,0.4);
+    }
+    .c2-stat-chip {
+      position: absolute; bottom: 4.5rem; left: -1.25rem;
+      background: #1e1509; border: 1px solid #2e2318; border-radius: 10px;
+      padding: 0.6rem 0.9rem; font-size: 0.75rem; color: #f5ede0;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4); white-space: nowrap;
+    }
+    .c2-stat-chip strong { color: #d4a853; font-size: 1rem; display: block; }
+
+    .c2-palette {
+      display: flex; gap: 0.9rem; padding: 2rem 6rem; background: #0c0a07;
+      border-top: 1px solid #2e2318; align-items: center; flex-wrap: wrap;
+    }
+    .c2-note {
+      padding: 1rem 6rem 2rem; font-size: 0.88rem; color: #5a4a38; line-height: 1.65;
+      max-width: 720px;
+    }
+
+    /* ─────────────────────────────────────────────────
+       CONCEPT 3 — NAVY ACADEMY
+    ───────────────────────────────────────────────── */
+    #c3 { background: #0c1a29; }
+
+    .c3-nav {
+      background: rgba(12,26,41,0.97); backdrop-filter: blur(8px);
+      border-bottom: 1px solid #1a3048; padding: 0 2.5rem; height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .c3-logo { font-family: 'DM Serif Display', serif; font-size: 1.25rem; color: #eef2f7; }
+    .c3-logo span { color: #d4a853; }
+    .c3-navlinks { display: flex; gap: 2rem; align-items: center; }
+    .c3-navlinks a { color: #6a90b0; font-size: 0.88rem; text-decoration: none; font-weight: 500; }
+    .c3-cta-btn {
+      background: #d4a853; color: #0c1a29; border: none; padding: 0.55rem 1.2rem;
+      border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem;
+      font-weight: 700; cursor: pointer;
+    }
+
+    .c3-hero {
+      display: grid; grid-template-columns: 1fr 1fr;
+      align-items: center; gap: 5rem;
+      padding: 5rem 6rem 4rem;
+      background: linear-gradient(140deg, #0c1a29 40%, #0e2240 100%);
+    }
+    .c3-badge {
+      display: inline-block; background: rgba(212,168,83,0.08); border: 1px solid rgba(212,168,83,0.22);
+      color: #d4a853; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.07em;
+      text-transform: uppercase; padding: 0.38rem 0.9rem; border-radius: 20px; margin-bottom: 1.5rem;
+    }
+    .c3-h1 {
+      font-family: 'DM Serif Display', serif; font-size: 3rem; line-height: 1.15;
+      color: #eef2f7; margin-bottom: 1.25rem;
+    }
+    .c3-h1 em { color: #d4a853; font-style: normal; }
+    .c3-sub { color: #6a90b0; font-size: 1.02rem; line-height: 1.75; margin-bottom: 2rem; max-width: 440px; }
+    .c3-actions { display: flex; gap: 0.9rem; align-items: center; }
+    .c3-btn-p {
+      background: #d4a853; color: #0c1a29; border: none; padding: 0.82rem 1.65rem;
+      border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.98rem;
+      font-weight: 700; cursor: pointer; box-shadow: 0 4px 20px rgba(212,168,83,0.32);
+    }
+    .c3-btn-g {
+      color: #6a90b0; font-size: 0.95rem; cursor: pointer; background: none;
+      border: 1.5px solid #1e3a58; padding: 0.82rem 1.4rem;
+      border-radius: 10px; font-family: 'DM Sans', sans-serif;
+    }
+
+    .c3-photo-col { display: flex; justify-content: center; position: relative; }
+    .c3-photo-frame {
+      width: 340px; height: 430px; border-radius: 22px;
+      background: linear-gradient(155deg, #1a3555 0%, #0e2240 100%);
+      overflow: hidden; position: relative;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(212,168,83,0.12);
+    }
+    .c3-photo-frame img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center top;
+      filter: brightness(0.9) contrast(1.05);
+    }
+    .c3-photo-inner {
+      width: 100%; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end; padding-bottom: 2.5rem; gap: 0.4rem;
+    }
+    .c3-photo-pill {
+      position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      background: rgba(12,26,41,0.9); border: 1px solid #1a3048;
+      border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.77rem;
+      color: #6a90b0; white-space: nowrap;
+    }
+    .c3-cert-chip {
+      position: absolute; top: 1.5rem; right: -1.25rem;
+      background: #d4a853; color: #0c1a29; border-radius: 10px;
+      padding: 0.6rem 0.85rem; font-size: 0.72rem; font-weight: 700;
+      text-align: center; line-height: 1.4;
+      box-shadow: 0 4px 16px rgba(212,168,83,0.35);
+    }
+    .c3-stat-chip {
+      position: absolute; bottom: 4.5rem; left: -1.25rem;
+      background: #0e2240; border: 1px solid #1a3048; border-radius: 10px;
+      padding: 0.6rem 0.9rem; font-size: 0.75rem; color: #eef2f7;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4); white-space: nowrap;
+    }
+    .c3-stat-chip strong { color: #d4a853; font-size: 1rem; display: block; }
+
+    .c3-palette {
+      display: flex; gap: 0.9rem; padding: 2rem 6rem; background: #081220;
+      border-top: 1px solid #1a3048; align-items: center; flex-wrap: wrap;
+    }
+    .c3-note {
+      padding: 1rem 6rem 2rem; font-size: 0.88rem; color: #2e5070; line-height: 1.65;
+      max-width: 720px;
+    }
+
+    /* ─────────────────────────────────────────────────
+       CONCEPT 4 — PHOTO TREATMENT OPTIONS
+    ───────────────────────────────────────────────── */
+    #c4 { background: #111; }
+    .c4-inner {
+      padding: 3rem 6rem;
+    }
+    .c4-title {
+      font-family: 'DM Serif Display', serif; font-size: 2rem; color: #f0f0f0;
+      margin-bottom: 0.5rem;
+    }
+    .c4-sub { color: #888; font-size: 0.92rem; line-height: 1.6; margin-bottom: 3rem; max-width: 600px; }
+    .c4-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 3rem; }
+    .c4-option {
+      border-radius: 14px; overflow: hidden; border: 1px solid #2a2a2a;
+    }
+    .c4-img-wrap {
+      height: 240px; overflow: hidden; position: relative;
+    }
+    .c4-img-wrap img {
+      width: 100%; height: 100%; object-fit: cover; object-position: center top;
+    }
+    .c4-opt-label {
+      background: #1a1a1a; padding: 0.75rem 1rem; border-top: 1px solid #2a2a2a;
+    }
+    .c4-opt-name { color: #e0e0e0; font-weight: 600; font-size: 0.88rem; margin-bottom: 0.2rem; }
+    .c4-opt-desc { color: #666; font-size: 0.78rem; line-height: 1.5; }
+    .c4-opt-code { color: #888; font-size: 0.72rem; font-family: monospace; margin-top: 0.3rem; background: #222; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block; }
+    .c4-advice { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 1.5rem 2rem; max-width: 720px; }
+    .c4-advice-title { color: #d4a853; font-weight: 700; margin-bottom: 0.75rem; font-size: 0.9rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    .c4-advice ul { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    .c4-advice li { color: #999; font-size: 0.88rem; line-height: 1.6; padding-left: 1rem; position: relative; }
+    .c4-advice li::before { content: '→'; position: absolute; left: 0; color: #d4a853; }
+  </style>
+</head>
+<body>
+
+  <div class="tab-bar">
+    <span class="tab-label">Design concepts →</span>
+    <button class="tab-btn active" onclick="show('c1',this)">① Warm Ivory</button>
+    <button class="tab-btn" onclick="show('c2',this)">② Warm Night</button>
+    <button class="tab-btn" onclick="show('c3',this)">③ Navy Academy</button>
+    <button class="tab-btn" onclick="show('c4',this)">④ Photo treatment</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       CONCEPT 1 — WARM IVORY
+  ══════════════════════════════════════════════════ -->
+  <div class="concept active" id="c1">
+    <nav class="c1-nav">
+      <div class="c1-logo">English with <span>Dogukan</span></div>
+      <div class="c1-navlinks">
+        <a href="#">How it works</a>
+        <a href="#">Courses</a>
+        <a href="#">Pricing</a>
+        <a href="#">About Me</a>
+        <button class="c1-cta-btn">Book a free lesson</button>
+      </div>
+    </nav>
+    <div class="c1-hero">
+      <div>
+        <div class="c1-badge">CELTA-Certified English Tutor</div>
+        <h1 class="c1-h1">Speak English<br>with confidence.<br><em>Lessons built<br>around you.</em></h1>
+        <p class="c1-sub">Personalised one-to-one lessons. Real conversations. No wasted time on things you already know. Start with a free first lesson — no commitment.</p>
+        <div class="c1-actions">
+          <button class="c1-btn-p">Get started — it's free</button>
+          <button class="c1-btn-g">See how it works</button>
+        </div>
+      </div>
+      <div class="c1-photo-col">
+        <div class="c1-photo-frame">
+          <img src="/dogukan.jpg" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="display:block">
+          <div class="c1-photo-inner" style="display:none">
+            <div class="photo-avatar" style="background:rgba(193,138,40,0.12);border:2px solid rgba(193,138,40,0.25);">👤</div>
+            <div class="photo-name" style="color:#1c1917;">Dogukan</div>
+            <div class="photo-role" style="color:#6b6258;">English Tutor · CELTA</div>
+          </div>
+        </div>
+        <div class="c1-cert-chip">CELTA<br>Certified</div>
+        <div class="c1-stat-chip"><strong>100+</strong> students taught</div>
+        <div class="c1-photo-pill">📍 International House, London</div>
+      </div>
+    </div>
+    <div class="c1-palette">
+      <span class="pal-label">Palette:</span>
+      <div class="sw-group"><div class="sw" style="background:#faf7f0"></div><div class="sw-name">#faf7f0</div></div>
+      <div class="sw-group"><div class="sw" style="background:#f2e8d8"></div><div class="sw-name">#f2e8d8</div></div>
+      <div class="sw-group"><div class="sw" style="background:#1c1917"></div><div class="sw-name">#1c1917</div></div>
+      <div class="sw-group"><div class="sw" style="background:#6b6258"></div><div class="sw-name">#6b6258</div></div>
+      <div class="sw-group"><div class="sw" style="background:#c18a28"></div><div class="sw-name">#c18a28</div></div>
+      <div class="sw-group"><div class="sw" style="background:#e2d8c8"></div><div class="sw-name">#e2d8c8</div></div>
+    </div>
+    <p class="c1-note">
+      ✦ Light, warm, and inviting. Feels like a premium language studio or boutique tutoring service. The ivory + warm gold reads as "refined and approachable" — not corporate, not cold. Works beautifully with the B&W photo (the warm tones complement the neutral grey background of the shot). Good for students who associate quality learning with traditional educational spaces.
+    </p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       CONCEPT 2 — WARM NIGHT
+  ══════════════════════════════════════════════════ -->
+  <div class="concept" id="c2">
+    <nav class="c2-nav">
+      <div class="c2-logo">English with <span>Dogukan</span></div>
+      <div class="c2-navlinks">
+        <a href="#">How it works</a>
+        <a href="#">Courses</a>
+        <a href="#">Pricing</a>
+        <a href="#">About Me</a>
+        <button class="c2-cta-btn">Book a free lesson</button>
+      </div>
+    </nav>
+    <div class="c2-hero">
+      <div>
+        <div class="c2-badge">CELTA-Certified English Tutor</div>
+        <h1 class="c2-h1">Speak English<br>with confidence.<br><em>Lessons built<br>around you.</em></h1>
+        <p class="c2-sub">Personalised one-to-one lessons. Real conversations. No wasted time on things you already know. Start with a free first lesson — no commitment.</p>
+        <div class="c2-actions">
+          <button class="c2-btn-p">Get started — it's free</button>
+          <button class="c2-btn-g">See how it works</button>
+        </div>
+      </div>
+      <div class="c2-photo-col">
+        <div class="c2-photo-frame">
+          <img src="/dogukan.jpg" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="display:block">
+          <div class="c2-photo-inner" style="display:none">
+            <div class="photo-avatar" style="background:rgba(212,168,83,0.1);border:2px solid rgba(212,168,83,0.2);">👤</div>
+            <div class="photo-name" style="color:#f5ede0;">Dogukan</div>
+            <div class="photo-role" style="color:#9a856a;">English Tutor · CELTA</div>
+          </div>
+        </div>
+        <div class="c2-cert-chip">CELTA<br>Certified</div>
+        <div class="c2-stat-chip"><strong>100+</strong> students taught</div>
+        <div class="c2-photo-pill">📍 International House, London</div>
+      </div>
+    </div>
+    <div class="c2-palette">
+      <span class="pal-label" style="color:#5a4a38;">Palette:</span>
+      <div class="sw-group"><div class="sw" style="background:#100d09;border-color:#2e2318"></div><div class="sw-name" style="color:#5a4a38;">#100d09</div></div>
+      <div class="sw-group"><div class="sw" style="background:#1e1509;border-color:#2e2318"></div><div class="sw-name" style="color:#5a4a38;">#1e1509</div></div>
+      <div class="sw-group"><div class="sw" style="background:#f5ede0"></div><div class="sw-name" style="color:#5a4a38;">#f5ede0</div></div>
+      <div class="sw-group"><div class="sw" style="background:#9a856a"></div><div class="sw-name" style="color:#5a4a38;">#9a856a</div></div>
+      <div class="sw-group"><div class="sw" style="background:#d4a853"></div><div class="sw-name" style="color:#5a4a38;">#d4a853</div></div>
+      <div class="sw-group"><div class="sw" style="background:#2e2318;border-color:#3a3020"></div><div class="sw-name" style="color:#5a4a38;">#2e2318</div></div>
+    </div>
+    <p class="c2-note" style="color:#5a4a38;">
+      ✦ Keeps the dark, premium mood but replaces the current cold blue-black (#0a0f1e) with warm amber-dark tones. Feels like candlelight or a cosy study at night — sophisticated without feeling clinical. The gold glows warmer on this background. Closest to the current site, lowest-risk change. The B&W photo works very well here with a subtle sepia filter applied.
+    </p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       CONCEPT 3 — NAVY ACADEMY
+  ══════════════════════════════════════════════════ -->
+  <div class="concept" id="c3">
+    <nav class="c3-nav">
+      <div class="c3-logo">English with <span>Dogukan</span></div>
+      <div class="c3-navlinks">
+        <a href="#">How it works</a>
+        <a href="#">Courses</a>
+        <a href="#">Pricing</a>
+        <a href="#">About Me</a>
+        <button class="c3-cta-btn">Book a free lesson</button>
+      </div>
+    </nav>
+    <div class="c3-hero">
+      <div>
+        <div class="c3-badge">CELTA-Certified English Tutor</div>
+        <h1 class="c3-h1">Speak English<br>with confidence.<br><em>Lessons built<br>around you.</em></h1>
+        <p class="c3-sub">Personalised one-to-one lessons. Real conversations. No wasted time on things you already know. Start with a free first lesson — no commitment.</p>
+        <div class="c3-actions">
+          <button class="c3-btn-p">Get started — it's free</button>
+          <button class="c3-btn-g">See how it works</button>
+        </div>
+      </div>
+      <div class="c3-photo-col">
+        <div class="c3-photo-frame">
+          <img src="/dogukan.jpg" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="display:block">
+          <div class="c3-photo-inner" style="display:none">
+            <div class="photo-avatar" style="background:rgba(212,168,83,0.1);border:2px solid rgba(212,168,83,0.2);">👤</div>
+            <div class="photo-name" style="color:#eef2f7;">Dogukan</div>
+            <div class="photo-role" style="color:#6a90b0;">English Tutor · CELTA</div>
+          </div>
+        </div>
+        <div class="c3-cert-chip">CELTA<br>Certified</div>
+        <div class="c3-stat-chip"><strong>100+</strong> students taught</div>
+        <div class="c3-photo-pill">📍 International House, London</div>
+      </div>
+    </div>
+    <div class="c3-palette">
+      <span class="pal-label" style="color:#2e5070;">Palette:</span>
+      <div class="sw-group"><div class="sw" style="background:#0c1a29;border-color:#1a3048"></div><div class="sw-name" style="color:#2e5070;">#0c1a29</div></div>
+      <div class="sw-group"><div class="sw" style="background:#0e2240;border-color:#1a3048"></div><div class="sw-name" style="color:#2e5070;">#0e2240</div></div>
+      <div class="sw-group"><div class="sw" style="background:#eef2f7"></div><div class="sw-name" style="color:#2e5070;">#eef2f7</div></div>
+      <div class="sw-group"><div class="sw" style="background:#6a90b0"></div><div class="sw-name" style="color:#2e5070;">#6a90b0</div></div>
+      <div class="sw-group"><div class="sw" style="background:#d4a853"></div><div class="sw-name" style="color:#2e5070;">#d4a853</div></div>
+      <div class="sw-group"><div class="sw" style="background:#1a3048;border-color:#2a4060"></div><div class="sw-name" style="color:#2e5070;">#1a3048</div></div>
+    </div>
+    <p class="c3-note">
+      ✦ Deep navy with steel-blue tones. Think Cambridge, British Council, Oxbridge. Signals authority and academic credibility — works powerfully with CELTA and Oxford/Cambridge Press credentials. The gold pops brightly against navy. This colour scheme is less common in personal tutoring sites, which makes it instantly distinctive. Great for attracting professional or business English students.
+    </p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       CONCEPT 4 — PHOTO TREATMENT
+  ══════════════════════════════════════════════════ -->
+  <div class="concept" id="c4">
+    <div class="c4-inner">
+      <h2 class="c4-title">Photo treatment options</h2>
+      <p class="c4-sub">The photo is already a good quality headshot. These options show how CSS filters change the mood without any photo editing software — and how cropping changes the formality level.</p>
+      <div class="c4-grid">
+        <div class="c4-option">
+          <div class="c4-img-wrap">
+            <img src="/dogukan.jpg" onerror="this.style.background='#333';this.style.display='block'" style="filter: none">
+          </div>
+          <div class="c4-opt-label">
+            <div class="c4-opt-name">Original</div>
+            <div class="c4-opt-desc">Clean B&W. Professional, formal. Studio feel.</div>
+            <span class="c4-opt-code">no filter</span>
+          </div>
+        </div>
+        <div class="c4-option">
+          <div class="c4-img-wrap">
+            <img src="/dogukan.jpg" onerror="this.style.background='#333';this.style.display='block'" style="filter: sepia(0.25) brightness(1.06) contrast(0.95)">
+          </div>
+          <div class="c4-opt-label">
+            <div class="c4-opt-name">Warm Sepia</div>
+            <div class="c4-opt-desc">Adds warmth and approachability. Less "LinkedIn", more personal.</div>
+            <span class="c4-opt-code">sepia(0.25) brightness(1.06)</span>
+          </div>
+        </div>
+        <div class="c4-option">
+          <div class="c4-img-wrap">
+            <img src="/dogukan.jpg" onerror="this.style.background='#333';this.style.display='block'" style="filter: brightness(1.08) contrast(0.88) saturate(0)">
+          </div>
+          <div class="c4-opt-label">
+            <div class="c4-opt-name">Soft B&W</div>
+            <div class="c4-opt-desc">Slightly softer, less harsh contrast. Friendlier tone.</div>
+            <span class="c4-opt-code">brightness(1.08) contrast(0.88)</span>
+          </div>
+        </div>
+        <div class="c4-option">
+          <div class="c4-img-wrap">
+            <img src="/dogukan.jpg" onerror="this.style.background='#333';this.style.display='block'" style="filter: sepia(0.25) brightness(1.06) contrast(0.95); object-fit:cover; object-position:center 8%; transform:scale(1.25) translateY(-5%)">
+          </div>
+          <div class="c4-opt-label">
+            <div class="c4-opt-name">Cropped + Warm</div>
+            <div class="c4-opt-desc">Tighter crop removes most of the suit — face-forward feels more casual and approachable.</div>
+            <span class="c4-opt-code">crop + sepia(0.25)</span>
+          </div>
+        </div>
+      </div>
+      <div class="c4-advice">
+        <div class="c4-advice-title">💡 To make the photo feel more casual</div>
+        <ul>
+          <li>The suit and tie are the main source of formality — a tighter crop that shows face and collar only softens this significantly without any retouching</li>
+          <li>The warm sepia filter (option 2) is the single best CSS change — it transforms the clinical B&W into something warmer and more personal</li>
+          <li>The grey background in the photo is neutral and works with all three colour concepts — no need to remove it</li>
+          <li>If Dogukan has a more casual photo (outdoors, lighter clothing, natural light) that would be ideal for a tutoring site — but this one works well with the treatments above</li>
+          <li>We can use the cropped + warm version in the hero and the original in the About Me section for a natural contrast</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function show(id, btn) {
+      document.querySelectorAll('.concept').forEach(el => el.classList.remove('active'))
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'))
+      document.getElementById(id).classList.add('active')
+      btn.classList.add('active')
+      window.scrollTo(0, 0)
+    }
+  </script>
+</body>
+</html>

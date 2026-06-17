@@ -410,10 +410,10 @@ export async function reviewWriting(resultId, notes) {
 // ─── Exercise Builder ─────────────────────────────────────────
 
 /** Create a new exercise with all its questions in one shot. */
-export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level, contextImageSettings }, questions) {
+export async function createExerciseWithQuestions({ title, description, course, lessonNo, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level, contextImageSettings, showLinkToStudent }, questions) {
   if (!supabase) return null
   const exerciseId = crypto.randomUUID()
-  const { error: exErr } = await supabase.from('exercises').insert({
+  const baseRow = {
     id:                       exerciseId,
     title,
     description:              description          || null,
@@ -432,7 +432,12 @@ export async function createExerciseWithQuestions({ title, description, course, 
     exercise_no:              exerciseNo           || null,
     thumbnail:                thumbnail            || null,
     level:                    level                || null,
-  })
+  }
+  let { error: exErr } = await supabase.from('exercises').insert({ ...baseRow, show_link_to_student: showLinkToStudent ?? null })
+  // Graceful fallback if the show_link_to_student column hasn't been added yet
+  if (exErr && /show_link_to_student/.test(exErr.message || '')) {
+    ({ error: exErr } = await supabase.from('exercises').insert(baseRow))
+  }
   if (exErr) { console.error('[supabase] createExercise:', exErr); return null }
 
   if (questions.length > 0) {
@@ -474,9 +479,9 @@ export async function fetchExerciseWithQuestions(exerciseId) {
 }
 
 /** Update an existing exercise and replace all its questions. */
-export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level, contextImageSettings }, questions) {
+export async function updateExerciseWithQuestions(exerciseId, { title, description, contextImages, contextText, audioUrl, estimatedMinutes, stageType, bookId, unit, page, section, exerciseNo, thumbnail, level, contextImageSettings, showLinkToStudent }, questions) {
   if (!supabase) return null
-  const { error: exErr } = await supabase.from('exercises').update({
+  const baseUpd = {
     title,
     description:              description          || null,
     context_images:           contextImages?.length ? contextImages : null,
@@ -492,7 +497,12 @@ export async function updateExerciseWithQuestions(exerciseId, { title, descripti
     exercise_no:              exerciseNo           || null,
     thumbnail:                thumbnail            || null,
     level:                    level                || null,
-  }).eq('id', exerciseId)
+  }
+  let { error: exErr } = await supabase.from('exercises').update({ ...baseUpd, show_link_to_student: showLinkToStudent ?? null }).eq('id', exerciseId)
+  // Graceful fallback if the show_link_to_student column hasn't been added yet
+  if (exErr && /show_link_to_student/.test(exErr.message || '')) {
+    ({ error: exErr } = await supabase.from('exercises').update(baseUpd).eq('id', exerciseId))
+  }
   if (exErr) { console.error('[supabase] updateExercise:', exErr); return null }
 
   const { error: delErr } = await supabase.from('questions').delete().eq('exercise_id', exerciseId)
@@ -764,7 +774,7 @@ export async function fetchMyLessons(userId) {
     lesson_stages (
       id, order_index, stage_number, stage_name, stage_type, title,
       duration_minutes, exercise_id, content_text, audio_url, content_images, section,
-      exercises ( id, title, description, audio_url, context_text, context_images, course )
+      exercises ( * )
     )
   )
 `)
@@ -785,7 +795,7 @@ export async function fetchLessonPlanForStudent(planId) {
       lesson_stages (
         id, order_index, stage_number, stage_name, stage_type, title,
         duration_minutes, exercise_id, content_text, audio_url, content_images, section,
-        exercises ( id, title, description, audio_url, context_text, context_images, course )
+        exercises ( * )
       )
     `)
     .eq('id', planId)
@@ -1553,7 +1563,7 @@ export async function fetchPlansForStudentAdmin(studentId) {
     .select(`id, title, description, scheduled_at, english_level, lesson_level, created_at,
       lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title,
         duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
-        exercises ( id, title, description, audio_url, context_text, context_images ) )`)
+        exercises ( * ) )`)
     .eq('student_id', studentId)
     .order('created_at', { ascending: false })
   return data ?? []
@@ -1567,7 +1577,7 @@ export async function fetchPlansForManualStudentAdmin(manualStudentId) {
     .select(`id, title, description, scheduled_at, english_level, lesson_level, created_at,
       lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title,
         duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
-        exercises ( id, title, description, audio_url, context_text, context_images ) )`)
+        exercises ( * ) )`)
     .eq('manual_student_id', manualStudentId)
     .order('created_at', { ascending: false })
   return data ?? []
@@ -1642,7 +1652,7 @@ export async function fetchMyAssignedPlans() {
     lesson_stages (
       id, order_index, stage_number, stage_name, stage_type, title,
       duration_minutes, exercise_id, content_text, audio_url, content_images, section,
-      exercises ( id, title, description, audio_url, context_text, context_images, course )
+      exercises ( * )
     )
   `
   const planSelect = `id, title, description, english_level, lesson_level, scheduled_at, created_at, ${stagesSelect}`

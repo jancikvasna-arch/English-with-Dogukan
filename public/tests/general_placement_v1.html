@@ -1,0 +1,1186 @@
+<style>
+#ept-wrap, #ept-wrap *,
+#ept-wrap *::before, #ept-wrap *::after {
+  box-sizing: border-box; margin: 0; padding: 0;
+}
+#ept-wrap {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  padding: 2rem 1rem;
+  background: var(--ept-bg-secondary);
+  color: var(--ept-text-primary);
+}
+
+
+
+#ept-wrap {
+--ept-bg:#ffffff; --ept-bg-secondary:#deeaf4;
+  --ept-text-primary:#1a1a19; --ept-text-secondary:#5f5e5a; --ept-text-tertiary:#888780;
+  --ept-border:rgba(0,0,0,0.12); --ept-border-medium:rgba(0,0,0,0.22);
+  --ept-blue:#185FA5; --ept-blue-light:#e6f1fb; --ept-blue-dark:#0C447C;
+  --ept-green:#3B6D11; --ept-green-light:#EAF3DE;
+  --ept-purple:#3C3489; --ept-purple-light:#EEEDFE;
+  --ept-amber:#854F0B; --ept-amber-light:#FAEEDA;
+  --ept-red:#993C1D; --ept-red-light:#FAECE7;
+  --ept-radius-md:8px; --ept-radius-lg:12px;
+  color-scheme: light;
+}
+
+
+
+#ept-wrap .container {
+max-width:720px;margin:0 auto;
+}
+
+
+#ept-wrap .test-header {
+margin-bottom:2rem;
+}
+
+
+#ept-wrap .test-header h1 {
+font-size:26px;font-weight:600;margin-bottom:6px;
+}
+
+
+#ept-wrap .test-header p {
+font-size:15px;color:var(--ept-text-secondary);
+}
+
+
+#ept-wrap .progress-wrap {
+margin-bottom:1.5rem;
+}
+
+
+#ept-wrap .progress-meta {
+display:flex;justify-content:space-between;font-size:13px;color:var(--ept-text-secondary);margin-bottom:6px;
+}
+
+
+#ept-wrap .progress-track {
+background:var(--ept-border);border-radius:4px;height:6px;
+}
+
+
+#ept-wrap .progress-fill {
+height:100%;background:var(--ept-blue);border-radius:4px;transition:width 0.4s ease;
+}
+
+
+#ept-wrap .section-label {
+display:inline-block;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:4px 10px;border-radius:var(--ept-radius-md);background:var(--ept-bg-secondary);margin-bottom:0.75rem;border:0.5px solid var(--ept-border);
+}
+
+
+#ept-wrap .question-card {
+background:var(--ept-bg);border:1px solid var(--ept-border);border-radius:var(--ept-radius-lg);padding:1.5rem;margin-bottom:1.25rem;
+}
+
+
+#ept-wrap .question-num {
+font-size:12px;color:var(--ept-text-tertiary);margin-bottom:8px;
+}
+
+
+#ept-wrap .question-text {
+font-size:16px;line-height:1.7;margin-bottom:1.25rem;
+}
+
+
+#ept-wrap .question-text em {
+font-style:italic;color:var(--ept-blue);
+}
+
+
+#ept-wrap .question-text strong {
+font-weight:600;
+}
+
+
+#ept-wrap .options {
+display:flex;flex-direction:column;gap:8px;
+}
+
+
+#ept-wrap .option-btn {
+display:flex;align-items:center;gap:12px;padding:11px 16px;border:1px solid var(--ept-border);border-radius:var(--ept-radius-md);background:var(--ept-bg);cursor:pointer;text-align:left;font-size:15px;color:var(--ept-text-primary);transition:background 0.15s,border-color 0.15s;width:100%;font-family:inherit;
+}
+
+
+#ept-wrap .option-btn:hover {
+background:var(--ept-bg-secondary);border-color:var(--ept-border-medium);
+}
+
+
+#ept-wrap .option-btn.selected {
+background:var(--ept-blue-light);border-color:var(--ept-blue);color:var(--ept-blue-dark);
+}
+
+
+#ept-wrap .option-letter {
+font-size:12px;font-weight:600;color:var(--ept-text-secondary);min-width:20px;text-align:center;background:var(--ept-bg-secondary);border-radius:4px;padding:2px 5px;
+}
+
+
+#ept-wrap .option-btn.selected .option-letter {
+background:var(--ept-blue);color:#fff;
+}
+
+
+#ept-wrap .text-input {
+width:100%;padding:12px 14px;border:1px solid var(--ept-border);border-radius:var(--ept-radius-md);font-size:15px;color:var(--ept-text-primary);background:var(--ept-bg);resize:vertical;font-family:inherit;line-height:1.6;
+}
+
+
+#ept-wrap .text-input:focus {
+outline:none;border-color:var(--ept-blue);box-shadow:0 0 0 3px rgba(24,95,165,0.12);
+}
+
+
+#ept-wrap .char-count {
+font-size:12px;color:var(--ept-text-tertiary);text-align:right;margin-top:5px;
+}
+
+
+#ept-wrap .nav-row {
+display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;gap:12px;
+}
+
+
+#ept-wrap .btn {
+padding:11px 24px;border-radius:var(--ept-radius-md);font-size:15px;cursor:pointer;font-family:inherit;transition:all 0.15s;font-weight:500;
+}
+
+
+#ept-wrap .btn-secondary {
+background:var(--ept-bg);border:1px solid var(--ept-border-medium);color:var(--ept-text-primary);
+}
+
+
+#ept-wrap .btn-secondary:hover {
+background:var(--ept-bg-secondary);
+}
+
+
+#ept-wrap .btn-primary {
+background:var(--ept-blue);border:none;color:#fff;
+}
+
+
+#ept-wrap .btn-primary:hover {
+background:var(--ept-blue-dark);
+}
+
+
+#ept-wrap .btn-primary:disabled {
+background:var(--ept-bg-secondary);color:var(--ept-text-tertiary);cursor:not-allowed;
+}
+
+
+#ept-wrap .warning-msg {
+background:var(--ept-amber-light);color:var(--ept-amber);border:1px solid;border-radius:var(--ept-radius-md);padding:10px 14px;font-size:13px;margin-bottom:1rem;display:none;
+}
+
+/* Results */
+
+#ept-wrap .results-wrap {
+padding-bottom:2rem;
+}
+
+
+#ept-wrap .results-title {
+font-size:24px;font-weight:600;margin-bottom:4px;
+}
+
+
+#ept-wrap .results-sub {
+font-size:14px;color:var(--ept-text-secondary);margin-bottom:1.5rem;
+}
+
+
+#ept-wrap .level-badge {
+display:inline-flex;align-items:center;gap:8px;padding:9px 20px;border-radius:999px;font-size:16px;font-weight:600;margin-bottom:1.75rem;
+}
+
+
+#ept-wrap .level-elementary {
+background:var(--ept-amber-light);color:#633806;
+}
+
+
+#ept-wrap .level-lower-intermediate {
+background:var(--ept-green-light);color:#27500A;
+}
+
+
+#ept-wrap .level-upper-intermediate {
+background:var(--ept-blue-light);color:#0C447C;
+}
+
+
+#ept-wrap .answer-strip {
+display:flex;gap:5px;flex-wrap:wrap;margin-bottom:1.5rem;
+}
+
+
+#ept-wrap .answer-pip {
+width:12px;height:12px;border-radius:50%;
+}
+
+
+#ept-wrap .pip-correct {
+background:#639922;
+}
+
+
+#ept-wrap .pip-wrong {
+background:#E24B4A;
+}
+
+
+#ept-wrap .pip-empty {
+background:#D3D1C7;border:1px solid #B4B2A9;
+}
+
+
+#ept-wrap .result-card {
+background:var(--ept-bg);border:1px solid var(--ept-border);border-radius:var(--ept-radius-lg);padding:1.5rem;margin-bottom:1.25rem;
+}
+
+
+#ept-wrap .result-card-title {
+font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--ept-text-secondary);margin-bottom:1.25rem;
+}
+
+
+#ept-wrap .skill-row {
+display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .skill-row:last-child {
+border-bottom:none;
+}
+
+
+#ept-wrap .skill-name {
+font-size:14px;font-weight:600;
+}
+
+
+#ept-wrap .skill-desc {
+font-size:12px;color:var(--ept-text-secondary);margin-top:2px;
+}
+
+
+#ept-wrap .skill-bar-wrap {
+flex:1;margin:0 16px;
+}
+
+
+#ept-wrap .skill-bar-track {
+background:var(--ept-bg-secondary);border-radius:4px;height:8px;border:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .skill-bar-fill {
+height:100%;border-radius:4px;
+}
+
+
+#ept-wrap .skill-pct {
+font-size:14px;font-weight:600;min-width:38px;text-align:right;
+}
+
+
+#ept-wrap .diag-section {
+margin-bottom:1.5rem;
+}
+
+
+#ept-wrap .diag-section-title {
+font-size:14px;font-weight:600;margin-bottom:0.75rem;padding-bottom:6px;border-bottom:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .sub-skill-row {
+display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .sub-skill-row:last-child {
+border-bottom:none;
+}
+
+
+#ept-wrap .sub-skill-name {
+font-size:13px;font-weight:500;min-width:200px;flex-shrink:0;
+}
+
+
+#ept-wrap .sub-skill-bar-wrap {
+flex:1;
+}
+
+
+#ept-wrap .sub-skill-bar-track {
+background:var(--ept-bg-secondary);border-radius:3px;height:6px;border:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .sub-skill-bar-fill {
+height:100%;border-radius:3px;
+}
+
+
+#ept-wrap .sub-skill-score {
+font-size:12px;color:var(--ept-text-secondary);min-width:36px;text-align:right;
+}
+
+
+#ept-wrap .verdict-chip {
+font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;
+}
+
+
+#ept-wrap .chip-strong {
+background:var(--ept-green-light);color:#27500A;
+}
+
+
+#ept-wrap .chip-partial {
+background:var(--ept-amber-light);color:#633806;
+}
+
+
+#ept-wrap .chip-weak {
+background:var(--ept-red-light);color:#712B13;
+}
+
+
+#ept-wrap .chip-na {
+background:var(--ept-bg-secondary);color:var(--ept-text-tertiary);border:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .insight-box {
+border-radius:var(--ept-radius-md);padding:12px 14px;font-size:13px;line-height:1.6;margin-top:1rem;
+}
+
+
+#ept-wrap .insight-knows {
+background:var(--ept-green-light);color:#27500A;border-left:3px solid #639922;
+}
+
+
+#ept-wrap .insight-developing {
+background:var(--ept-amber-light);color:#633806;border-left:3px solid #EF9F27;
+}
+
+
+#ept-wrap .insight-gaps {
+background:var(--ept-red-light);color:#712B13;border-left:3px solid #E24B4A;
+}
+
+
+#ept-wrap .insight-title {
+font-weight:600;margin-bottom:4px;
+}
+
+
+#ept-wrap .insight-list {
+margin:0;padding-left:16px;
+}
+
+
+#ept-wrap .insight-list li {
+margin-bottom:2px;
+}
+
+
+#ept-wrap .matrix-table {
+width:100%;border-collapse:collapse;font-size:13px;
+}
+
+
+#ept-wrap .matrix-table th, #ept-wrap .matrix-table td {
+padding:10px 8px;text-align:center;border:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .matrix-table th {
+background:var(--ept-bg-secondary);font-weight:600;font-size:12px;color:var(--ept-text-secondary);
+}
+
+
+#ept-wrap .matrix-table td:first-child {
+text-align:left;padding-left:14px;font-weight:500;background:var(--ept-bg-secondary);
+}
+
+
+#ept-wrap .dot {
+width:18px;height:18px;border-radius:50%;margin:0 auto;
+}
+
+
+#ept-wrap .dot-none {
+background:var(--ept-bg-secondary);border:1px solid var(--ept-border-medium);
+}
+
+
+#ept-wrap .dot-partial {
+background:#FAC775;
+}
+
+
+#ept-wrap .dot-strong {
+background:#185FA5;
+}
+
+
+#ept-wrap .result-desc {
+font-size:14px;line-height:1.7;
+}
+
+
+#ept-wrap .result-note {
+font-size:13px;color:var(--ept-text-secondary);line-height:1.7;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--ept-border);
+}
+
+/* Wrong answers card */
+
+#ept-wrap .wrong-item {
+padding:12px 0;border-bottom:1px solid var(--ept-border);
+}
+
+
+#ept-wrap .wrong-item:last-child {
+border-bottom:none;
+}
+
+
+#ept-wrap .wrong-item-header {
+display:flex;align-items:flex-start;gap:10px;margin-bottom:6px;
+}
+
+
+#ept-wrap .wrong-q-num {
+font-size:11px;font-weight:700;color:#E24B4A;background:var(--ept-red-light);padding:2px 8px;border-radius:999px;white-space:nowrap;flex-shrink:0;margin-top:2px;
+}
+
+
+#ept-wrap .wrong-q-text {
+font-size:13px;color:var(--ept-text-primary);line-height:1.6;
+}
+
+
+#ept-wrap .wrong-answers-row {
+display:flex;gap:16px;margin-top:6px;flex-wrap:wrap;
+}
+
+
+#ept-wrap .wrong-given {
+font-size:12px;color:#E24B4A;
+}
+
+
+#ept-wrap .wrong-correct {
+font-size:12px;color:#639922;font-weight:600;
+}
+
+
+#ept-wrap .wrong-tag {
+font-size:11px;color:var(--ept-text-tertiary);margin-top:2px;
+}
+
+@media(max-width:600px){
+
+
+#ept-wrap .nav-row {
+flex-direction:column-reverse;
+}
+
+
+#ept-wrap .btn {
+width:100%;text-align:center;
+}
+
+
+#ept-wrap .matrix-table th, #ept-wrap .matrix-table td {
+padding:7px 4px;font-size:11px;
+}
+
+
+#ept-wrap .sub-skill-name {
+min-width:130px;font-size:12px;
+}
+
+
+}
+</style>
+
+<div id="ept-wrap">
+<div class="container">
+  <div id="ept-test-screen">
+    <div class="test-header">
+      <h1>English Placement Test</h1>
+      <p>This test takes approximately 20–25 minutes. Answer every question as best you can. There are no penalties for guessing. Your results appear at the end.</p>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-meta">
+        <span id="ept-progress-label">Question 1 of 40</span>
+        <span id="ept-section-name"></span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="ept-progress-fill" style="width:2%"></div>
+      </div>
+    </div>
+    <div id="ept-warning-msg" class="warning-msg">Please select or write an answer before continuing.</div>
+    <div id="ept-question-area"></div>
+    <div class="nav-row">
+      <button class="btn btn-secondary" id="ept-btn-back" onclick="ept_goBack()">← Back</button>
+      <button class="btn btn-primary" id="ept-btn-next" onclick="ept_goNext()">Next →</button>
+    </div>
+  </div>
+  <div id="ept-results-screen" style="display:none"></div>
+</div>
+</div>
+<script>
+(function() {
+
+/* ==========================================================
+   QUESTION BANK  — 40 questions
+   Levels: A2=elementary, B1=lower-int, B2=upper-int
+   Each MC question carries:
+     tenseTag   — specific tense (or null)
+     grammarTag — specific grammar structure (or null)
+     vocab      — true if vocabulary question
+     writing    — true if free-text writing task
+   ========================================================== */
+var Q = (window.__ept_questions && window.__ept_questions.length) ? window.__ept_questions : [
+
+  /* ── A2 ELEMENTARY (Q1–10) ─────────────────────────── */
+
+  /* 1 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"My sister _____ in a hospital. She's a doctor.",
+    options:["work","works","is work","working"],answer:1,
+    tenseTag:"present_simple",grammarTag:"subject_verb_agreement",vocab:false,writing:false},
+
+  /* 2 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"Look at those clouds! It _____ to rain.",
+    options:["is going","goes","will going","go"],answer:0,
+    tenseTag:"going_to_future",grammarTag:"going_to_future",vocab:false,writing:false},
+
+  /* 3 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"Sorry, I can't talk right now — I _____ dinner.",
+    options:["make","makes","am making","made"],answer:2,
+    tenseTag:"present_continuous",grammarTag:"present_continuous",vocab:false,writing:false},
+
+  /* 4 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"We _____ a great film at the cinema last Saturday.",
+    options:["see","are seeing","have seen","saw"],answer:3,
+    tenseTag:"past_simple",grammarTag:"past_simple_regular_irregular",vocab:false,writing:false},
+
+  /* 5 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"This jacket is _____ than the one I tried on first.",
+    options:["more cheap","cheapest","cheaper","most cheap"],answer:2,
+    tenseTag:null,grammarTag:"comparatives_superlatives",vocab:false,writing:false},
+
+  /* 6 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"She _____ speak three languages — it's really impressive.",
+    options:["can","cans","is able","does"],answer:0,
+    tenseTag:null,grammarTag:"modal_can_ability",vocab:false,writing:false},
+
+  /* 7 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"There's _____ milk left in the fridge — we need to buy some.",
+    options:["a few","many","a little","few"],answer:2,
+    tenseTag:null,grammarTag:"quantifiers_countable_uncountable",vocab:false,writing:false},
+
+  /* 8 */ {section:"Elementary grammar",cefr:"A2",level:1,type:"mc",
+    prompt:"My birthday is _____ June, _____ the 14th.",
+    options:["in / on","on / in","at / on","in / at"],answer:0,
+    tenseTag:null,grammarTag:"prepositions_time",vocab:false,writing:false},
+
+  /* 9 */ {section:"Elementary vocabulary",cefr:"A2",level:1,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the word that means <strong>to look at something for a long time</strong>:",
+    options:["stare","listen","touch","smell"]  ,answer:0},
+
+  /* 10 */ {section:"Elementary vocabulary",cefr:"A2",level:1,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Which word completes the sentence? <em>Can you _____ me how to get to the station?</em>",
+    options:["say","speak","tell","talk"],answer:2},
+
+  /* ── B1 LOWER INTERMEDIATE (Q11–27) ────────────────── */
+
+  /* 11 */ {section:"Present perfect",cefr:"B1",level:2,type:"mc",
+    prompt:"I _____ sushi before — last night was the first time!",
+    options:["never ate","have never eaten","never eat","had never eaten"],answer:1,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_ever_never",vocab:false,writing:false},
+
+  /* 12 */ {section:"Present perfect",cefr:"B1",level:2,type:"mc",
+    prompt:"<strong>A:</strong> <em>Is the report ready?</em><br><strong>B:</strong> Not yet — I _____ it yet.",
+    options:["didn't finish","haven't finished","don't finish","hadn't finished"],answer:1,
+    tenseTag:"present_perfect",grammarTag:"present_perfect_yet_already",vocab:false,writing:false},
+
+  /* 13 */ {section:"Past tenses",cefr:"B1",level:2,type:"mc",
+    prompt:"We _____ to the park when it suddenly started to snow.",
+    options:["walked","were walking","have walked","had walked"],answer:1,
+    tenseTag:"past_continuous",grammarTag:"past_continuous_interrupted",vocab:false,writing:false},
+
+  /* 14 */ {section:"Past tenses",cefr:"B1",level:2,type:"mc",
+    prompt:"When I arrived at the party, most guests _____ already.",
+    options:["left","were leaving","have left","had left"],answer:3,
+    tenseTag:"past_perfect",grammarTag:"past_perfect_narrative",vocab:false,writing:false},
+
+  /* 15 */ {section:"Past habits",cefr:"B1",level:2,type:"mc",
+    prompt:"My grandfather _____ walk five kilometres to school every day when he was young.",
+    options:["was used to","used to","would used to","use to"],answer:1,
+    tenseTag:null,grammarTag:"used_to_past_habits",vocab:false,writing:false},
+
+  /* 16 */ {section:"Future forms",cefr:"B1",level:2,type:"mc",
+    prompt:"I think it _____ a lot warmer by the end of the week.",
+    options:["is getting","gets","will get","is going to getting"],answer:2,
+    tenseTag:"will_future",grammarTag:"will_future_prediction",vocab:false,writing:false},
+
+  /* 17 */ {section:"First conditional",cefr:"B1",level:2,type:"mc",
+    prompt:"If you _____ enough sleep, you'll feel much better tomorrow.",
+    options:["get","will get","got","would get"],answer:0,
+    tenseTag:null,grammarTag:"first_conditional",vocab:false,writing:false},
+
+  /* 18 */ {section:"Second conditional",cefr:"B1",level:2,type:"mc",
+    prompt:"If I _____ more free time, I would take up painting.",
+    options:["have","will have","had","would have"],answer:2,
+    tenseTag:null,grammarTag:"second_conditional",vocab:false,writing:false},
+
+  /* 19 */ {section:"Modal verbs",cefr:"B1",level:2,type:"mc",
+    prompt:"You really _____ see a doctor — that cough has lasted two weeks.",
+    options:["must","should","can","shall"],answer:1,
+    tenseTag:null,grammarTag:"modal_should_advice",vocab:false,writing:false},
+
+  /* 20 */ {section:"Modal verbs",cefr:"B1",level:2,type:"mc",
+    prompt:"Take an umbrella — it _____ rain later, I'm not sure.",
+    options:["should","must","might","shall"],answer:2,
+    tenseTag:null,grammarTag:"modal_might_possibility",vocab:false,writing:false},
+
+  /* 21 */ {section:"Verb patterns",cefr:"B1",level:2,type:"mc",
+    prompt:"Would you mind _____ the window? It's getting cold.",
+    options:["to close","close","closing","closed"],answer:2,
+    tenseTag:null,grammarTag:"gerund_after_verbs",vocab:false,writing:false},
+
+  /* 22 */ {section:"Verb patterns",cefr:"B1",level:2,type:"mc",
+    prompt:"She decided _____ a new language after her trip to Japan.",
+    options:["learning","learn","to learn","learned"],answer:2,
+    tenseTag:null,grammarTag:"infinitive_after_verbs",vocab:false,writing:false},
+
+  /* 23 */ {section:"Passive voice",cefr:"B1",level:2,type:"mc",
+    prompt:"The new sports centre _____ by the mayor last Friday.",
+    options:["was opened","is opened","opened","has opened"],answer:0,
+    tenseTag:"past_simple",grammarTag:"passive_past_simple",vocab:false,writing:false},
+
+  /* 24 */ {section:"Passive voice",cefr:"B1",level:2,type:"mc",
+    prompt:"English _____ as the main language of instruction at this school.",
+    options:["uses","used","is used","is using"],answer:2,
+    tenseTag:"present_simple",grammarTag:"passive_present_simple",vocab:false,writing:false},
+
+  /* 25 */ {section:"Reported speech",cefr:"B1",level:2,type:"mc",
+    prompt:"\"I'm feeling tired,\" he said.<br>He said he _____ tired.",
+    options:["is feeling","feels","was feeling","had felt"],answer:2,
+    tenseTag:"past_continuous",grammarTag:"reported_speech_backshift",vocab:false,writing:false},
+
+  /* 26 */ {section:"Present perfect continuous",cefr:"B1",level:2,type:"mc",
+    prompt:"She _____ for this company for nearly three years now.",
+    options:["works","has worked","has been working","is working"],answer:2,
+    tenseTag:"present_perfect_continuous",grammarTag:"present_perfect_continuous",vocab:false,writing:false},
+
+  /* 27 */ {section:"B1 vocabulary",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the correct word: <em>The company has made a _____ to reduce its carbon emissions by 2030.</em>",
+    options:["promise","commitment","deal","contract"],answer:1},
+
+  /* ── B1 WORD FORMS (Q28–29) ─────────────────────────── */
+
+  /* 28 */ {section:"Word forms",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"<em>The team's _____ (perform) in the final was outstanding.</em>",
+    options:["perform","performance","performer","performed"],answer:1},
+
+  /* 29 */ {section:"Word forms",cefr:"B1",level:2,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"<em>Living in a big city can be very _____ (stress) if you aren't used to it.</em>",
+    options:["stress","stressed","stressful","stressing"],answer:2},
+
+  /* ── B2 UPPER INTERMEDIATE (Q30–38) ─────────────────── */
+
+  /* 30 */ {section:"Third conditional",cefr:"B2",level:3,type:"mc",
+    prompt:"If we _____ earlier, we wouldn't have missed the start of the concert.",
+    options:["left","had left","would leave","have left"],answer:1,
+    tenseTag:"past_perfect",grammarTag:"third_conditional",vocab:false,writing:false},
+
+  /* 31 */ {section:"Wish / If only",cefr:"B2",level:3,type:"mc",
+    prompt:"I wish I _____ harder for the exam last week. I really regret it.",
+    options:["studied","have studied","had studied","would study"],answer:2,
+    tenseTag:"past_perfect",grammarTag:"wish_if_only",vocab:false,writing:false},
+
+  /* 32 */ {section:"Relative clauses",cefr:"B2",level:3,type:"mc",
+    prompt:"The colleague _____ helped me with the project has just been promoted.",
+    options:["which","whose","who","whom"],answer:2,
+    tenseTag:null,grammarTag:"defining_relative_clauses",vocab:false,writing:false},
+
+  /* 33 */ {section:"Relative clauses",cefr:"B2",level:3,type:"mc",
+    prompt:"My sister, _____ lives in Berlin, is visiting us next month.",
+    options:["that","which","whose","who"],answer:3,
+    tenseTag:null,grammarTag:"non_defining_relative_clauses",vocab:false,writing:false},
+
+  /* 34 */ {section:"Causative",cefr:"B2",level:3,type:"mc",
+    prompt:"We _____ the whole house repainted before we moved in.",
+    options:["made","had","did","got done"],answer:1,
+    tenseTag:null,grammarTag:"causative_have_get",vocab:false,writing:false},
+
+  /* 35 */ {section:"Linkers & discourse",cefr:"B2",level:3,type:"mc",
+    prompt:"She studied very hard. _____, she didn't pass the exam.",
+    options:["Therefore","However","Besides","Furthermore"],answer:1,
+    tenseTag:null,grammarTag:"linkers_contrast",vocab:false,writing:false},
+
+  /* 36 */ {section:"B2 vocabulary",cefr:"B2",level:3,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Choose the most precise word: <em>The politician refused to give a straight answer — her response was deliberately _____.</em>",
+    options:["unclear","vague","evasive","confusing"],answer:2},
+
+  /* 37 */ {section:"B2 vocabulary",cefr:"B2",level:3,type:"mc",
+    vocab:true,writing:false,tenseTag:null,grammarTag:null,
+    prompt:"Which word collocates correctly? <em>The new policy was met with widespread _____ from the public.</em>",
+    options:["opposition","objection","protest","resistance"],answer:0},
+
+  /* ── WRITING TASKS (Q38–40) ──────────────────────────── */
+
+  /* 38 */ {section:"Writing — sentence",cefr:"B1",level:2,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:5,tag:"passive_transform",
+    prompt:"Rewrite the sentence below in the <strong>passive voice</strong>.<br><em>\"The manager gave all the employees a pay rise.\"</em><br><br>Type your answer here:"},
+
+  /* 39 */ {section:"Writing — sentence",cefr:"B2",level:3,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:8,tag:"third_cond_write",
+    prompt:"Write a <strong>third conditional</strong> sentence using this idea:<br><em>You didn't study → you didn't pass the exam.</em><br><br>Type your sentence here:"},
+
+  /* 40 */ {section:"Writing — paragraph",cefr:"B2",level:3,type:"text",
+    writing:true,vocab:false,tenseTag:null,grammarTag:null,
+    minWords:35,tag:"para_opinion",
+    prompt:"Write 3–5 sentences giving your opinion on the following statement. Use at least one linking word (e.g. <em>however, although, on the other hand</em>).<br><br><strong>\"People learn more from making mistakes than from their successes.\"</strong>"}
+];
+
+/* ==========================================================
+   METADATA
+   ========================================================== */
+var TENSE_META = {
+  present_simple:           {label:"Present simple",               color:"#185FA5"},
+  present_continuous:       {label:"Present continuous",           color:"#185FA5"},
+  going_to_future:          {label:"Going to (future plans)",      color:"#185FA5"},
+  present_simple_timetable: {label:"Present simple (timetables)",  color:"#185FA5"},
+  past_simple:              {label:"Past simple",                  color:"#3B6D11"},
+  past_continuous:          {label:"Past continuous",              color:"#3B6D11"},
+  past_perfect:             {label:"Past perfect",                 color:"#854F0B"},
+  present_perfect:          {label:"Present perfect",              color:"#3B6D11"},
+  will_future:              {label:"Will (predictions/promises)",  color:"#3B6D11"},
+  present_perfect_continuous:{label:"Present perfect continuous",  color:"#854F0B"}
+};
+
+var GRAMMAR_META = {
+  subject_verb_agreement:        {label:"Subject–verb agreement",          color:"#185FA5"},
+  going_to_future:               {label:"Going to — future plans",         color:"#185FA5"},
+  present_continuous:            {label:"Present continuous",              color:"#185FA5"},
+  past_simple_regular_irregular: {label:"Past simple (regular/irregular)", color:"#185FA5"},
+  comparatives_superlatives:     {label:"Comparatives & superlatives",     color:"#185FA5"},
+  modal_can_ability:             {label:"Can / can't (ability)",           color:"#185FA5"},
+  quantifiers_countable_uncountable:{label:"Quantifiers (much/many/little/few)",color:"#185FA5"},
+  prepositions_time:             {label:"Prepositions of time (at/on/in)", color:"#185FA5"},
+  present_perfect_ever_never:    {label:"Present perfect (ever/never)",    color:"#3B6D11"},
+  present_perfect_yet_already:   {label:"Present perfect (yet/already)",   color:"#3B6D11"},
+  past_continuous_interrupted:   {label:"Past continuous (interrupted)",   color:"#3B6D11"},
+  past_perfect_narrative:        {label:"Past perfect (sequence)",         color:"#3B6D11"},
+  used_to_past_habits:           {label:"Used to (past habits)",           color:"#3B6D11"},
+  future_forms_timetable:        {label:"Future — timetables & schedules", color:"#3B6D11"},
+  first_conditional:             {label:"First conditional",               color:"#3B6D11"},
+  second_conditional:            {label:"Second conditional",              color:"#3B6D11"},
+  modal_should_advice:           {label:"Should (advice)",                 color:"#3B6D11"},
+  modal_might_possibility:       {label:"Might (possibility)",             color:"#3B6D11"},
+  gerund_after_verbs:            {label:"Gerund after verbs (mind/enjoy)", color:"#3B6D11"},
+  infinitive_after_verbs:        {label:"Infinitive after verbs (decide)", color:"#3B6D11"},
+  passive_past_simple:           {label:"Passive — past simple",           color:"#3B6D11"},
+  passive_present_simple:        {label:"Passive — present simple",        color:"#3B6D11"},
+  reported_speech_backshift:     {label:"Reported speech (backshift)",     color:"#3B6D11"},
+  so_neither_auxiliaries:        {label:"So / Neither with auxiliaries",   color:"#3B6D11"},
+  third_conditional:             {label:"Third conditional",               color:"#854F0B"},
+  wish_if_only:                  {label:"Wish / If only",                  color:"#854F0B"},
+  defining_relative_clauses:     {label:"Defining relative clauses",       color:"#854F0B"},
+  non_defining_relative_clauses: {label:"Non-defining relative clauses",   color:"#854F0B"},
+  causative_have_get:            {label:"Causative have / get",            color:"#854F0B"},
+  linkers_contrast:              {label:"Linkers — contrast & addition",   color:"#854F0B"},
+  will_future_prediction:        {label:"Will — predictions & promises",    color:"#3B6D11"},
+  present_perfect_continuous:    {label:"Present perfect continuous",        color:"#854F0B"}
+};
+
+var sectionColors = {
+  "Elementary grammar":"#185FA5","Elementary vocabulary":"#3C3489",
+  "Present perfect":"#3B6D11","Past tenses":"#3B6D11","Past habits":"#3B6D11",
+  "Future forms":"#3B6D11","Present perfect continuous":"#3B6D11","First conditional":"#3B6D11","Second conditional":"#3B6D11",
+  "Modal verbs":"#3B6D11","Verb patterns":"#854F0B","Passive voice":"#854F0B",
+  "Reported speech":"#854F0B",
+  "B1 vocabulary":"#3C3489","Word forms":"#3C3489",
+  "Third conditional":"#993C1D","Wish / If only":"#993C1D","Relative clauses":"#993C1D",
+  "Causative":"#993C1D","Linkers & discourse":"#993C1D","B2 vocabulary":"#3C3489",
+  "Writing — sentence":"#993C1D","Writing — paragraph":"#993C1D"
+};
+
+var answers = new Array(Q.length).fill(null);
+var current = 0;
+
+/* ==========================================================
+   RENDER
+   ========================================================== */
+function render() {
+  var q = Q[current];
+  var pct = Math.round(((current+1)/Q.length)*100);
+  document.getElementById('ept-progress-fill').style.width = pct+'%';
+  document.getElementById('ept-progress-label').textContent = 'Question '+(current+1)+' of '+Q.length;
+  document.getElementById('ept-section-name').textContent = q.section;
+  document.getElementById('ept-btn-back').style.visibility = current===0?'hidden':'visible';
+  document.getElementById('ept-btn-next').textContent = current===Q.length-1?'Submit test ✓':'Next →';
+  document.getElementById('ept-warning-msg').style.display = 'none';
+
+  var color = sectionColors[q.section]||'#185FA5';
+  var letters = ['A','B','C','D'];
+  var html = '<div class="section-label" style="color:'+color+'">'+q.section+'</div>';
+  html += '<div class="question-card">';
+  html += '<div class="question-num">Question '+(current+1)+'</div>';
+  html += '<div class="question-text">'+q.prompt+'</div>';
+
+  if (q.type==='mc') {
+    html += '<div class="options">';
+    q.options.forEach(function(opt,i){
+      var sel = answers[current]===i?' selected':'';
+      html += '<button class="option-btn'+sel+'" onclick="ept_select('+i+')"><span class="option-letter">'+letters[i]+'</span>'+opt+'</button>';
+    });
+    html += '</div>';
+  } else {
+    var val = answers[current]&&answers[current].text?answers[current].text:'';
+    var wc = val.trim()?val.trim().split(/\s+/).length:0;
+    html += '<textarea class="text-input" id="text-ans" rows="5" placeholder="Write your answer here…" oninput="saveText(this.value)">'+val+'</textarea>';
+    html += '<div class="char-count" id="wc-display">'+wc+' words</div>';
+  }
+  html += '</div>';
+  document.getElementById('ept-question-area').innerHTML = html;
+  updateNextBtn();
+}
+
+function selectOption(i){
+  answers[current]=i;
+  document.querySelectorAll('.option-btn').forEach(function(b,j){b.classList.toggle('selected',j===i);});
+  updateNextBtn();
+}
+function saveText(val){
+  var wc=val.trim()?val.trim().split(/\s+/).length:0;
+  var wcEl=document.getElementById('wc-display');
+  if(wcEl)wcEl.textContent=wc+' words';
+  answers[current]={text:val,words:wc};
+  updateNextBtn();
+}
+function updateNextBtn(){
+  var q=Q[current];
+  var has=q.type==='mc'?answers[current]!==null:(answers[current]&&answers[current].words>=1);
+  document.getElementById('ept-btn-next').disabled=!has;
+}
+function goNext(){
+  var q=Q[current];
+  var has=q.type==='mc'?answers[current]!==null:(answers[current]&&answers[current].words>=1);
+  if(!has){document.getElementById('ept-warning-msg').style.display='block';return;}
+  if(current<Q.length-1){current++;render();window.scrollTo(0,0);}
+  else showResults();
+}
+function goBack(){if(current>0){current--;render();window.scrollTo(0,0);}}
+
+/* ==========================================================
+   SCORING HELPERS
+   ========================================================== */
+function getLevelForPct(p){
+  if(p<0.35)return 0; if(p<0.60)return 1; if(p<0.80)return 2; return 3;
+}
+function pctInt(c,t){return t>0?Math.round((c/t)*100):0;}
+function verdictChip(c,t){
+  if(t===0)return '<span class="verdict-chip chip-na">n/a</span>';
+  var p=c/t;
+  if(p>=0.67)return '<span class="verdict-chip chip-strong">Strong</span>';
+  if(p>=0.34)return '<span class="verdict-chip chip-partial">Developing</span>';
+  return '<span class="verdict-chip chip-weak">Needs work</span>';
+}
+function verdictLabel(c,t){
+  if(t===0)return null;
+  var p=c/t;
+  if(p>=0.67)return'strong'; if(p>=0.34)return'developing'; return'weak';
+}
+function subSkillRow(label,correct,total,color){
+  var p=pctInt(correct,total);
+  var barColor=total===0?'#D3D1C7':color;
+  return '<div class="sub-skill-row">'+
+    '<div class="sub-skill-name">'+label+'</div>'+
+    '<div class="sub-skill-bar-wrap"><div class="sub-skill-bar-track"><div class="sub-skill-bar-fill" style="width:'+(total===0?0:p)+'%;background:'+barColor+'"></div></div></div>'+
+    '<div class="sub-skill-score">'+(total>0?correct+'/'+total:'—')+'</div>'+
+    verdictChip(correct,total)+
+    '</div>';
+}
+
+/* ==========================================================
+   SHOW RESULTS
+   ========================================================== */
+function showResults(){
+  document.getElementById('ept-test-screen').style.display='none';
+  var rs=document.getElementById('ept-results-screen');
+  rs.style.display='block';
+
+  /* aggregate */
+  var totalMC=0,correct=0;
+  var tenseMap={},grammarMap={};
+  var vocabC=0,vocabT=0,writingA=0,writingT=0;
+  var a2C=0,a2T=0,b1C=0,b1T=0,b2C=0,b2T=0;
+
+  Q.forEach(function(q,i){
+    if(q.type==='mc'){
+      totalMC++;
+      var ok=answers[i]===q.answer;
+      if(ok)correct++;
+      if(q.cefr==='A2'){a2T++;if(ok)a2C++;}
+      else if(q.cefr==='B1'){b1T++;if(ok)b1C++;}
+      else if(q.cefr==='B2'){b2T++;if(ok)b2C++;}
+      if(q.tenseTag){
+        if(!tenseMap[q.tenseTag])tenseMap[q.tenseTag]={c:0,t:0};
+        tenseMap[q.tenseTag].t++;if(ok)tenseMap[q.tenseTag].c++;
+      }
+      if(q.grammarTag){
+        if(!grammarMap[q.grammarTag])grammarMap[q.grammarTag]={c:0,t:0};
+        grammarMap[q.grammarTag].t++;if(ok)grammarMap[q.grammarTag].c++;
+      }
+      if(q.vocab){vocabT++;if(ok)vocabC++;}
+    } else {
+      writingT++;
+      if(answers[i]&&answers[i].words>=q.minWords)writingA++;
+    }
+  });
+
+  var mcPct=totalMC>0?correct/totalMC:0;
+
+  /* Overall level */
+  var level,levelClass,cefr,desc;
+  if(mcPct<0.40){
+    level='Elementary';levelClass='level-elementary';cefr='A2';
+    desc='This student can understand and use familiar everyday expressions and very basic phrases. They have a grasp of present simple and basic vocabulary but need to consolidate past tenses, modals, and simple future forms before moving to lower intermediate work.';
+  } else if(mcPct<0.72){
+    level='Lower intermediate';levelClass='level-lower-intermediate';cefr='B1';
+    desc='This student can handle most everyday language situations and understands the main points of clear, standard input on familiar topics. Core B1 structures — present perfect, past tenses, first and second conditional, modals — are emerging. Focus lessons on consolidating these before introducing B2 structures.';
+  } else {
+    level='Upper intermediate';levelClass='level-upper-intermediate';cefr='B2';
+    desc='This student can understand the main ideas of complex text on both concrete and abstract topics. B1 structures are largely secure. Lesson design should focus on B2 areas: third conditional, wish/if only, relative clauses, causative structures, register, and discourse organisation.';
+  }
+
+  /* CEFR band breakdown */
+  var a2Pct=pctInt(a2C,a2T);
+  var b1Pct=pctInt(b1C,b1T);
+  var b2Pct=pctInt(b2C,b2T);
+
+  /* tense totals for skill bar */
+  var tenseC=0,tenseT=0,grammarC=0,grammarT=0;
+  Q.forEach(function(q,i){
+    if(q.type!=='mc')return;
+    var ok=answers[i]===q.answer;
+    if(q.tenseTag){tenseT++;if(ok)tenseC++;}
+    if(q.grammarTag){grammarT++;if(ok)grammarC++;}
+  });
+
+  /* level matrix dots */
+  var levelNames=['Elementary','Lower int.','Upper int.'];
+  function dotRow(label,pctVal){
+    /* fill dot based on pct: <40 = first level, <72 = second, else third */
+    var achievedIdx=pctVal<40?0:pctVal<72?1:2;
+    var cells='<td>'+label+'</td>';
+    for(var i=0;i<3;i++){
+      var cls=i<achievedIdx?'dot-partial':(i===achievedIdx?'dot-strong':'dot-none');
+      cells+='<td><div class="dot '+cls+'" title="'+levelNames[i]+'"></div></td>';
+    }
+    return '<tr>'+cells+'</tr>';
+  }
+
+  /* skill bars */
+  function skillBar(name,c,t,color,label2){
+    var p=pctInt(c,t);
+    return '<div class="skill-row"><div><div class="skill-name">'+name+'</div><div class="skill-desc">'+label2+'</div></div>'+
+      '<div class="skill-bar-wrap"><div class="skill-bar-track"><div class="skill-bar-fill" style="width:'+p+'%;background:'+color+'"></div></div></div>'+
+      '<div class="skill-pct">'+p+'%</div></div>';
+  }
+
+  /* pips */
+  var pipHtml=Q.map(function(q,i){
+    if(q.type!=='mc')return '<div class="answer-pip pip-empty" title="Written Q'+(i+1)+'"></div>';
+    return '<div class="answer-pip '+(answers[i]===q.answer?'pip-correct':'pip-wrong')+'" title="Q'+(i+1)+'"></div>';
+  }).join('');
+
+  /* TENSE diagnostic groups */
+  var tenseGroups=[
+    {title:'Elementary tenses (A2)',color:'#185FA5',tags:['present_simple','present_continuous','going_to_future','past_simple']},
+    {title:'Lower-intermediate tenses (B1)',color:'#3B6D11',tags:['present_perfect','past_continuous','past_perfect','will_future','present_perfect_continuous']},
+  ];
+
+  function tenseGroupRows(group){
+    return group.tags.map(function(tag){
+      var meta=TENSE_META[tag];if(!meta)return'';
+      var sc=tenseMap[tag]||{c:0,t:0};
+      return subSkillRow(meta.label,sc.c,sc.t,group.color);
+    }).join('');
+  }
+
+  /* GRAMMAR diagnostic groups */
+  var grammarGroups=[
+    {title:'Elementary grammar (A2)',color:'#185FA5',tags:['subject_verb_agreement','going_to_future','present_continuous','past_simple_regular_irregular','comparatives_superlatives','modal_can_ability','quantifiers_countable_uncountable','prepositions_time']},
+    {title:'Lower-intermediate grammar (B1)',color:'#3B6D11',tags:['present_perfect_ever_never','present_perfect_yet_already','past_continuous_interrupted','past_perfect_narrative','used_to_past_habits','will_future_prediction','first_conditional','second_conditional','modal_should_advice','modal_might_possibility','gerund_after_verbs','infinitive_after_verbs','passive_past_simple','passive_present_simple','reported_speech_backshift','present_perfect_continuous']},
+    {title:'Upper-intermediate grammar (B2)',color:'#854F0B',tags:['third_conditional','wish_if_only','defining_relative_clauses','non_defining_relative_clauses','causative_have_get','linkers_contrast']},
+  ];
+
+  function grammarGroupRows(group){
+    return group.tags.map(function(tag){
+      var meta=GRAMMAR_META[tag];if(!meta)return'';
+      var sc=grammarMap[tag]||{c:0,t:0};
+      return subSkillRow(meta.label,sc.c,sc.t,group.color);
+    }).join('');
+  }
+
+  /* insights */
+  function buildInsights(tagMap,metaLookup,tagOrder){
+    var knows=[],developing=[],gaps=[];
+    tagOrder.forEach(function(tag){
+      var sc=tagMap[tag];if(!sc||sc.t===0)return;
+      var v=verdictLabel(sc.c,sc.t);
+      var name=metaLookup[tag].label;
+      if(v==='strong')knows.push(name);
+      else if(v==='developing')developing.push(name);
+      else gaps.push(name);
+    });
+    var html='';
+    if(knows.length)html+='<div class="insight-box insight-knows"><div class="insight-title">✓ Appears to know well</div><ul class="insight-list">'+knows.map(function(n){return'<li>'+n+'</li>';}).join('')+'</ul></div>';
+    if(developing.length)html+='<div class="insight-box insight-developing"><div class="insight-title">~ Still developing</div><ul class="insight-list">'+developing.map(function(n){return'<li>'+n+'</li>';}).join('')+'</ul></div>';
+    if(gaps.length)html+='<div class="insight-box insight-gaps"><div class="insight-title">✗ Likely needs focused practice</div><ul class="insight-list">'+gaps.map(function(n){return'<li>'+n+'</li>';}).join('')+'</ul></div>';
+    return html||'<p style="font-size:13px;color:var(--text-tertiary)">Not enough data to generate insights.</p>';
+  }
+
+  var allTenseTags=[];
+  tenseGroups.forEach(function(g){g.tags.forEach(function(t){allTenseTags.push(t);});});
+  var allGrammarTags=[];
+  grammarGroups.forEach(function(g){g.tags.forEach(function(t){allGrammarTags.push(t);});});
+
+  var tenseInsights=buildInsights(tenseMap,TENSE_META,allTenseTags);
+  var grammarInsights=buildInsights(grammarMap,GRAMMAR_META,allGrammarTags);
+
+  /* CEFR band card */
+  function bandBar(label,c,t,color){
+    var p=pctInt(c,t);
+    return '<div class="skill-row"><div><div class="skill-name">'+label+'</div><div class="skill-desc">'+c+' / '+t+' MC questions correct</div></div>'+
+      '<div class="skill-bar-wrap"><div class="skill-bar-track"><div class="skill-bar-fill" style="width:'+p+'%;background:'+color+'"></div></div></div>'+
+      '<div class="skill-pct">'+p+'%</div></div>';
+  }
+
+  /* ── Wrong answers card ── */
+  var letters=['A','B','C','D'];
+  var wrongItems=[];
+  Q.forEach(function(q,i){
+    if(q.type!=='mc')return;
+    if(answers[i]===q.answer)return;
+    var given=answers[i]!==null?letters[answers[i]]+' — '+q.options[answers[i]]:'(no answer)';
+    var correct=letters[q.answer]+' — '+q.options[q.answer];
+    // strip html tags from prompt for display
+    var plainPrompt=q.prompt.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+    if(plainPrompt.length>100)plainPrompt=plainPrompt.slice(0,97)+'…';
+    var tagLine='';
+    if(q.tenseTag&&TENSE_META[q.tenseTag])tagLine+=TENSE_META[q.tenseTag].label;
+    if(q.grammarTag&&GRAMMAR_META[q.grammarTag]){
+      if(tagLine)tagLine+=' · ';
+      tagLine+=GRAMMAR_META[q.grammarTag].label;
+    }
+    if(q.vocab)tagLine+=(tagLine?' · ':'')+'Vocabulary';
+    wrongItems.push(
+      '<div class="wrong-item">'+
+      '<div class="wrong-item-header">'+
+      '<span class="wrong-q-num">Q'+(i+1)+'</span>'+
+      '<span class="wrong-q-text">'+plainPrompt+'</span>'+
+      '</div>'+
+      '<div class="wrong-answers-row">'+
+      '<span class="wrong-given">✗ Answered: '+given+'</span>'+
+      '<span class="wrong-correct">✓ Correct: '+correct+'</span>'+
+      '</div>'+
+      (tagLine?'<div class="wrong-tag">Tests: '+tagLine+'</div>':'')+
+      '</div>'
+    );
+  });
+
+  /* ── Collect writing answers for review ── */
+  var writingAnswers = [];
+  Q.forEach(function(q, i) {
+    if (q.type !== 'text') return;
+    writingAnswers.push({ tag: q.tag || null, prompt: q.prompt.replace(/<[^>]*>/g,'').trim(), answer: answers[i] ? answers[i].text : '', words: answers[i] ? answers[i].words : 0 });
+  });
+
+  /* ── Collect all answers for admin review ── */
+  var allAnswers = Q.map(function(q, i) {
+    return {
+      qNum: i+1, section: q.section, cefr: q.cefr, type: q.type,
+      prompt: q.prompt.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim(),
+      given: q.type==='mc' ? answers[i] : (answers[i] ? answers[i].text : null),
+      givenLabel: (q.type==='mc' && answers[i]!==null) ? (['A','B','C','D'][answers[i]]+' — '+q.options[answers[i]]) : (q.type==='text' && answers[i] ? answers[i].text : '(no answer)'),
+      correctIdx: q.type==='mc' ? q.answer : null,
+      correctLabel: q.type==='mc' ? (['A','B','C','D'][q.answer]+' — '+q.options[q.answer]) : null,
+      isCorrect: q.type==='mc' ? (answers[i]===q.answer) : null,
+      options: q.options || null,
+      tenseTag: q.tenseTag || null, grammarTag: q.grammarTag || null,
+      vocab: q.vocab || false, writing: q.writing || false
+    };
+  });
+
+  var resultsPayload = {
+    mcCorrect: correct, mcTotal: totalMC,
+    level: level, cefr: cefr, desc: desc,
+    a2: {correct: a2C, total: a2T},
+    b1: {correct: b1C, total: b1T},
+    b2: {correct: b2C, total: b2T},
+    tenseMap: tenseMap, grammarMap: grammarMap,
+    vocabCorrect: vocabC, vocabTotal: vocabT,
+    writingAttempted: writingA, writingTotal: writingT,
+    writingAnswers: writingAnswers,
+    allAnswers: allAnswers,
+    submittedAt: new Date().toISOString()
+  };
+
+  /* ── Send results to parent (React app intercepts this) ── */
+  try { window.parent.postMessage({ type: 'ept_submit', results: resultsPayload }, '*'); } catch(e){}
+
+  /* ── Show simple confirmation to student (no score, no details) ── */
+  document.getElementById('ept-test-screen').style.display='none';
+  rs.style.display='block';
+  rs.innerHTML = '<div style="text-align:center;padding:4rem 1rem;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">' +
+    '<div style="font-size:4rem;margin-bottom:1.25rem;">✅</div>' +
+    '<h2 style="font-size:1.5rem;font-weight:600;margin-bottom:0.75rem;color:#1a1a19;">Test completed!</h2>' +
+    '<p style="font-size:1rem;color:#5f5e5a;line-height:1.7;max-width:420px;margin:0 auto;">Your answers have been submitted. Your results will be evaluated and I will get back to you shortly.</p>' +
+    '</div>';
+  try { window.scrollTo(0,0); } catch(e){}
+}
+
+function restartTest(){
+  try { window.location.reload(); } catch(e){}
+}
+
+render();
+
+  window['ept_goNext']  = goNext;
+  window['ept_goBack']  = goBack;
+  window['ept_restart'] = restartTest;
+  window['ept_select']  = selectOption;
+  window['saveText']    = saveText;
+})();
+</script>

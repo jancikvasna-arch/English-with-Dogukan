@@ -2211,6 +2211,116 @@ export function newQ(type) {
   }
 }
 
+// ─── FbTextBuilder ────────────────────────────────────────────
+// Manual fill-in-the-blank authoring: type sentences and insert ___ blanks
+// yourself (the alternative to uploading a picture). Stored as plain
+// (non-overlay) fill_blank questions — prompt holds the text with ___ markers,
+// correct_answer holds an optional JSON array of answers.
+function FbTextBuilder({ questions, setQuestions }) {
+  const taRefs = useRef({})
+
+  useEffect(() => {
+    if (!questions.length) setQuestions([newQ('fill_blank')])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const parseAnswers = (q) => {
+    try { const a = JSON.parse(q.correct_answer); return Array.isArray(a) ? a : [] } catch { return [] }
+  }
+  const setPrompt = (tempId, val) =>
+    setQuestions(prev => prev.map(q => q.tempId === tempId ? { ...q, prompt: val } : q))
+  const setAnswer = (tempId, idx, val) =>
+    setQuestions(prev => prev.map(q => {
+      if (q.tempId !== tempId) return q
+      const next = parseAnswers(q); next[idx] = val
+      return { ...q, correct_answer: JSON.stringify(next) }
+    }))
+
+  const insertBlank = (tempId) => {
+    setQuestions(prev => prev.map(q => {
+      if (q.tempId !== tempId) return q
+      const ta = taRefs.current[tempId]
+      const text = q.prompt || ''
+      const pos = (ta && typeof ta.selectionStart === 'number') ? ta.selectionStart : text.length
+      const before = text.slice(0, pos)
+      const after  = text.slice(pos)
+      const insert = `${before && !/\s$/.test(before) ? ' ' : ''}___${after && !/^\s/.test(after) ? ' ' : ''}`
+      return { ...q, prompt: before + insert + after }
+    }))
+    setTimeout(() => { const el = taRefs.current[tempId]; if (el) el.focus() }, 0)
+  }
+
+  const addSentence    = () => setQuestions(prev => [...prev, newQ('fill_blank')])
+  const removeSentence = (tempId) => setQuestions(prev => {
+    const next = prev.filter(q => q.tempId !== tempId)
+    return next.length ? next : [newQ('fill_blank')]
+  })
+
+  const items = questions.length ? questions : []
+
+  return (
+    <div>
+      <p className="builder-section-sub" style={{ marginTop: 0 }}>
+        Type each sentence or question, then put your cursor where the gap goes and click
+        <strong> ➕ Insert blank</strong> (or just type three underscores <code>___</code>). Add the
+        answers if you'd like them shown when reviewing — they're optional.
+      </p>
+
+      {items.map((q, idx) => {
+        const blankCount = (q.prompt || '').split('___').length - 1
+        const answers = parseAnswers(q)
+        return (
+          <div key={q.tempId} style={{ background: 'var(--bg-card)', border: '1.5px solid var(--border)', borderRadius: '10px', padding: '0.85rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Sentence {idx + 1}</span>
+              <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                {blankCount > 0 ? `${blankCount} blank${blankCount !== 1 ? 's' : ''}` : 'no blanks yet'}
+              </span>
+              {items.length > 1 && (
+                <button type="button" className="btn-ghost"
+                  style={{ marginLeft: 'auto', fontSize: '0.74rem', padding: '0.18rem 0.5rem', color: '#e05c5c' }}
+                  onClick={() => removeSentence(q.tempId)}>✕ Remove</button>
+              )}
+            </div>
+
+            <textarea
+              ref={el => { taRefs.current[q.tempId] = el }}
+              value={q.prompt || ''}
+              onChange={e => setPrompt(q.tempId, e.target.value)}
+              rows={2}
+              placeholder="e.g.  She ___ to school every morning."
+              style={{ width: '100%', fontSize: '0.95rem', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border)', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5 }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.45rem' }}>
+              <button type="button" className="btn-ghost" style={{ fontSize: '0.8rem' }}
+                onClick={() => insertBlank(q.tempId)}>➕ Insert blank</button>
+            </div>
+
+            {blankCount > 0 && (
+              <div style={{ marginTop: '0.6rem' }}>
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '0.3rem' }}>
+                  Answer key <span style={{ fontWeight: 400 }}>(optional)</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {Array.from({ length: blankCount }, (_, i) => (
+                    <input key={i} type="text"
+                      value={answers[i] || ''}
+                      onChange={e => setAnswer(q.tempId, i, e.target.value)}
+                      placeholder={`Blank ${i + 1}`}
+                      style={{ width: '130px', fontSize: '0.85rem', padding: '0.32rem 0.5rem', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      <button type="button" className="btn-ghost" style={{ fontSize: '0.85rem' }}
+        onClick={addSentence}>+ Add sentence</button>
+    </div>
+  )
+}
+
 export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, allLabels = [], allBooks = [], onLabelCreated = null, onBookCreated = null, initialStageType = null, cancelLabel = 'Cancel' }) {
   const isEdit = !!initialExercise
 
@@ -2258,6 +2368,14 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const [questions,      setQuestions]      = useState(
     (initialExercise?.questions ?? []).map(q => ({ ...q, tempId: crypto.randomUUID() }))
   )
+  // fill_blank: how the exercise is authored — 'picture' (upload + detect) or 'text' (type sentences, insert blanks)
+  const [fbInputMode,    setFbInputMode]    = useState(() => {
+    const q0 = initialExercise?.questions?.[0]
+    if (q0?.type === 'fill_blank' && !parseOverlayPrompt(q0.prompt)) return 'text'
+    return 'picture'
+  })
+  // Whether the audio/video link is shown to the student. null = legacy default (shown only for listening/viewing).
+  const [showLinkToStudent, setShowLinkToStudent] = useState(initialExercise?.show_link_to_student ?? null)
   const [saving,         setSaving]         = useState(false)
   const [saveError,      setSaveError]      = useState(null)
   // Matching: whether the interactive drag-and-drop pairs are enabled.
@@ -2517,6 +2635,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       thumbnail: thumbnail || null,
       level:     exLevel  || null,
       contextImageSettings: contextImageModes.length ? contextImageModes : null,
+      showLinkToStudent: linkShownToStudent,
     }
     // Pure-verbal activities (listening, viewing, or speaking with questions OFF):
     // save one dummy question as the activity-type marker.
@@ -2574,6 +2693,24 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const matchingNoDnd = selType === 'matching' && !matchingDnd
   // Speaking exercise with the questions section turned off → pure verbal
   const speakingNoQ = selType === 'speaking' && !speakingQuestions
+  // Effective link visibility: explicit toggle, else legacy default (shown only for listening/viewing).
+  const linkShownToStudent = showLinkToStudent ?? (selType === 'listening' || selType === 'viewing')
+  const linkVisibilityToggle = audioUrl.trim() ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Show this link to students?</span>
+      <div style={{ display: 'flex', gap: '0.35rem' }}>
+        <button type="button" className={`radio-option ${linkShownToStudent ? 'selected' : ''}`}
+          style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem' }}
+          onClick={() => setShowLinkToStudent(true)}>👁 Show</button>
+        <button type="button" className={`radio-option ${!linkShownToStudent ? 'selected' : ''}`}
+          style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem' }}
+          onClick={() => setShowLinkToStudent(false)}>🙈 Hide</button>
+      </div>
+      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+        {linkShownToStudent ? 'Students will see it.' : 'Hidden — only you see it in Teach mode.'}
+      </span>
+    </div>
+  ) : null
 
   return (
     <div>
@@ -2929,8 +3066,9 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
           <input type="url" placeholder="https://youtube.com/…"
             value={audioUrl} onChange={e => setAudioUrl(e.target.value)} />
           <p className="builder-section-sub" style={{ marginTop: '0.25rem' }}>
-            Students see a "Listen first" link above the exercise.
+            When shown, students see a "Listen first" link above the exercise. Hidden by default for video/website links.
           </p>
+          {linkVisibilityToggle}
         </div>
         <div className="form-field" style={{ marginTop: '0.75rem' }}>
           <label>📖 Reading text <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — shown above exercise)</span></label>
@@ -2947,6 +3085,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
             <label>🎧 Audio / video link <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
             <input type="url" placeholder="https://youtube.com/…"
               value={audioUrl} onChange={e => setAudioUrl(e.target.value)} />
+            {linkVisibilityToggle}
           </div>
         </div>
       )}
@@ -2986,6 +3125,29 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                     setNewWordInput('')
                   }
                   return (
+                  <>
+                  {/* Input method — type it yourself vs upload a picture */}
+                  <div style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '0.85rem' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>How do you want to make this exercise?</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button type="button"
+                        className={`radio-option ${fbInputMode === 'text' ? 'selected' : ''}`}
+                        style={{ fontSize: '0.82rem', padding: '0.4rem 0.9rem' }}
+                        onClick={() => { setFbInputMode('text'); setContextImages([]); if (!questions.length || parseOverlayPrompt(questions[0]?.prompt)) setQuestions([newQ('fill_blank')]) }}>
+                        ⌨️ Type it myself
+                      </button>
+                      <button type="button"
+                        className={`radio-option ${fbInputMode === 'picture' ? 'selected' : ''}`}
+                        style={{ fontSize: '0.82rem', padding: '0.4rem 0.9rem' }}
+                        onClick={() => { setFbInputMode('picture'); if (!parseOverlayPrompt(questions[0]?.prompt)) setQuestions([newQ('fill_blank')]) }}>
+                        🖼️ Upload a picture
+                      </button>
+                    </div>
+                  </div>
+
+                  {fbInputMode === 'text' ? (
+                    <FbTextBuilder questions={questions} setQuestions={setQuestions} />
+                  ) : (
                   <>
                   {/* Mode selector — the two ways to fill the blanks */}
                   <div style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '0.85rem' }}>
@@ -3114,6 +3276,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
                           💡 Click and drag on the image to add a blank. Click an existing blank to remove it.
                         </p>
                       </div>
+                  )}
+                  </>
                   )}
                   </>
                   )
@@ -4980,8 +5144,10 @@ export function AdminExerciseReview({ details, onBack }) {
                   alt={`Reference ${i+1}`}
                   circlesEnabled={false}
                   linesEnabled={false}
+                  ticksEnabled={false}
                   initialCircles={savedAnn?.circles || []}
                   initialLines={savedAnn?.lines || []}
+                  initialTicks={savedAnn?.ticks || []}
                 />
               </div>
             )

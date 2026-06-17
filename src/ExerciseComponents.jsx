@@ -1,7 +1,7 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { addVocabularyWord, deleteNote, fetchNotesForExercise, saveExerciseAnnotations, saveNote, submitExerciseAnswers, submitTestResult } from './lib/supabase'
-import { getEffectiveQuestions, parseOverlayPrompt } from './lib/shared'
+import { exerciseLinkVisibleToStudent, getEffectiveQuestions, parseOverlayPrompt } from './lib/shared'
 
 export const CIRCLE_COLORS = [
   { name: 'Red',   hex: '#dc2626' },
@@ -21,9 +21,11 @@ export const LINE_THICKNESSES = [
 ]
 
 export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnabled = true,
-  initialCircles = [], initialLines = [], onAnnotationChange = null }) {
+  ticksEnabled = true,
+  initialCircles = [], initialLines = [], initialTicks = [], onAnnotationChange = null }) {
   const wrapRef    = useRef(null)
   const instanceId = useRef(`ai${Math.random().toString(36).slice(2,7)}`).current
+  const TICK_COLOR = '#16a34a'
 
   // ── Single shared colour for every tool ───────────────────
   const [color, setColor] = useState('#dc2626')
@@ -43,23 +45,28 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
   const justDrewRef = useRef(false)
   const drawMode = arrowMode || straightMode  // either line tool is active
 
+  // ── Tick-mark state (green ✓ stamps) ──────────────────────
+  const [ticks,    setTicks]    = useState(() => initialTicks || [])
+  const [tickMode, setTickMode] = useState(false)
+
   // Notify parent when annotations change (skip on initial render)
   const isFirstRender = useRef(true)
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
-    onAnnotationChange?.(circles, lines)
-  }, [circles, lines]) // eslint-disable-line react-hooks/exhaustive-deps
+    onAnnotationChange?.(circles, lines, ticks)
+  }, [circles, lines, ticks]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const activeMode = circleMode ? 'circle' : drawMode ? 'line' : null
+  const activeMode = circleMode ? 'circle' : drawMode ? 'line' : tickMode ? 'tick' : null
 
   const pct = (e) => {
     const r = wrapRef.current.getBoundingClientRect()
     return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 }
   }
 
-  const toggleCircle   = () => { setCircleMode(m => !m); setArrowMode(false); setStraightMode(false); setLineStart(null) }
-  const toggleArrow    = () => { setArrowMode(m => !m);  setCircleMode(false); setStraightMode(false); setCircleDrawing(null); setLineStart(null) }
-  const toggleStraight = () => { setStraightMode(m => !m); setCircleMode(false); setArrowMode(false); setCircleDrawing(null); setLineStart(null) }
+  const toggleCircle   = () => { setCircleMode(m => !m); setArrowMode(false); setStraightMode(false); setTickMode(false); setLineStart(null) }
+  const toggleArrow    = () => { setArrowMode(m => !m);  setCircleMode(false); setStraightMode(false); setTickMode(false); setCircleDrawing(null); setLineStart(null) }
+  const toggleStraight = () => { setStraightMode(m => !m); setCircleMode(false); setArrowMode(false); setTickMode(false); setCircleDrawing(null); setLineStart(null) }
+  const toggleTick     = () => { setTickMode(m => !m); setCircleMode(false); setArrowMode(false); setStraightMode(false); setCircleDrawing(null); setLineStart(null) }
 
   const onMouseDown = (e) => {
     if (!circleMode || e.button !== 0) return
@@ -88,6 +95,12 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
   }
   const onClick = (e) => {
     if (justDrewRef.current) { justDrewRef.current = false; return }
+    if (tickMode) {
+      // Drop a tick where clicked; stay in tick mode for repeated stamping.
+      const p = pct(e)
+      setTicks(prev => [...prev, { x: p.x, y: p.y }])
+      return
+    }
     if (!drawMode) return
     const p = pct(e)
     if (!lineStart) {
@@ -105,7 +118,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
     ry: Math.abs(circleDrawing.cy - circleDrawing.sy) / 2,
   } : null
 
-  const hasAnnotations = circles.length > 0 || lines.length > 0
+  const hasAnnotations = circles.length > 0 || lines.length > 0 || ticks.length > 0
   const annTbBtn = (active, ac = '#dc2626', abg = '#fee2e2') => ({
     fontSize: '0.75rem', padding: '0.22rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
     border: `1.5px solid ${active ? ac : 'var(--border)'}`,
@@ -116,7 +129,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
   return (
     <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
       {/* ── Toolbar (hidden in read-only view) ── */}
-      {(circlesEnabled || linesEnabled) && (
+      {(circlesEnabled || linesEnabled || ticksEnabled) && (
       <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
 
         {/* One shared colour picker for every tool */}
@@ -149,6 +162,11 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
             {arrowMode ? (lineStart ? '🏹 Click endpoint…' : '🏹 Click start…') : '🏹 Arrow'}
           </button>
         )}
+        {ticksEnabled && (
+          <button type="button" onClick={toggleTick} style={annTbBtn(tickMode, '#16a34a', '#dcfce7')}>
+            {tickMode ? '✅ Ticking — click image to stamp' : '✅ Tick'}
+          </button>
+        )}
 
         {/* Thickness — shared by Line + Arrow */}
         {linesEnabled && drawMode && LINE_THICKNESSES.map(t => (
@@ -162,7 +180,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
         {/* Clear all */}
         {hasAnnotations && (
           <button type="button" style={{ ...annTbBtn(false), marginLeft: 'auto' }}
-            onClick={() => { setCircles([]); setLines([]); setLineStart(null) }}>
+            onClick={() => { setCircles([]); setLines([]); setTicks([]); setLineStart(null) }}>
             ✕ Clear all
           </button>
         )}
@@ -179,7 +197,7 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
       {/* ── Image + SVG overlay ── */}
       <div ref={wrapRef}
         style={{ position: 'relative', display: 'inline-block', maxWidth: '100%',
-          cursor: circleMode ? 'crosshair' : drawMode ? 'cell' : 'default' }}
+          cursor: circleMode ? 'crosshair' : drawMode ? 'cell' : tickMode ? 'copy' : 'default' }}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
         onClick={onClick}
         onMouseLeave={() => { setCircleDrawing(null); setLineMouse(null) }}>
@@ -226,6 +244,18 @@ export function AnnotatedImage({ src, alt = '', circlesEnabled = true, linesEnab
               </g>
             )
           })}
+
+          {/* Tick marks — green ✓ stamps. Click to remove when no tool is active. */}
+          {ticks.map((t, i) => (
+            <text key={`t${i}`} x={`${t.x}%`} y={`${t.y}%`}
+              textAnchor="middle" dominantBaseline="central"
+              fontSize="26" fontWeight="700" fill={TICK_COLOR}
+              style={{ cursor: activeMode ? 'default' : 'pointer',
+                paintOrder: 'stroke', stroke: '#fff', strokeWidth: 1 }}
+              onClick={() => !activeMode && setTicks(p => p.filter((_, j) => j !== i))}>
+              ✓
+            </text>
+          ))}
 
           {/* Line preview while hovering */}
           {drawMode && lineStart && lineMouse && (() => {
@@ -321,7 +351,7 @@ export function TestPlayer({ assignment, studentId, onDone }) {
 
 // ─── PublicTestPage ───────────────────────────────────────────
 // Public test page accessible via ?t=ASSIGNMENT_ID — no login required.
-export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExercises, demoAnswers, setDemoAnswers }) {
+export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExercises, demoAnswers, setDemoAnswers, studentView = false }) {
   if (!exerciseId) return null
   if (loadingExercises) {
     return <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontStyle: 'italic', margin: '0.5rem 0 0' }}>Loading exercise…</p>
@@ -351,7 +381,7 @@ export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExerci
       {cached.description && (
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>{cached.description}</p>
       )}
-      {cached.audio_url && (
+      {cached.audio_url && (!studentView || exerciseLinkVisibleToStudent(cached, questions)) && (
         <div style={{ marginBottom: '0.5rem' }}>
           <EmbeddedMedia url={cached.audio_url} label="🎧 Listen" />
         </div>
@@ -983,7 +1013,7 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
     setSubmitting(false)
     if (ok) {
       // Save any image annotations
-      const hasAnn = imageAnnotations.some(a => a?.circles?.length || a?.lines?.length)
+      const hasAnn = imageAnnotations.some(a => a?.circles?.length || a?.lines?.length || a?.ticks?.length)
       if (hasAnn) saveExerciseAnnotations(assignment.id, imageAnnotations)
       if (embedded) {
         onSubmitted(assignment.id)
@@ -1021,8 +1051,8 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
         )}
       </div>
 
-      {/* ── Audio link ── */}
-      {ex?.audio_url && (
+      {/* ── Audio link (only when the teacher chose to show it) ── */}
+      {ex?.audio_url && exerciseLinkVisibleToStudent(ex, questions) && (
         <div className="exercise-audio-block">
           <span className="exercise-context-label">🎧 Listen first</span>
           <a href={ex.audio_url} target="_blank" rel="noopener noreferrer" className="exercise-audio-link">
@@ -1052,10 +1082,10 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
                 alt={`Reference ${i + 1}`}
                 circlesEnabled={ex.context_image_settings?.[i]?.circles !== false}
                 linesEnabled={ex.context_image_settings?.[i]?.lines !== false}
-                onAnnotationChange={(circles, lines) =>
+                onAnnotationChange={(circles, lines, ticks) =>
                   setImageAnnotations(prev => {
                     const next = [...prev]
-                    next[i] = { circles, lines }
+                    next[i] = { circles, lines, ticks }
                     return next
                   })
                 }
@@ -1618,7 +1648,7 @@ export function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = fal
         {exercise?.description && <p className="flow-sub">{exercise.description}</p>}
       </div>
 
-      {exercise?.audio_url && (
+      {exercise?.audio_url && (!studentView || exerciseLinkVisibleToStudent(exercise, questions)) && (
         <EmbeddedMedia url={exercise.audio_url} label="🎧 Listen first" />
       )}
       {exercise?.context_text && (
@@ -1781,7 +1811,7 @@ export function VocabCaptureBar({ exerciseId, studentId }) {
 }
 
 // ─── StudentSubmissionReview ──────────────────────────────────
-export function StudentSubmissionReview({ assignment, questions, answerMap, onBack, backLabel = '← Back to dashboard' }) {
+export function StudentSubmissionReview({ assignment, questions, answerMap, onBack, backLabel = '← Back to dashboard', studentView = false }) {
   const ex = assignment.exercises
 
   const typeLabel = (t) =>

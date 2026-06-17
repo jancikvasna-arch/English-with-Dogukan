@@ -23,6 +23,19 @@ export function parseOverlayPrompt(prompt) {
   return null
 }
 
+// Should the exercise's audio/video link be shown to the student?
+//  • show_link_to_student === true  → always show
+//  • show_link_to_student === false → always hide
+//  • null/undefined (legacy)        → show only for listening/viewing activities
+export function exerciseLinkVisibleToStudent(ex, questions = null) {
+  if (!ex) return false
+  const v = ex.show_link_to_student
+  if (v === true) return true
+  if (v === false) return false
+  const qs = questions || ex.questions || []
+  return qs.some(q => q && (q.type === 'listening' || q.type === 'viewing'))
+}
+
 // ── Admin courses cache (module-level, shared between App and AdminApp) ──
 let _adminCoursesCache = []
 export function getAdminCourses() { return _adminCoursesCache }

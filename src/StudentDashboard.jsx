@@ -278,6 +278,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
         questions={viewingSubmission.questions ?? []}
         answerMap={viewingSubmission.answerMap}
         onBack={() => setViewingSubmission(null)}
+        studentView
       />
     )
   }
@@ -315,6 +316,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
         answerMap={viewingPlanSubmission.answerMap}
         onBack={() => setViewingPlanSubmission(null)}
         backLabel="← Back to lesson"
+        studentView
       />
     )
   }
@@ -518,6 +520,7 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
                     loadingExercises={activePlanLoadingEx}
                     demoAnswers={activePlanDemoAns}
                     setDemoAnswers={setActivePlanDemoAns}
+                    studentView
                   />
                 </div>
               ) : (
