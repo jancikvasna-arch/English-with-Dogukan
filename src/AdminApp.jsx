@@ -2354,6 +2354,16 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const [thumbnail,      setThumbnail]      = useState(initialExercise?.thumbnail   ?? null)
   const [thumbLoading,   setThumbLoading]   = useState(false)
   const [localBooks,     setLocalBooks]     = useState(allBooks)
+  // Keep the book chips in sync when the parent's book list loads/refreshes
+  // async (otherwise the initial empty snapshot sticks and no chips appear).
+  // Merge so any book just created in this builder isn't dropped.
+  useEffect(() => {
+    setLocalBooks(prev => {
+      const ids = new Set(allBooks.map(b => b.id))
+      const localOnly = prev.filter(b => !ids.has(b.id))
+      return [...allBooks, ...localOnly].sort((a, b) => (a.title || '').localeCompare(b.title || ''))
+    })
+  }, [allBooks])
   const [newBookTitle,   setNewBookTitle]   = useState('')
   const [savingBook,     setSavingBook]     = useState(false)
   const [showBookForm,   setShowBookForm]   = useState(false)
