@@ -445,14 +445,11 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
               <div style={{ fontWeight: 600, fontSize: '0.88rem', color: isDone ? '#15803d' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {ex?.title || stage.title || def.label}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.1rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>
-                  {def.label}
-                </span>
-                {stage.duration_minutes && (
+              {stage.duration_minutes && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.1rem', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
             {/* Action buttons */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>

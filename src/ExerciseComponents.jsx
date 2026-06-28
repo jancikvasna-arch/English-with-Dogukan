@@ -420,6 +420,7 @@ export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExerci
             const overlay = parseOverlayPrompt(q.prompt)
             return (
               <div key={q.id} className="exercise-fill-block">
+                {!overlay && <span className="eq-num" style={{ marginBottom: '0.35rem', display: 'inline-block' }}>{idx + 1}</span>}
                 {q.hint && <p className="eq-hint" style={{ marginBottom: '0.4rem' }}>💡 {q.hint}</p>}
                 {overlay && cached.context_images?.[0] ? (
                   <ImageOverlayFill src={cached.context_images[0]} blanks={overlay.blanks} words={overlay.words || null}
@@ -449,10 +450,10 @@ export function InlineExerciseContent({ exerciseId, exerciseCache, loadingExerci
                 </div>
               )}
               {q.type === 'true_false' && (
-                <div className="options-list" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+                <div className="tf-pill-row">
                   {['True', 'False'].map(opt => (
-                    <button key={opt} className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
-                      style={{ flex: 1, textAlign: 'center' }}
+                    <button key={opt} type="button"
+                      className={`tf-pill ${answers[q.id] === opt ? 'selected' : ''}`}
                       onClick={() => setAns(q.id, opt)}>
                       {opt === 'True' ? '✓ True' : '✗ False'}
                     </button>
@@ -554,16 +555,17 @@ export function WordChoiceQuestion({ template, answer, onChange, disabled = fals
       const selected = current[tok.index]
       return (
         <span key={i} className="word-choice-group">
-          {tok.options.map(opt => {
+          {tok.options.flatMap((opt, oi) => {
             const isSelected   = selected === opt
             const isEliminated = selected && selected !== opt
-            return (
+            const btn = (
               <button key={opt} type="button" disabled={disabled}
                 className={`word-choice-btn${isSelected ? ' word-choice-btn--selected' : ''}${isEliminated ? ' word-choice-btn--eliminated' : ''}`}
                 onClick={() => !disabled && setChoice(tok.index, opt)}>
                 {opt}
               </button>
             )
+            return oi === 0 ? [btn] : [<span key={`sep${oi}`} className="word-choice-sep">/</span>, btn]
           })}
         </span>
       )
@@ -653,11 +655,6 @@ export function InlineFillBlank({ prompt, answer, onChange, disabled = false, ch
 
   return (
     <div className="inline-fill-wrap">
-      {!disabled && (
-        <p className="inline-fill-hint">
-          ✏️ Type your answers directly into the blanks below:
-        </p>
-      )}
       <div className="inline-fill-text">
         {parts.map((part, i) => {
           const isLast = i === parts.length - 1
@@ -1104,6 +1101,7 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
             const overlay = parseOverlayPrompt(q.prompt)
             return (
               <div key={q.id} className="exercise-fill-block">
+                {!overlay && <span className="eq-num" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>{idx + 1}</span>}
                 {q.hint && <p className="eq-hint" style={{ marginBottom: '0.5rem' }}>💡 Hint: {q.hint}</p>}
                 {overlay && ex?.context_images?.[0] ? (
                   <ImageOverlayFill
@@ -1150,11 +1148,10 @@ export function ExercisePlayer({ assignment, questions, studentId, onBack, onSub
               </div>
             )}
             {q.type === 'true_false' && (
-              <div className="options-list" style={{ flexDirection: 'row', gap: '0.75rem' }}>
+              <div className="tf-pill-row">
                 {['True', 'False'].map(opt => (
-                  <button key={opt}
-                    className={`option-btn ${answers[q.id] === opt ? 'selected' : ''}`}
-                    style={{ flex: 1, textAlign: 'center' }}
+                  <button key={opt} type="button"
+                    className={`tf-pill ${answers[q.id] === opt ? 'selected' : ''}`}
                     onClick={() => setAnswer(q.id, opt)}
                   >{opt === 'True' ? '✓ True' : '✗ False'}</button>
                 ))}
@@ -1725,10 +1722,10 @@ export function ExerciseDemoPlayer({ exercise, questions, onBack, embedded = fal
                 </div>
               )}
               {q.type === 'true_false' && (
-                <div className="options-list" style={{ flexDirection:'row', gap:'0.75rem' }}>
+                <div className="tf-pill-row">
                   {['True','False'].map(opt => (
-                    <button key={opt} className={`option-btn ${answers[q.id]===opt?'selected':''}`}
-                      style={{ flex:1, textAlign:'center' }}
+                    <button key={opt} type="button"
+                      className={`tf-pill ${answers[q.id]===opt?'selected':''}`}
                       onClick={() => setAnswer(q.id, opt)}>
                       {opt === 'True' ? '✓ True' : '✗ False'}
                     </button>

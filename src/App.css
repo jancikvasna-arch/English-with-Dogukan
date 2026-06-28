@@ -780,6 +780,32 @@ a { text-decoration: none; }
   color: var(--gold);
 }
 
+/* True/False — compact pill buttons next to the sentence */
+.tf-pill-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.45rem;
+}
+.tf-pill {
+  border: 1.5px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.32rem 1.15rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tf-pill:hover { border-color: #9ca3af; }
+.tf-pill.selected {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  color: #1f2937;
+}
+
 .fill-input,
 .writing-input {
   width: 100%;
@@ -1930,6 +1956,10 @@ a { text-decoration: none; }
   color: var(--text); font-size: 0.88rem;
   cursor: pointer; transition: background 0.14s, color 0.14s;
   font-family: inherit;
+}
+.word-choice-sep {
+  color: var(--text-muted); font-weight: 700; font-size: 0.9rem;
+  padding: 0 0.1rem; user-select: none;
 }
 .word-choice-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--gold) 18%, transparent);

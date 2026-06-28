@@ -285,8 +285,8 @@ export function AdminLessonStages({ adminUserId }) {
       allBooks={books}
       onLabelCreated={lbl => setLabels(p => [...p, lbl])}
       onBookCreated={bk => setBooks(p => [...p, bk].sort((a,b) => a.title.localeCompare(b.title)))}
-      onCancel={() => setView('list')}
-      onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library') }} />
+      onCancel={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library') }}
+      onSaved={() => { fetchAllExercises().then(setExercises) }} />
   }
   if (view === 'edit-exercise' && editingExercise) {
     return <ExerciseBuilder
@@ -295,8 +295,8 @@ export function AdminLessonStages({ adminUserId }) {
       allBooks={books}
       onLabelCreated={lbl => setLabels(p => [...p, lbl])}
       onBookCreated={bk => setBooks(p => [...p, bk].sort((a,b) => a.title.localeCompare(b.title)))}
-      onCancel={() => { setView('list'); setEditingExercise(null) }}
-      onSaved={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }} />
+      onCancel={() => { fetchAllExercises().then(setExercises); setView('list'); setExTab('library'); setEditingExercise(null) }}
+      onSaved={() => { fetchAllExercises().then(setExercises) }} />
   }
   if (view === 'demo-exercise' && demoExercise) {
     return <ExerciseDemoPlayer
@@ -590,11 +590,10 @@ export function AdminLessonStages({ adminUserId }) {
                           <span style={{ fontSize: '0.72rem', color: '#a09888', fontWeight: 500, letterSpacing: '0.03em' }}>No thumbnail</span>
                         </div>
                     }
-                    <strong style={{ fontSize: '0.92rem' }}>{ex.title}</strong>
+                    <span style={{ display: 'inline-block', alignSelf: 'flex-start', background: '#1c2a3a', color: '#fff', fontWeight: 700, fontSize: '0.9rem', padding: '0.3rem 0.75rem', borderRadius: '8px', lineHeight: 1.3 }}>{ex.title}</span>
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       <span className="stage-type-badge-sm" style={{ fontSize: '0.75rem', padding: '0.18rem 0.5rem' }}>{stDef.icon} {stDef.label}</span>
                       {ex.level && <span className="admin-level-chip" style={{ background: '#EEF4F8', color: 'var(--gold)', fontWeight: 600 }}>{ex.level}</span>}
-                      {ex.books?.title && <span className="admin-level-chip chip-icon-text"><span className="chip-icon">📚</span><span>{ex.books.title}</span></span>}
                       {ex.estimated_minutes && (
                         <span className="admin-level-chip chip-icon-text" style={{ color: 'var(--text-muted)' }}><span className="chip-icon">⏱</span><span>{ex.estimated_minutes} min</span></span>
                       )}
@@ -735,9 +734,6 @@ export function LessonPlanView({ plan, exercises, onBack, adminUserId = null, ad
               {ex?.title || stage.title || def.label}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>
-                {def.label}
-              </span>
               {stage.duration_minutes && (
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
               )}
@@ -951,7 +947,7 @@ export const RECT_COLORS = [
   { name: 'Black',  value: '#1a2030' },
 ]
 
-export function TeachWhiteboard({ value = '', onChange, placeholder, style = {}, storageKey = null }) {
+export function TeachWhiteboard({ value = '', onChange, placeholder, style = {}, storageKey = null, flush = false }) {
   const ref        = useRef(null)
   const skipSync   = useRef(false)
   const containerRef = useRef(null)
@@ -1200,8 +1196,10 @@ export function TeachWhiteboard({ value = '', onChange, placeholder, style = {},
           suppressContentEditableWarning
           className="rte-content"
           data-placeholder={placeholder}
-          style={{ minHeight: '160px', resize: 'vertical', overflow: 'auto',
-            background: '#FCF7E8', border: '1px solid #efe4c6', borderRadius: '8px' }}
+          style={flush
+            ? { minHeight: '140px', overflow: 'visible', background: 'transparent', border: 'none', padding: 0 }
+            : { minHeight: '160px', resize: 'vertical', overflow: 'auto',
+                background: '#FCF7E8', border: '1px solid #efe4c6', borderRadius: '8px' }}
           onInput={emit}
           onBlur={emit}
           onClick={() => { setShowRectPalette(false); setSelectedBoxId(null) }}
@@ -1331,9 +1329,9 @@ function FloatingWhiteboard({ value, onChange, storageKey, hasContent, onClear }
         onMouseDown={startDrag}
         style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 1000, cursor: 'grab',
           display: 'flex', alignItems: 'center', gap: '0.5rem',
-          background: 'var(--gold)', color: '#1c2a3a', border: '2px solid var(--gold)',
+          background: '#F5C842', color: '#1c2a3a', border: '2px solid #e0ad1f',
           borderRadius: 999, padding: '0.4rem 0.55rem 0.4rem 0.85rem',
-          boxShadow: '0 6px 20px rgba(0,0,0,0.22)', fontWeight: 700, fontSize: '0.86rem', userSelect: 'none' }}>
+          boxShadow: '0 6px 20px rgba(0,0,0,0.28)', fontWeight: 700, fontSize: '0.86rem', userSelect: 'none' }}>
         <span>📝 Whiteboard</span>
         {hasContent && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1c2a3a', opacity: 0.55 }} title="Has notes" />}
         <button type="button" title="Open whiteboard"
@@ -1350,13 +1348,13 @@ function FloatingWhiteboard({ value, onChange, storageKey, hasContent, onClear }
   // ── Full window ──
   return (
     <div style={{ position: 'fixed', left: pos.x, top: pos.y, width: size.w, zIndex: 1000,
-      background: '#fff', border: '2px solid var(--gold)', borderRadius: 12,
+      background: '#FCF7E8', border: '2px solid #e0ad1f', borderRadius: 12,
       boxShadow: '0 12px 36px rgba(0,0,0,0.26)', display: 'flex', flexDirection: 'column',
       overflow: 'hidden', maxWidth: 'calc(100vw - 24px)' }}>
       {/* Title bar (drag handle) */}
       <div onMouseDown={startDrag}
         style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'grab', userSelect: 'none',
-          background: 'var(--gold)', color: '#1c2a3a', padding: '0.45rem 0.6rem' }}>
+          background: '#F5C842', color: '#1c2a3a', padding: '0.45rem 0.6rem' }}>
         <strong style={{ fontSize: '0.9rem' }}>📝 Whiteboard</strong>
         <span style={{ fontSize: '0.72rem', opacity: 0.75 }}>drag to move</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
@@ -1375,20 +1373,21 @@ function FloatingWhiteboard({ value, onChange, storageKey, hasContent, onClear }
           </button>
         </div>
       </div>
-      {/* Body */}
-      <div style={{ height: size.h, overflow: 'auto', padding: '0.6rem', background: '#fff' }}>
+      {/* Body — single cream surface, no inner window */}
+      <div style={{ height: size.h, overflow: 'auto', padding: '0.5rem', background: '#FCF7E8' }}>
         <TeachWhiteboard
           value={value}
           onChange={onChange}
           placeholder="Type your notes, emerging language, or instructions here…"
           storageKey={storageKey}
+          flush
         />
       </div>
       {/* Resize handle */}
       <div onMouseDown={startResize}
         title="Drag to resize"
         style={{ position: 'absolute', right: 2, bottom: 2, width: 18, height: 18, cursor: 'nwse-resize',
-          background: 'linear-gradient(135deg, transparent 45%, var(--gold) 45%, var(--gold) 60%, transparent 60%, transparent 75%, var(--gold) 75%)' }} />
+          background: 'linear-gradient(135deg, transparent 45%, #e0ad1f 45%, #e0ad1f 60%, transparent 60%, transparent 75%, #e0ad1f 75%)' }} />
     </div>
   )
 }
@@ -1513,10 +1512,11 @@ export function TeachView({ plan, onBack }) {
           <span style={{ fontSize: '1rem', flexShrink: 0 }}>{def.icon}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
-            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.7rem', color, fontWeight: 600, background: `${color}18`, padding: '0.1rem 0.42rem', borderRadius: '20px' }}>{def.label}</span>
-              {stage.duration_minutes && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>}
-            </div>
+            {stage.duration_minutes && (
+              <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱ {stage.duration_minutes} min</span>
+              </div>
+            )}
           </div>
           {hasContent && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>}
         </div>
@@ -2333,7 +2333,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const [audioUrl,       setAudioUrl]       = useState(initialExercise?.audio_url     ?? '')
   const [estimatedMins,  setEstimatedMins]  = useState(initialExercise?.estimated_minutes ?? null)
   const [customMins,     setCustomMins]     = useState(
-    initialExercise?.estimated_minutes && ![5,10,15].includes(initialExercise.estimated_minutes)
+    initialExercise?.estimated_minutes && ![3,5,8,10,12,15].includes(initialExercise.estimated_minutes)
       ? String(initialExercise.estimated_minutes) : ''
   )
   const [bookId,         setBookId]         = useState(() => {
@@ -2388,6 +2388,10 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
   const [showLinkToStudent, setShowLinkToStudent] = useState(initialExercise?.show_link_to_student ?? null)
   const [saving,         setSaving]         = useState(false)
   const [saveError,      setSaveError]      = useState(null)
+  // After a successful save we stay on the page. Track the saved id so re-saving
+  // updates the same exercise instead of creating a duplicate, and flash a toast.
+  const [savedId,        setSavedId]        = useState(initialExercise?.id ?? null)
+  const [savedFlash,     setSavedFlash]     = useState(false)
   // Matching: whether the interactive drag-and-drop pairs are enabled.
   // Off = context-material-only matching exercise (no pairs required).
   const [matchingDnd,    setMatchingDnd]    = useState(true)
@@ -2540,11 +2544,12 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
     if (!questions.length) {
       setQuestions([newQ(type)])
     } else {
-      // Convert all existing questions to the new type, keeping prompts + hints
+      // Convert all existing questions to the new type, keeping prompts + hints.
+      // Drop fill_blank overlay JSON prompts so they don't leak into other types' text fields.
       setQuestions(prev => prev.map(q => ({
         ...newQ(type),
         tempId: q.tempId,   // preserve React key
-        prompt: q.prompt,   // preserve question text
+        prompt: parseOverlayPrompt(q.prompt) ? '' : (q.prompt || ''),
         hint:   q.hint,     // preserve hint text
       })))
     }
@@ -2626,11 +2631,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
     const noDnd = selType === 'matching' && !matchingDnd
     if (stDef?.hasQuestions && !selType) return
     if (stDef?.hasQuestions && !isVerbal && !noDnd && !questions.length) return
-    // Location fields are required for exercise stages
-    if (stDef?.hasQuestions && !isVerbal && !noDnd && (!exUnit || !exPage || !exSection.trim() || !exNo)) {
-      setSaveError('Please fill in the location fields (unit, page, section, exercise number) — these are required for exercises.')
-      return
-    }
+    // Location fields are optional.
     setSaving(true); setSaveError(null)
     const finalMins = estimatedMins === 'other' ? (parseInt(customMins) || null) : estimatedMins
     const meta = {
@@ -2657,8 +2658,10 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       : noDnd
         ? []
         : questions
-    const result = isEdit
-      ? await updateExerciseWithQuestions(initialExercise.id, meta, questionsToSave)
+    // Re-saving after a successful create updates the same row (no duplicate).
+    const existingId = initialExercise?.id ?? savedId
+    const result = existingId
+      ? await updateExerciseWithQuestions(existingId, meta, questionsToSave)
       : await createExerciseWithQuestions(meta, questionsToSave)
     // result is either an exerciseId string, or {exerciseId, dbError} if questions failed, or null
     const id = typeof result === 'string' ? result : (result?.exerciseId ?? null)
@@ -2666,7 +2669,12 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
     if (id && !dbErr) {
       await setExerciseLabels(id, labelIds)
       setSaving(false)
-      onSaved(id)
+      setSavedId(id)
+      // Stay on the page; flash a confirmation for 4 seconds.
+      setSavedFlash(true)
+      clearTimeout(window.__exSavedTimer)
+      window.__exSavedTimer = setTimeout(() => setSavedFlash(false), 4000)
+      onSaved?.(id)
     } else {
       setSaving(false)
       setSaveError(dbErr
@@ -2805,7 +2813,7 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
         <div className="builder-section">
           <h4 className="builder-section-title">⏱ Estimated time <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}>(only you can see this)</span></h4>
           <div className="builder-time-pills">
-            {[5, 10, 15].map(m => (
+            {[3, 5, 8, 10, 12, 15].map(m => (
               <button key={m} type="button"
                 className={`builder-type-pill ${estimatedMins === m ? 'active' : ''}`}
                 onClick={() => { setEstimatedMins(estimatedMins === m ? null : m); setCustomMins('') }}>
@@ -2882,31 +2890,29 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       <div className="builder-section">
         <h4 className="builder-section-title">
           📍 Location in textbook
-          {stageTypeDef.hasQuestions
-            ? <span className="builder-required-note"> — required for exercises</span>
-            : <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}> (optional)</span>}
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: 400 }}> (optional)</span>
         </h4>
         <div className="location-fields">
           <div className="location-field">
-            <label>Unit {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <label>Unit</label>
             <input type="number" min="1" placeholder="e.g. 3"
               value={exUnit ?? ''}
               onChange={e => setExUnit(e.target.value ? parseInt(e.target.value) : null)} />
           </div>
           <div className="location-field">
-            <label>Page {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <label>Page</label>
             <input type="number" min="1" placeholder="e.g. 42"
               value={exPage ?? ''}
               onChange={e => setExPage(e.target.value ? parseInt(e.target.value) : null)} />
           </div>
           <div className="location-field">
-            <label>Section {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <label>Section</label>
             <input type="text" placeholder="e.g. Grammar"
               value={exSection}
               onChange={e => setExSection(e.target.value)} />
           </div>
           <div className="location-field">
-            <label>Exercise No. {stageTypeDef.hasQuestions && <span className="required-star">*</span>}</label>
+            <label>Exercise No.</label>
             <input type="number" min="1" placeholder="e.g. 2"
               value={exNo ?? ''}
               onChange={e => setExNo(e.target.value ? parseInt(e.target.value) : null)} />
@@ -3017,8 +3023,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
         </div>
       </div>
 
-      {/* ── 5. Context material (hidden for fill_blank — image is managed in the template section) ── */}
-      {selType !== 'fill_blank' && <div className="builder-section">
+      {/* ── 5. Context material (for picture-mode fill_blank the image is the template, so it's hidden there) ── */}
+      {(selType !== 'fill_blank' || fbInputMode === 'text') && <div className="builder-section">
         <div className="builder-section-header">
           <div>
             <h4 className="builder-section-title">📖 Context material</h4>
@@ -3088,8 +3094,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
             minHeight="110px" />
         </div>
       </div>}
-      {/* fill_blank audio link (shown separately since context material section is hidden) */}
-      {selType === 'fill_blank' && (
+      {/* fill_blank (picture mode) audio link — context section is hidden there */}
+      {selType === 'fill_blank' && fbInputMode === 'picture' && (
         <div className="builder-section">
           <div className="form-field">
             <label>🎧 Audio / video link <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
@@ -3403,20 +3409,18 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
       )}
 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
-      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+      {savedFlash && (
+        <div style={{ marginTop: '1rem', padding: '0.6rem 0.9rem', borderRadius: '8px',
+          background: '#dcfce7', border: '1px solid #86efac', color: '#15803d', fontWeight: 600, fontSize: '0.9rem' }}>
+          ✅ Exercise saved
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
         <button className="btn-gold" onClick={handleSave}
           disabled={saving || !title.trim() || (stageTypeDef.hasQuestions && (!selType || (selType !== 'listening' && selType !== 'viewing' && selType !== 'speaking' && !matchingNoDnd && !questions.length)))}>
-          {saving
-            ? 'Saving…'
-            : isEdit
-              ? (stageTypeDef.hasQuestions ? `Update stage (${(selType === 'listening' || selType === 'viewing' || selType === 'speaking') ? selType : questions.length + ' Q'})` : 'Update stage')
-              : (stageTypeDef.hasQuestions
-                  ? ((selType === 'listening' || selType === 'viewing' || selType === 'speaking')
-                      ? `Save ${selType} stage`
-                      : `Save stage (${questions.length} question${questions.length !== 1 ? 's' : ''})`)
-                  : 'Save stage')}
+          {saving ? 'Saving…' : ((isEdit || savedId) ? 'Save changes' : 'Save exercise')}
         </button>
-        <button className="btn-ghost" onClick={onCancel}>{cancelLabel}</button>
+        <button className="btn-ghost" onClick={onCancel}>{isEdit || savedId ? 'Done' : cancelLabel}</button>
       </div>
     </div>
   )
@@ -4264,7 +4268,7 @@ const LANG_BOARD_FRAMES = [
 // Auto-growing textarea so long notes show all their text (no inner scroll)
 // Rich note (contentEditable): bold / italic / underline, auto-grows with text.
 // Stores HTML. Initialises innerHTML once so re-renders never wipe the content.
-function LangRichNote({ value, onChange, color, placeholder }) {
+function LangRichNote({ value, onChange, color, placeholder, flexFill = false }) {
   const ref = useRef(null)
   useLayoutEffect(() => {
     if (ref.current && !ref.current._init) { ref.current.innerHTML = value || ''; ref.current._init = true }
@@ -4274,8 +4278,9 @@ function LangRichNote({ value, onChange, color, placeholder }) {
       className="lang-note-edit" data-ph={placeholder || 'Type…'}
       onInput={e => onChange(e.currentTarget.innerHTML)}
       onMouseDown={e => e.stopPropagation()}
-      style={{ padding: '6px 8px', outline: 'none', minHeight: '22px', fontSize: '0.85rem', lineHeight: 1.45,
-        color, fontWeight: 500, fontFamily: 'inherit', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }} />
+      style={{ padding: '6px 8px', outline: 'none', fontSize: '0.85rem', lineHeight: 1.45,
+        color, fontWeight: 500, fontFamily: 'inherit', wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+        ...(flexFill ? { flex: 1, overflow: 'auto' } : { minHeight: '22px' }) }} />
   )
 }
 
@@ -4299,6 +4304,7 @@ export function LangBoardView({ value }) {
           background: b.bg || 'transparent',
           border: b.border ? `1.5px solid ${b.border}` : (b.bg ? '1px solid rgba(0,0,0,0.08)' : 'none'),
           borderRadius: '7px', padding: (b.bg || b.border) ? '6px 9px' : '2px',
+          ...(b.h ? { height: b.h, overflow: 'auto' } : {}),
           color: b.color, fontSize: '0.85rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', fontWeight: 500 }}
           dangerouslySetInnerHTML={{ __html: b.text || '' }} />
       ))}
@@ -4355,10 +4361,13 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
 
   const startResize = (e, box) => {
     e.preventDefault(); e.stopPropagation()
-    const startX = e.clientX, startW = box.w
+    const noteEl = e.currentTarget.parentElement
+    const startX = e.clientX, startY = e.clientY, startW = box.w
+    const startH = box.h || (noteEl ? noteEl.offsetHeight : 120)
     const move = (ev) => {
       const nw = Math.max(130, Math.min(600, startW + (ev.clientX - startX)))
-      setAll(boxesRef.current.map(b => b.id === box.id ? { ...b, w: nw } : b))
+      const nh = Math.max(60,  Math.min(700, startH + (ev.clientY - startY)))
+      setAll(boxesRef.current.map(b => b.id === box.id ? { ...b, w: nw, h: nh } : b))
     }
     const up = () => {
       window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
@@ -4406,8 +4415,9 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
         {boxes.map(box => (
           <div key={box.id} data-note style={{ position: 'absolute', left: `${box.x}%`, top: box.y, width: box.w,
             border: `1.5px solid ${box.border || '#e4ded0'}`, borderRadius: '7px',
-            background: box.bg || '#fffef9', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 5px',
+            background: box.bg || '#fffef9', boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+            ...(box.h ? { height: box.h, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}) }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 5px', flexShrink: 0,
               borderBottom: `1px solid ${box.border ? box.border + '40' : '#efe9da'}`, borderRadius: '6px 6px 0 0',
               background: 'rgba(0,0,0,0.03)' }}>
               <span onMouseDown={e => startDrag(e, box)} title="Drag to move"
@@ -4428,11 +4438,12 @@ export function LangBoardEditor({ value, onChange, placeholder }) {
             </div>
 
             <LangRichNote value={box.text} color={box.color} placeholder="Type…"
+              flexFill={!!box.h}
               onChange={v => update(box.id, { text: v })} />
 
-            {/* Resize handle (bottom-right) */}
-            <span onMouseDown={e => startResize(e, box)} title="Drag to resize width"
-              style={{ position: 'absolute', right: 1, bottom: 1, width: 14, height: 14, cursor: 'ew-resize',
+            {/* Resize handle (bottom-right) — drag for width + height */}
+            <span onMouseDown={e => startResize(e, box)} title="Drag to resize"
+              style={{ position: 'absolute', right: 1, bottom: 1, width: 14, height: 14, cursor: 'nwse-resize', zIndex: 2,
                 background: 'linear-gradient(135deg, transparent 50%, var(--text-muted) 50%, var(--text-muted) 60%, transparent 60%, transparent 72%, var(--text-muted) 72%, var(--text-muted) 82%, transparent 82%)',
                 opacity: 0.5, borderRadius: '0 0 6px 0' }} />
 
