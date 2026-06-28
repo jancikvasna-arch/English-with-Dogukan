@@ -1,7 +1,7 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { assignExercise, assignLessonPlan, createBook, createCourse, createExerciseWithQuestions, createLabel, createLesson, createLessonPlan, createLessonPlanWithStages, createManualStudent, createTestAssignment, deleteAssignment, deleteBook, deleteCourseRecord, deleteExercise, deleteLabel, deleteLesson, deleteLessonPlan, deleteTestAssignment, duplicateLessonPlan, fetchAllAssignmentsAdmin, fetchAllBooks, fetchAllCourses, fetchAllExercises, fetchAllLabels, fetchAllLessonPlans, fetchAllProspects, fetchAllReferrals, fetchAllTestAssignments, fetchAllUpcomingLessons, fetchArchivedProspects, fetchAssignedPlansForStudent, fetchAssignmentDetails, fetchArchivedStudentsAll, fetchExerciseWithQuestions, fetchManualStudents, fetchMyAnswersForAssignment, fetchPlanAssignmentHistory, fetchPlanAssignmentsAdmin, fetchPlansForManualStudentAdmin, fetchPlansForStudentAdmin, fetchQuestionsForReview, fetchSiteSetting, fetchStudentAssignmentsAdmin, fetchStudentLessonsAdmin, fetchStudentPlanAssignments, fetchStudentProfiles, fetchStudentsAdmin, findManualStudentByEmail, markDiscountApplied, saveAnswerReviews, saveExerciseFeedback, saveSiteSetting, setExerciseLabels, setManualStudentArchived, setStudentArchived, supabase, transferTestAssignments, updateBook, updateCourseRecord, updateExerciseThumbnail, updateExerciseWithQuestions, updateLesson, updateLessonNotes, updateLessonPlan, updateLessonPlanLink, updateLessonPlanWithStages, updateProspectStatus, updateStudentAccessLevel, updateStudentEnglishLevel, uploadLessonWhiteboard } from './lib/supabase'
-import { ADMIN_EMAIL, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
+import { ADMIN_EMAIL, DEFAULT_LESSON_TITLE_COLOR, GENERAL_PLACEMENT_QUESTIONS, HOSPITALITY_PLACEMENT_QUESTIONS, LABEL_COLORS, LESSON_TITLE_COLORS, STAGE_TYPES, TEST_DEFINITIONS, getAdminCourses, getEffectiveQuestions, parseOverlayPrompt, resetQuestions, saveQuestions, setAdminCoursesCache } from './lib/shared'
 import { COURSES_DATA } from './content'
 import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, FbBlankEditor, ImageOverlayFill, InlineExerciseContent, InlineFillBlank, MatchingQuestion, RTE_COLORS, RichTextEditor, StudentSubmissionReview, WORD_PILL_COLORS, WordChoiceQuestion, parseFillBlankCorrect } from './ExerciseComponents.jsx'
 import { AccessBadge } from './StudentDashboard.jsx'
@@ -790,7 +790,9 @@ export function LessonPlanView({ plan, exercises, onBack, adminUserId = null, ad
       </div>
 
       {/* Plan title */}
-      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.4rem' }}>{plan.title}</h2>
+      <div style={{ background: plan.title_color || DEFAULT_LESSON_TITLE_COLOR, color: '#fff', borderRadius: '10px', padding: '0.6rem 1rem', marginBottom: '0.6rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.35rem' }}>{plan.title}</h2>
+      </div>
 
       {/* Metadata chips */}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
@@ -1571,7 +1573,9 @@ export function TeachView({ plan, onBack }) {
       </div>
 
       {/* Title */}
-      <h2 style={{ margin: '0 0 1.25rem', fontSize: '1.6rem', fontFamily: 'Inter, sans-serif', fontWeight: 700 }}>{plan.title}</h2>
+      <div style={{ background: plan.title_color || DEFAULT_LESSON_TITLE_COLOR, color: '#fff', borderRadius: '10px', padding: '0.7rem 1.1rem', marginBottom: '1.25rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.5rem', fontFamily: 'Inter, sans-serif', fontWeight: 700 }}>{plan.title}</h2>
+      </div>
 
       {/* Whiteboard — floating window (stays in view while scrolling) */}
       <FloatingWhiteboard
@@ -3830,6 +3834,22 @@ export function LessonPlanBuilder({ exercises, adminUserId, onSaved, onCancel, i
           <label>Plan title *</label>
           <input type="text" placeholder="e.g. Beginner — Lesson 2: Present Simple"
             value={title} onChange={e => setTitle(e.target.value)} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Title banner colour:</span>
+            {LESSON_TITLE_COLORS.map(c => (
+              <button key={c.value} type="button" title={c.label}
+                onClick={() => setTitleColor(c.value)}
+                style={{ width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', background: c.value,
+                  border: titleColor === c.value ? '2.5px solid #1a2030' : '2px solid transparent',
+                  boxShadow: titleColor === c.value ? `0 0 0 2px ${c.value}` : 'none', padding: 0 }} />
+            ))}
+          </div>
+          {title.trim() && (
+            <div style={{ marginTop: '0.6rem', display: 'inline-block', background: titleColor, color: '#fff',
+              fontWeight: 700, fontSize: '1.05rem', padding: '0.5rem 1rem', borderRadius: '8px' }}>
+              {title}
+            </div>
+          )}
         </div>
         <div className="form-field">
           <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
@@ -4479,6 +4499,7 @@ export function LessonStageBuilder({
   const [langAnalysis,    setLangAnalysis]    = useState(initialPlan?.language_analysis ?? '')
   const [englishLevel,    setEnglishLevel]    = useState(initialPlan?.english_level    ?? '')
   const [lessonLevel,     setLessonLevel]     = useState(initialPlan?.lesson_level     ?? '')
+  const [titleColor,      setTitleColor]      = useState(initialPlan?.title_color      ?? DEFAULT_LESSON_TITLE_COLOR)
 
   // Numbered stage groups
   const [stageGroups,  setStageGroups]  = useState(() => initStageGroupsFromPlan(initialPlan))
@@ -4706,6 +4727,7 @@ export function LessonStageBuilder({
       languageAnalysis: langAnalysis,
       englishLevel:     englishLevel || null,
       lessonLevel:      lessonLevel  || null,
+      titleColor:       titleColor   || null,
     }
     const id = isEdit
       ? await updateLessonPlanWithStages(initialPlan.id, title, null, allStages, meta)

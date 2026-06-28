@@ -15,6 +15,21 @@ export const LABEL_COLORS = [
   { value: '#9ca3af', label: 'Gray'   },
 ]
 
+// Banner colours for the lesson-plan title (Teach + student views). 10 options.
+export const LESSON_TITLE_COLORS = [
+  { value: '#1c2a3a', label: 'Navy'   },
+  { value: '#006699', label: 'Teal'   },
+  { value: '#1d4ed8', label: 'Blue'   },
+  { value: '#15803d', label: 'Green'  },
+  { value: '#0f766e', label: 'Pine'   },
+  { value: '#b45309', label: 'Amber'  },
+  { value: '#c2410c', label: 'Orange' },
+  { value: '#b91c1c', label: 'Red'    },
+  { value: '#be185d', label: 'Pink'   },
+  { value: '#6d28d9', label: 'Purple' },
+]
+export const DEFAULT_LESSON_TITLE_COLOR = '#1c2a3a'
+
 export function parseOverlayPrompt(prompt) {
   try {
     const p = JSON.parse(prompt || '')

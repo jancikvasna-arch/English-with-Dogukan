@@ -1,7 +1,7 @@
 // Auto-extracted from App.jsx (Task #9 split). See lib/shared.js for shared constants/utils.
 import { useState, useEffect } from 'react'
 import { addVocabularyWord, checkAndAwardBadges, deleteVocabularyWord, fetchBadgeDefinitions, fetchExerciseWithQuestions, fetchLessonPlanForStudent, fetchMyAnswersForAssignment, fetchMyExercises, fetchMyLessons, fetchMyProfile, fetchMyReferralCode, fetchMyReferrals, fetchMyTestAssignments, fetchMyVocabulary, fetchNextLesson, fetchQuestionsForReview, fetchQuestionsForStudent, fetchStudentBadges, startLessonPlanExercise, supabase, updateMyName } from './lib/supabase'
-import { STAGE_TYPES } from './lib/shared'
+import { DEFAULT_LESSON_TITLE_COLOR, STAGE_TYPES } from './lib/shared'
 import { AnnotatedImage, EmbeddedMedia, ExerciseDemoPlayer, ExercisePlayer, InlineExerciseContent, NotesSection, StudentSubmissionReview, TestPlayer } from './ExerciseComponents.jsx'
 import { PlacementTestFrame } from './PublicPages.jsx'
 
@@ -561,7 +561,9 @@ export function StudentDashboard({ user, onSignOut, onBook, onSettings }) {
             </button>
             <button className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.35rem 0.7rem', marginLeft: 'auto' }} onClick={() => window.print()}>🖨 Print</button>
           </div>
-          <h2 style={{ margin: '0 0 0.2rem', fontSize: '1.25rem', lineHeight: 1.3 }}>{activePlan.title}</h2>
+          <div style={{ background: activePlan.title_color || DEFAULT_LESSON_TITLE_COLOR, color: '#fff', borderRadius: '10px', padding: '0.6rem 1rem', margin: '0 0 0.5rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1.3rem', lineHeight: 1.3 }}>{activePlan.title}</h2>
+          </div>
           {activePlan.description && (
             <p style={{ margin: '0 0 0.5rem', color: 'var(--text-muted)', fontSize: '0.87rem', lineHeight: 1.5 }}>{activePlan.description}</p>
           )}

@@ -556,9 +556,7 @@ export async function fetchAllLessonPlans() {
   const { data, error } = await supabase
     .from('lesson_plans')
     .select(`
-      id, title, description, created_at,
-      student_id, manual_student_id, lesson_aim, teaching_point, language_analysis, scheduled_at,
-      english_level, lesson_level,
+      *,
       profiles:student_id ( id, name, email, english_level ),
       manual_students:manual_student_id ( id, name, email, english_level ),
       lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes, exercises ( id, title, course ) ),
@@ -914,24 +912,28 @@ export async function duplicateLessonPlan(planId, createdBy) {
   // 1. Fetch the source plan + its stages
   const { data: src, error: fetchErr } = await supabase
     .from('lesson_plans')
-    .select('title, description, lesson_aim, teaching_point, language_analysis, lesson_stages(*)')
+    .select('*, lesson_stages(*)')
     .eq('id', planId)
     .single()
   if (fetchErr || !src) { console.error('[supabase] duplicateLessonPlan fetch:', fetchErr); return null }
 
   // 2. Insert the new plan (no student assignment — starts as a draft)
-  const { data: newPlan, error: planErr } = await supabase
+  const dupBase = {
+    title:             `${src.title} (copy)`,
+    description:       src.description       || null,
+    lesson_aim:        src.lesson_aim        || null,
+    teaching_point:    src.teaching_point    || null,
+    language_analysis: src.language_analysis || null,
+    created_by:        createdBy             || null,
+  }
+  let { data: newPlan, error: planErr } = await supabase
     .from('lesson_plans')
-    .insert({
-      title:             `${src.title} (copy)`,
-      description:       src.description       || null,
-      lesson_aim:        src.lesson_aim        || null,
-      teaching_point:    src.teaching_point    || null,
-      language_analysis: src.language_analysis || null,
-      created_by:        createdBy             || null,
-    })
+    .insert({ ...dupBase, title_color: src.title_color || null })
     .select('id')
     .single()
+  if (planErr && /title_color/.test(planErr.message || '')) {
+    ({ data: newPlan, error: planErr } = await supabase.from('lesson_plans').insert(dupBase).select('id').single())
+  }
   if (planErr || !newPlan) { console.error('[supabase] duplicateLessonPlan insert plan:', planErr); return null }
 
   // 3. Copy stages
@@ -1011,7 +1013,7 @@ async function _saveStages(planId, stages) {
 export async function createLessonPlanWithStages(title, desc, createdBy, stages, meta = {}) {
   if (!supabase) return null
   const planId = crypto.randomUUID()
-  const { error: planErr } = await supabase.from('lesson_plans').insert({
+  const baseRow = {
     id:                planId,
     title,
     description:       desc                      || null,
@@ -1024,7 +1026,11 @@ export async function createLessonPlanWithStages(title, desc, createdBy, stages,
     scheduled_at:      meta.scheduledAt          || null,
     english_level:     meta.englishLevel         || null,
     lesson_level:      meta.lessonLevel          || null,
-  })
+  }
+  let { error: planErr } = await supabase.from('lesson_plans').insert({ ...baseRow, title_color: meta.titleColor || null })
+  if (planErr && /title_color/.test(planErr.message || '')) {
+    ({ error: planErr } = await supabase.from('lesson_plans').insert(baseRow))
+  }
   if (planErr) { console.error('[supabase] createLessonPlanWithStages:', planErr); return null }
   if (stages.length > 0) {
     const ok = await _saveStages(planId, stages)
@@ -1036,19 +1042,22 @@ export async function createLessonPlanWithStages(title, desc, createdBy, stages,
 /** Update a lesson plan's metadata + replace all stages. */
 export async function updateLessonPlanWithStages(planId, title, desc, stages, meta = {}) {
   if (!supabase) return null
-  const { error: planErr } = await supabase
-    .from('lesson_plans').update({
-      title,
-      description:       desc                      || null,
-      student_id:        meta.studentId            || null,
-      manual_student_id: meta.manualStudentId      || null,
-      lesson_aim:        meta.lessonAim            || null,
-      teaching_point:    meta.teachingPoint        || null,
-      language_analysis: meta.languageAnalysis     || null,
-      scheduled_at:      meta.scheduledAt          || null,
-      english_level:     meta.englishLevel         || null,
-      lesson_level:      meta.lessonLevel          || null,
-    }).eq('id', planId)
+  const baseUpd = {
+    title,
+    description:       desc                      || null,
+    student_id:        meta.studentId            || null,
+    manual_student_id: meta.manualStudentId      || null,
+    lesson_aim:        meta.lessonAim            || null,
+    teaching_point:    meta.teachingPoint        || null,
+    language_analysis: meta.languageAnalysis     || null,
+    scheduled_at:      meta.scheduledAt          || null,
+    english_level:     meta.englishLevel         || null,
+    lesson_level:      meta.lessonLevel          || null,
+  }
+  let { error: planErr } = await supabase.from('lesson_plans').update({ ...baseUpd, title_color: meta.titleColor || null }).eq('id', planId)
+  if (planErr && /title_color/.test(planErr.message || '')) {
+    ({ error: planErr } = await supabase.from('lesson_plans').update(baseUpd).eq('id', planId))
+  }
   if (planErr) { console.error('[supabase] updateLessonPlanWithStages:', planErr); return null }
   const ok = await _saveStages(planId, stages)
   return ok ? planId : null
@@ -1560,7 +1569,7 @@ export async function fetchPlansForStudentAdmin(studentId) {
   if (!supabase || !studentId) return []
   const { data } = await supabase
     .from('lesson_plans')
-    .select(`id, title, description, scheduled_at, english_level, lesson_level, created_at,
+    .select(`*,
       lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title,
         duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
         exercises ( * ) )`)
@@ -1574,7 +1583,7 @@ export async function fetchPlansForManualStudentAdmin(manualStudentId) {
   if (!supabase || !manualStudentId) return []
   const { data } = await supabase
     .from('lesson_plans')
-    .select(`id, title, description, scheduled_at, english_level, lesson_level, created_at,
+    .select(`*,
       lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title,
         duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes,
         exercises ( * ) )`)
@@ -1593,9 +1602,7 @@ export async function fetchAssignedPlansForStudent(studentId) {
   if (!supabase || !studentId) return []
 
   const PLAN_SELECT = `
-    id, title, description, created_at,
-    student_id, manual_student_id, lesson_aim, teaching_point, language_analysis, scheduled_at,
-    english_level, lesson_level,
+    *,
     profiles:student_id ( id, name, email, english_level ),
     manual_students:manual_student_id ( id, name, email, english_level ),
     lesson_stages ( id, order_index, stage_number, stage_name, stage_type, title, duration_minutes, exercise_id, content_text, audio_url, content_images, section, teacher_notes, exercises ( id, title, course ) ),
