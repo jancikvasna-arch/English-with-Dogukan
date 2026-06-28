@@ -2201,6 +2201,12 @@ export function initStageGroupsFromPlan(plan) {
   return Object.values(groups).sort((a, b) => a.number - b.number)
 }
 
+export function studentInitials(name) {
+  const parts = (name || '?').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+}
+
 export function newQ(type) {
   return {
     tempId:         crypto.randomUUID(),
@@ -9644,44 +9650,31 @@ export function AdminPanel({ user, onSignOut }) {
                     {activeStudents.length > 0 && (
                       <>
                         <p className="admin-section-label" style={{ marginTop: pendingStudents.length > 0 ? '1.25rem' : 0 }}>
-                          Registered students ({activeStudents.length})
+                          Registered students ({activeStudents.length}) — click a card to open their lesson plans
                         </p>
-                        {activeStudents.map(s => {
-                          const result = s.questionnaire_submissions?.[0]?.placement_results?.[0]
-                          return (
-                            <React.Fragment key={s.id}>
-                              {renderAssignTestInline(s, false)}
-                              <div className="admin-student-row" role="button"
-                                style={{ cursor: 'pointer' }} onClick={() => openStudent(s)}>
-                                <div className="admin-student-info">
-                                  <strong>{s.name || 'Unknown'}</strong>
-                                  {s.access_level === 'prospect' && (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#854F0B', background: '#FAEEDA', padding: '0.12rem 0.45rem', borderRadius: '20px', marginLeft: '0.4rem' }}>
-                                      Prospect
-                                    </span>
-                                  )}
-                                  <span className="admin-student-email">{s.email}</span>
-                                </div>
-                                <div className="admin-student-meta">
-                                  <AccessBadge level={s.access_level} />
-                                  {unreviewed[s.id] > 0 && (
-                                    <span className="admin-level-chip" title="Completed exercises waiting to be reviewed"
-                                      style={{ background: '#fee2e2', color: '#b91c1c', fontWeight: 700, border: '1px solid #fca5a5' }}>
-                                      📥 {unreviewed[s.id]} to review
-                                    </span>
-                                  )}
-                                  {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                                  {result && <span className="admin-level-chip">{result.cefr_level} · {result.overall_score}%</span>}
-                                  {result && !result.writing_reviewed && <span className="admin-review-chip">Writing to review</span>}
-                                  {renderTestStatus(s)}
-                                  <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
-                                </div>
+                        {activeStudents.map(s => renderAssignTestInline(s, false))}
+                        <div className="student-tiles">
+                        {activeStudents.map(s => (
+                          <div key={s.id} className="student-tile" role="button" onClick={() => openStudent(s)}>
+                            <div className="student-tile-top">
+                              <span className="student-tile-avatar">{studentInitials(s.name)}</span>
+                              {unreviewed[s.id] > 0 && (
+                                <span className="student-tile-badge" title="Completed exercises waiting to be reviewed">📥 {unreviewed[s.id]}</span>
+                              )}
+                              <span className="student-tile-foot" onClick={e => e.stopPropagation()}>
                                 {renderDeleteControl(s, false)}
-                                <span className="admin-arrow">›</span>
-                              </div>
-                            </React.Fragment>
-                          )
-                        })}
+                              </span>
+                            </div>
+                            <div className="student-tile-name">{s.name || 'Unknown'}</div>
+                            <div className="student-tile-sub">
+                              {s.access_level === 'prospect' && (
+                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#854F0B', background: '#FAEEDA', padding: '0.1rem 0.4rem', borderRadius: '20px' }}>Prospect</span>
+                              )}
+                              {s.english_level && <span className="admin-level-chip eng-level-chip" style={{ fontSize: '0.7rem' }}>{s.english_level}</span>}
+                            </div>
+                          </div>
+                        ))}
+                        </div>
                       </>
                     )}
 
@@ -9689,28 +9682,26 @@ export function AdminPanel({ user, onSignOut }) {
                     {manualStudents.length > 0 && (
                       <>
                         <p className="admin-section-label" style={{ marginTop: '1.25rem' }}>
-                          Manual students ({manualStudents.length})
+                          Manual students ({manualStudents.length}) — click a card to open their lesson plans
                         </p>
+                        {manualStudents.map(s => renderAssignTestInline(s, true))}
+                        <div className="student-tiles">
                         {manualStudents.map(s => (
-                          <React.Fragment key={s.id}>
-                            {renderAssignTestInline(s, true)}
-                            <div className="admin-student-row" role="button"
-                              style={{ cursor: 'pointer' }} onClick={() => openManualStudent(s)}>
-                              <div className="admin-student-info">
-                                <strong>{s.name}</strong>
-                                <span className="admin-student-email">{s.email || 'No email'}</span>
-                              </div>
-                              <div className="admin-student-meta">
-                                {s.english_level && <span className="admin-level-chip eng-level-chip">{s.english_level}</span>}
-                                <span className="admin-level-chip" style={{ opacity: 0.65 }}>Manual</span>
-                                {renderTestStatus(s)}
-                                <span className="admin-date-chip">{new Date(s.created_at).toLocaleDateString('en-GB')}</span>
-                              </div>
-                              {renderDeleteControl(s, true)}
-                              <span className="admin-arrow">›</span>
+                          <div key={s.id} className="student-tile" role="button" onClick={() => openManualStudent(s)}>
+                            <div className="student-tile-top">
+                              <span className="student-tile-avatar student-tile-avatar--manual">{studentInitials(s.name)}</span>
+                              <span className="student-tile-foot" onClick={e => e.stopPropagation()}>
+                                {renderDeleteControl(s, true)}
+                              </span>
                             </div>
-                          </React.Fragment>
+                            <div className="student-tile-name">{s.name}</div>
+                            <div className="student-tile-sub">
+                              {s.english_level && <span className="admin-level-chip eng-level-chip" style={{ fontSize: '0.7rem' }}>{s.english_level}</span>}
+                              <span className="admin-level-chip" style={{ opacity: 0.65, fontSize: '0.7rem' }}>Manual</span>
+                            </div>
+                          </div>
                         ))}
+                        </div>
                       </>
                     )}
 

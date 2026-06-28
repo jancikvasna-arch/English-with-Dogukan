@@ -780,6 +780,51 @@ a { text-decoration: none; }
   color: var(--gold);
 }
 
+/* Student tiles (Students tab — click a tile to open that student's lesson plans) */
+.student-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.student-tile {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem 0.9rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  min-height: 118px;
+}
+.student-tile:hover {
+  border-color: var(--gold);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+}
+.student-tile-top { display: flex; align-items: flex-start; gap: 0.4rem; }
+.student-tile-avatar {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 50%;
+  background: #1c2a3a; color: #fff;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 0.95rem;
+}
+.student-tile-avatar--manual { background: #475569; }
+.student-tile-badge {
+  background: #fee2e2; color: #b91c1c; font-weight: 700;
+  border: 1px solid #fca5a5; border-radius: 20px;
+  font-size: 0.72rem; padding: 0.1rem 0.45rem; align-self: center;
+}
+.student-tile-foot { margin-left: auto; display: flex; align-items: center; gap: 0.3rem; }
+.student-tile-name {
+  font-weight: 700; font-size: 0.98rem; line-height: 1.25;
+  word-break: break-word; color: var(--text);
+}
+.student-tile-sub { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: auto; }
+
 /* Exercise builder — two columns: content left, admin fields right third */
 .ex-cols { display: flex; gap: 1.5rem; align-items: flex-start; }
 .ex-main { flex: 1 1 0; min-width: 0; order: 1; }
