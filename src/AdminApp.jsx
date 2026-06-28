@@ -2748,6 +2748,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
           onClick={() => setStageType(null)}>Change</button>
       </div>
 
+      <div className="ex-cols">
+      <div className="ex-side">
       {/* ── Course (mandatory, shown first) ── */}
       <div className="builder-section">
         <h4 className="builder-section-title">📚 Course <span className="required-star">*</span></h4>
@@ -3013,6 +3015,8 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
         )}
       </div>
 
+      </div>{/* ex-side */}
+      <div className="ex-main">
       {/* ── 4. Title + instruction ── */}
       <div className="admin-assign-form" style={{ marginBottom: '1.25rem' }}>
         <div className="form-field">
@@ -3411,6 +3415,9 @@ export function ExerciseBuilder({ onSaved, onCancel, initialExercise = null, all
           )}
         </>
       )}
+
+      </div>{/* ex-main */}
+      </div>{/* ex-cols */}
 
       {saveError && <div className="auth-error" style={{ marginTop: '1rem' }}>{saveError}</div>}
       {savedFlash && (

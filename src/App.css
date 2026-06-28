@@ -780,6 +780,23 @@ a { text-decoration: none; }
   color: var(--gold);
 }
 
+/* Exercise builder — two columns: content left, admin fields right third */
+.ex-cols { display: flex; gap: 1.5rem; align-items: flex-start; }
+.ex-main { flex: 1 1 0; min-width: 0; order: 1; }
+.ex-side {
+  flex: 0 0 31%; order: 2;
+  background: var(--bg-darker);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.5rem 0.9rem;
+  position: sticky; top: 1rem;
+}
+.ex-side .builder-section { margin-bottom: 0.6rem; }
+@media (max-width: 860px) {
+  .ex-cols { flex-direction: column; }
+  .ex-side { flex-basis: auto; width: 100%; order: 0; position: static; }
+}
+
 /* True/False — compact pill buttons next to the sentence */
 .tf-pill-row {
   display: flex;
